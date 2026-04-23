@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📚 六年级比例数学测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .progress {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            margin-top: 10px;
+            text-align: center;
+            color: #495057;
+            font-weight: bold;
+        }
+
+        .content {
+            padding: 40px 30px;
+        }
+
+        .question {
+            margin-bottom: 30px;
+        }
+
+        .question-number {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .question-text {
+            font-size: 1.3em;
+            line-height: 1.8;
+            color: #2d3748;
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            border-left: 5px solid #667eea;
+        }
+
+        .answer-input {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 1.2em;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            margin-top: 20px;
+            transition: border-color 0.3s;
+        }
+
+        .answer-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .result {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .score {
+            font-size: 4em;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .score.excellent {
+            color: #10b981;
+        }
+
+        .score.good {
+            color: #667eea;
+        }
+
+        .score.average {
+            color: #f59e0b;
+        }
+
+        .score.needs-work {
+            color: #ef4444;
+        }
+
+        .result-message {
+            font-size: 1.3em;
+            margin-bottom: 30px;
+        }
+
+        .review {
+            text-align: left;
+            margin-top: 30px;
+        }
+
+        .review-item {
+            background: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            border-left: 4px solid;
+        }
+
+        .review-item.correct {
+            border-left-color: #10b981;
+        }
+
+        .review-item.wrong {
+            border-left-color: #ef4444;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .start-screen {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .start-screen h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .start-screen p {
+            font-size: 1.1em;
+            color: #6b7280;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+
+        .question-nav {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 开始界面 -->
+        <div id="start-screen" class="start-screen">
+            <div class="header">
+                <h1>📚 六年级比例数学测试</h1>
+                <p>共10道题，每题10分，满分100分</p>
+            </div>
+            <div class="content">
+                <h2>欢迎参加数学测试！</h2>
+                <p>
+                    🎯 题目已随机打乱<br>
+                    ⏱️ 放松心态，认真答题<br>
+                    💡 答案只需填写数字结果即可<br>
+                    🏆 完成后查看成绩和解析
+                </p>
+                <button class="btn" onclick="startTest()">开始测试</button>
+            </div>
+        </div>
+
+        <!-- 测试界面 -->
+        <div id="test-screen" class="hidden">
+            <div class="header">
+                <h1>📚 六年级比例数学测试</h1>
+            </div>
+            <div class="progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="progress-text" id="progress-text">第 1 题 / 10</div>
+            </div>
+            <div class="content">
+                <div class="question">
+                    <span class="question-number" id="question-number">第 1 题</span>
+                    <div class="question-text" id="question-text"></div>
+                    <input type="text" class="answer-input" id="answer-input" placeholder="请输入你的答案...">
+                </div>
+                <div class="question-nav">
+                    <button class="btn btn-secondary" id="prev-btn" onclick="prevQuestion()" style="display: none;">上一题</button>
+                    <button class="btn" id="next-btn" onclick="nextQuestion()">下一题</button>
+                    <button class="btn" id="submit-btn" onclick="submitTest()" style="display: none;">提交答案</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果界面 -->
+        <div id="result-screen" class="hidden">
+            <div class="header">
+                <h1>📚 测试完成！</h1>
+            </div>
+            <div class="content result">
+                <div class="score" id="final-score">0</div>
+                <div class="result-message" id="result-message"></div>
+                <div class="review" id="review"></div>
+                <button class="btn" onclick="restartTest()">再测一次</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const problems = [
+            {
+                question: "小明家今年收获了苹果和梨共800千克，苹果和梨的质量比是3:5。请问苹果和梨各收获了多少千克？",
+                answer: "苹果300千克，梨500千克",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && (num === 300 || num === 500);
+                }
+            },
+            {
+                question: "在一幅地图上，比例尺是1:5000000。如果两地的实际距离是200千米，那么在地图上应该画多少厘米？",
+                answer: "4厘米",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 4;
+                }
+            },
+            {
+                question: "一辆汽车2小时行驶了120千米。照这样的速度，从甲地到乙地共行驶了5小时，甲乙两地相距多少千米？",
+                answer: "300千米",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 300;
+                }
+            },
+            {
+                question: "一批货物，如果每车装5吨，需要16辆车。如果每车装8吨，需要多少辆车？",
+                answer: "10辆车",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 10;
+                }
+            },
+            {
+                question: "某班男生和女生的人数比是4:5，如果男生增加8人，女生增加10人，那么新的男生和女生人数比是多少？",
+                answer: "4:5",
+                check: function(input) {
+                    const s = input.replace(/\s/g, '');
+                    return s === '4:5' || s === '4/5' || s === '0.8';
+                }
+            },
+            {
+                question: "用3台水泵抽水，8小时可以抽干一池水。照这样计算，5台同样的水泵抽水，多少小时可以抽干这池水？",
+                answer: "4.8小时",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && Math.abs(num - 4.8) < 0.01;
+                }
+            },
+            {
+                question: "甲、乙、丙三人合伙做生意，投资金额的比是2:3:5。年终共获利12万元，按照投资比例分配，三人各分得多少万元？",
+                answer: "甲2.4万，乙3.6万，丙6万",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && (num === 2.4 || num === 3.6 || num === 6);
+                }
+            },
+            {
+                question: "长方形的长和宽的比是5:3，周长是64厘米。求这个长方形的面积是多少平方厘米？",
+                answer: "240平方厘米",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 240;
+                }
+            },
+            {
+                question: "修一条路，已修的和未修的长度比是1:5。如果再修300米，已修的和未修的长度比就是1:2。这条路全长多少米？",
+                answer: "1800米",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 1800;
+                }
+            },
+            {
+                question: "有含盐8%的盐水40千克，要配制成含盐20%的盐水，需要加盐多少千克？",
+                answer: "6千克",
+                check: function(input) {
+                    const num = parseFloat(input);
+                    return !isNaN(num) && num === 6;
+                }
+            }
+        ];
+
+        let shuffledProblems = [];
+        let currentQuestion = 0;
+        let userAnswers = [];
+        let score = 0;
+
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        function startTest() {
+            shuffledProblems = shuffleArray(problems);
+            currentQuestion = 0;
+            userAnswers = new Array(shuffledProblems.length).fill('');
+            
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('test-screen').classList.remove('hidden');
+            
+            showQuestion();
+        }
+
+        function showQuestion() {
+            const problem = shuffledProblems[currentQuestion];
+            document.getElementById('question-number').textContent = `第 ${currentQuestion + 1} 题`;
+            document.getElementById('question-text').textContent = problem.question;
+            document.getElementById('answer-input').value = userAnswers[currentQuestion];
+            
+            const progress = ((currentQuestion + 1) / shuffledProblems.length * 100;
+            document.getElementById('progress-fill').style.width = progress + '%';
+            document.getElementById('progress-text').textContent = `第 ${currentQuestion + 1} 题 / ${shuffledProblems.length}`;
+            
+            document.getElementById('prev-btn').style.display = currentQuestion > 0 ? 'inline-block' : 'none';
+            
+            if (currentQuestion === shuffledProblems.length - 1) {
+                document.getElementById('next-btn').style.display = 'none';
+                document.getElementById('submit-btn').style.display = 'inline-block';
+            } else {
+                document.getElementById('next-btn').style.display = 'inline-block';
+                document.getElementById('submit-btn').style.display = 'none';
+            }
+            
+            document.getElementById('answer-input').focus();
+        }
+
+        function nextQuestion() {
+            userAnswers[currentQuestion] = document.getElementById('answer-input').value;
+            currentQuestion++;
+            showQuestion();
+        }
+
+        function prevQuestion() {
+            userAnswers[currentQuestion] = document.getElementById('answer-input').value;
+            currentQuestion--;
+            showQuestion();
+        }
+
+        function submitTest() {
+            userAnswers[currentQuestion] = document.getElementById('answer-input').value;
+            calculateScore();
+            showResult();
+        }
+
+        function calculateScore() {
+            score = 0;
+            for (let i = 0; i < shuffledProblems.length; i++) {
+                if (shuffledProblems[i].check(userAnswers[i])) {
+                    score += 10;
+                }
+            }
+        }
+
+        function showResult() {
+            document.getElementById('test-screen').classList.add('hidden');
+            document.getElementById('result-screen').classList.remove('hidden');
+            
+            const scoreElement = document.getElementById('final-score');
+            scoreElement.textContent = score + '分';
+            
+            let scoreClass = '';
+            let message = '';
+            
+            if (score >= 90) {
+                scoreClass = 'excellent';
+                message = '🎉 太棒了！你是数学小天才！';
+            } else if (score >= 70) {
+                scoreClass = 'good';
+                message = '👍 很不错！继续加油！';
+            } else if (score >= 60) {
+                scoreClass = 'average';
+                message = '💪 还需要多练习哦！';
+            } else {
+                scoreClass = 'needs-work';
+                message = '📚 别灰心，看看解析再试一次吧！';
+            }
+            
+            scoreElement.className = 'score ' + scoreClass;
+            document.getElementById('result-message').textContent = message;
+            
+            let reviewHtml = '<h3 style="margin-bottom: 20px; color: #2d3748;">📋 答题回顾</h3>';
+            
+            for (let i = 0; i < shuffledProblems.length; i++) {
+                const isCorrect = shuffledProblems[i].check(userAnswers[i]);
+                const className = isCorrect ? 'correct' : 'wrong';
+                const icon = isCorrect ? '✅' : '❌';
+                
+                reviewHtml += `
+                    <div class="review-item ${className}">
+                        <div style="font-weight: bold; margin-bottom: 10px;">${icon} 第 ${i + 1} 题</div>
+                        <div style="color: #4a5568; margin-bottom: 8px;">${shuffledProblems[i].question.substring(0, 50)}...</div>
+                        <div style="margin-top: 8px;"><strong>你的答案：</strong>${userAnswers[i] || '未作答'}</div>
+                        <div style="margin-top: 5px;"><strong>正确答案：</strong>${shuffledProblems[i].answer}</div>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('review').innerHTML = reviewHtml;
+        }
+
+        function restartTest() {
+            document.getElementById('result-screen').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        }
+
+        document.getElementById('answer-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                if (currentQuestion < shuffledProblems.length - 1) {
+                    nextQuestion();
+                } else {
+                    submitTest();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

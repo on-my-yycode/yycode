@@ -9,7 +9,12 @@ def say_hello(name: str) -> str:
         
     Returns:
         A formatted greeting string.
+        
+    Raises:
+        TypeError: If name is not a string type.
     """
+    if not isinstance(name, str):
+        raise TypeError("name must be a string type")
     return f"Hello, {name}!"
 
 
@@ -21,11 +26,15 @@ def greet_everyone(names: List[str]) -> List[str]:
         
     Returns:
         A list of formatted greeting strings, one for each name.
+        
+    Raises:
+        TypeError: If names is not a list or any element is not a string.
     """
-    greetings = []
-    for name in names:
-        greetings.append(say_hello(name))
-    return greetings
+    if not isinstance(names, list):
+        raise TypeError("names must be a list")
+    if not all(isinstance(name, str) for name in names):
+        raise TypeError("all elements in names must be strings")
+    return [say_hello(name) for name in names]
 
 
 def main() -> None:

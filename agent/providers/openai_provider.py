@@ -108,6 +108,7 @@ class OpenAIProvider(LLMProvider):
 
         current_text = ""
         tool_calls_data = []
+        usage = None
 
         if stream_callback:
             stream = await self.client.chat.completions.create(
@@ -115,12 +116,15 @@ class OpenAIProvider(LLMProvider):
                 messages=openai_messages,
                 tools=openai_tools,
                 stream=True,
+                stream_options={"include_usage": True},
                 max_tokens=4096,
             )
 
             current_tool_call = None
 
             async for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage = self._extract_usage(chunk.usage)
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -148,6 +152,7 @@ class OpenAIProvider(LLMProvider):
                 stream=False,
                 max_tokens=4096,
             )
+            usage = self._extract_usage(getattr(response, "usage", None))
             choice = response.choices[0]
             if choice.message.content:
                 current_text = choice.message.content
@@ -171,8 +176,26 @@ class OpenAIProvider(LLMProvider):
             content=current_text,
             tool_calls=tool_calls,
             raw_response=None,
+            usage=usage,
         )
 
     async def close(self) -> None:
         """Close the client."""
         await self.client.close()
+
+    def _extract_usage(self, usage: Any) -> Optional[dict[str, int]]:
+        """Normalize OpenAI usage data."""
+        if usage is None:
+            return None
+        input_tokens = getattr(usage, "prompt_tokens", None)
+        output_tokens = getattr(usage, "completion_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
+        if input_tokens is None and output_tokens is None and total_tokens is None:
+            return None
+        if total_tokens is None:
+            total_tokens = (input_tokens or 0) + (output_tokens or 0)
+        return {
+            "input_tokens": input_tokens or 0,
+            "output_tokens": output_tokens or 0,
+            "total_tokens": total_tokens or 0,
+        }

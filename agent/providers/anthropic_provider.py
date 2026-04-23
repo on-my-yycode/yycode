@@ -97,6 +97,7 @@ class AnthropicProvider(LLMProvider):
             full_content.append(current_text)
 
         final_message = await stream.get_final_message()
+        usage = self._extract_usage(getattr(final_message, "usage", None))
 
         tool_calls = [
             ToolCall(id=tc["id"], name=tc["name"], args=tc["args"])
@@ -107,8 +108,23 @@ class AnthropicProvider(LLMProvider):
             content=current_text,
             tool_calls=tool_calls,
             raw_response=final_message,
+            usage=usage,
         )
 
     async def close(self) -> None:
         """Close the client."""
         await self.client.close()
+
+    def _extract_usage(self, usage: Any) -> Optional[dict[str, int]]:
+        """Normalize Anthropic usage data."""
+        if usage is None:
+            return None
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+        if input_tokens is None and output_tokens is None:
+            return None
+        return {
+            "input_tokens": input_tokens or 0,
+            "output_tokens": output_tokens or 0,
+            "total_tokens": (input_tokens or 0) + (output_tokens or 0),
+        }

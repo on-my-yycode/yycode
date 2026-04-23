@@ -1,6 +1,9 @@
 """TodoManager - Manages todo list state and tracking logic."""
 
+import logging
 from typing import List, Dict, Any, Optional, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class TodoManager:
@@ -20,7 +23,7 @@ class TodoManager:
         """Set todo items and check if all are completed or over limit."""
         # Check for maximum items limit
         if len(items) > self.MAX_ITEMS:
-            print(f"\n[Warning: Todo list exceeds maximum of {self.MAX_ITEMS} items. Truncated.]\n")
+            logger.warning(f"Todo list exceeds maximum of {self.MAX_ITEMS} items. Truncated.")
             items = items[:self.MAX_ITEMS]
 
         self.todo_items = items
@@ -36,7 +39,7 @@ class TodoManager:
 
     def _clear_on_completion(self) -> None:
         """Clear todo list when all items are completed."""
-        print("\n[All tasks completed! Todo list has been cleared.]\n")
+        logger.info("All tasks completed! Todo list has been cleared.")
         self.todo_items = []
         self.consecutive_non_todo_rounds = 0
 
@@ -53,7 +56,7 @@ class TodoManager:
     def prepare_for_new_input(self) -> None:
         """Prepare for a new user input - clear previous tasks for new planning."""
         if self.todo_items and not self._all_completed():
-            print("\n[Starting new task, previous todo list cleared.]\n")
+            logger.info("Starting new task, previous todo list cleared.")
         self.todo_items = []
         self.consecutive_non_todo_rounds = 0
 
@@ -112,6 +115,7 @@ class TodoManager:
 
             result.append("-" * 40)
             output = "\n".join(result)
-            print(f"\n{output}\n")
+            logger.info(f"Todo list updated:\n{output}")
+            print(f"\n{output}\n")  # Keep for user interface
             return output
         return todo

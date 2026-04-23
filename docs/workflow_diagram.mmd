@@ -1,0 +1,28 @@
+graph TD
+    UserInput[User Input] --> Session[Session Management<br/>session_id, stream_callback, workdir, system_prompt]
+    
+    Session --> LangGraph[LangGraph<br/>StateGraph]
+    Session --> TodoManager[TodoManager<br/>Task Tracking]
+    
+    TodoManager -.-> LangGraph
+    
+    LangGraph --> LLMNode[LLM Node]
+    LangGraph --> ToolsNode[Tools Node]
+    
+    LLMNode -.-> ToolsNode
+    ToolsNode -.-> LLMNode
+    
+    ToolsNode --> RegularTools[Regular Tools]
+    ToolsNode --> SubagentRunner[Subagent Runner]
+    
+    SubagentRunner --> SubagentGraph[Subagent Graph<br/>Isolated State]
+    
+    style UserInput fill:#e1f5ff
+    style Session fill:#fff4e1
+    style LangGraph fill:#f4e1ff
+    style TodoManager fill:#ffe1e1
+    style LLMNode fill:#e1ffe1
+    style ToolsNode fill:#e1ffe1
+    style RegularTools fill:#fff9e1
+    style SubagentRunner fill:#fff9e1
+    style SubagentGraph fill:#e1f5ff

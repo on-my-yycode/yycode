@@ -19,6 +19,7 @@ class ChatResponse:
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw_response: Any = None
+    usage: Optional[dict[str, int]] = None
 
 
 class LLMProvider(ABC):

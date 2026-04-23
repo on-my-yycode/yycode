@@ -1,11 +1,20 @@
-def fibonacci(n):
+from typing import List, Generator
+
+
+def fibonacci(n: int) -> int:
+    """Calculate the nth number in the Fibonacci sequence.
+    
+    Args:
+        n: A non-negative integer indicating the term to calculate.
+        
+    Returns:
+        The nth number in the Fibonacci sequence.
+        
+    Raises:
+        ValueError: If n is a negative integer or not an integer type.
     """
-    计算斐波那契数列的第 n 项
-    :param n: 非负整数，表示要计算的项数
-    :return: 斐波那契数列的第 n 项
-    """
-    if not isinstance(n, int) or n < 0:
-        raise ValueError("n 必须是非负整数")
+    if type(n) is not int or n < 0:
+        raise ValueError("n must be a non-negative integer")
     
     if n == 0:
         return 0
@@ -18,14 +27,20 @@ def fibonacci(n):
     return b
 
 
-def fibonacci_generator(n):
+def fibonacci_generator(n: int) -> Generator[int, None, None]:
+    """Generate the first n+1 terms of the Fibonacci sequence (starting from term 0).
+    
+    Args:
+        n: A non-negative integer indicating the last term to generate.
+        
+    Yields:
+        Integers representing the Fibonacci sequence from term 0 to term n.
+        
+    Raises:
+        ValueError: If n is a negative integer or not an integer type.
     """
-    生成斐波那契数列的前 n+1 项（从第0项开始）
-    :param n: 非负整数，表示要生成到第 n 项
-    :return: 生成器，产生斐波那契数列
-    """
-    if not isinstance(n, int) or n < 0:
-        raise ValueError("n 必须是非负整数")
+    if type(n) is not int or n < 0:
+        raise ValueError("n must be a non-negative integer")
     
     a, b = 0, 1
     for _ in range(n + 1):
@@ -33,10 +48,16 @@ def fibonacci_generator(n):
         a, b = b, a + b
 
 
-def fibonacci_list(n):
-    """
-    生成斐波那契数列的前 n+1 项（从第0项开始）
-    :param n: 非负整数，表示要生成到第 n 项
-    :return: 包含前 n+1 项斐波那契数的列表
+def fibonacci_list(n: int) -> List[int]:
+    """Generate a list of the first n+1 terms of the Fibonacci sequence (starting from term 0).
+    
+    Args:
+        n: A non-negative integer indicating the last term to include in the list.
+        
+    Returns:
+        A list containing the Fibonacci sequence from term 0 to term n.
+        
+    Raises:
+        ValueError: If n is a negative integer or not an integer type.
     """
     return list(fibonacci_generator(n))
