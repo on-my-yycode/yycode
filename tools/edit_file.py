@@ -21,6 +21,11 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
 edit_file_tool = {
     "name": "edit_file",
     "description": "Replace exact text in file.",
+    "execution": {
+        "side_effects": "workspace_write",
+        "concurrency": "serial",
+        "timeout_seconds": 60,
+    },
     "input_schema": {
         "type": "object",
         "properties": {

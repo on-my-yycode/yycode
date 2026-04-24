@@ -30,6 +30,11 @@ def bash(command: str) -> str:
 bash_tool = {
     "name": "bash",
     "description": "Run a shell command.",
+    "execution": {
+        "side_effects": "process",
+        "concurrency": "serial",
+        "timeout_seconds": 130,
+    },
     "input_schema": {
         "type": "object",
         "properties": {"command": {"type": "string"}},

@@ -69,6 +69,8 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
 
     assert "Core workflow:" in session.system_prompt
     assert "Subagent delegation:" in session.system_prompt
+    assert "checking workspace_state and relevant" in session.system_prompt
+    assert "git_diff" in session.system_prompt
     assert "Do not delegate tasks that are small" in session.system_prompt
     assert "Build a short execution plan with concrete checkpoints" in session.system_prompt
     assert "Keep exactly one active item in_progress" in session.system_prompt
@@ -79,6 +81,8 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     assert "security for code security review" in session.system_prompt
     assert "Give each subagent a specific task" in session.system_prompt
     assert "After a subagent returns, integrate its result yourself" in session.system_prompt
+    assert "Prefer apply_patch for scoped code edits" in session.system_prompt
+    assert "run verify with the narrowest useful target" in session.system_prompt
     assert "Safety:" in session.system_prompt
     assert "Keep changes scoped to the user request" in session.system_prompt
 
@@ -121,6 +125,38 @@ def test_async_retry_supports_sync_and_async_handlers():
         asyncio.run(async_run_tool_with_retry(async_handler, "async", value="ok"))
         == "async:ok"
     )
+
+
+def test_async_retry_times_out_sync_and_async_handlers():
+    def slow_sync_handler():
+        import time
+
+        time.sleep(0.05)
+        return "late"
+
+    async def slow_async_handler():
+        await asyncio.sleep(0.05)
+        return "late"
+
+    sync_result = asyncio.run(
+        async_run_tool_with_retry(
+            slow_sync_handler,
+            "slow_sync",
+            max_retries=0,
+            timeout_seconds=0.01,
+        )
+    )
+    async_result = asyncio.run(
+        async_run_tool_with_retry(
+            slow_async_handler,
+            "slow_async",
+            max_retries=0,
+            timeout_seconds=0.01,
+        )
+    )
+
+    assert sync_result == "Error executing tool slow_sync: Timeout after 0.01s"
+    assert async_result == "Error executing tool slow_async: Timeout after 0.01s"
 
 
 def test_filter_subagent_tool_prevents_recursive_delegation_and_todo_planning():
@@ -231,6 +267,11 @@ def test_tools_node_executes_subagent_tool_call(tmp_path, monkeypatch):
             {
                 "name": "subagent",
                 "description": "delegate",
+                "execution": {
+                    "side_effects": "delegation",
+                    "concurrency": "role_based",
+                    "timeout_seconds": 300,
+                },
                 "input_schema": {"type": "object", "properties": {}, "required": []},
             }
         ],

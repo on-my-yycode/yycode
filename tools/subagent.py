@@ -2,11 +2,16 @@
 
 subagent_tool = {
     "name": "subagent",
-        "description": (
-            "Delegate a focused task to an isolated subagent and wait for its summary result. "
-            "Use explorer for research, architect for design, worker for implementation, "
-            "tester for verification, and security for security review."
-        ),
+    "description": (
+        "Delegate a focused task to an isolated subagent and wait for its summary result. "
+        "Use explorer for research, architect for design, worker for implementation, "
+        "tester for verification, and security for security review."
+    ),
+    "execution": {
+        "side_effects": "delegation",
+        "concurrency": "role_based",
+        "timeout_seconds": 300,
+    },
     "input_schema": {
         "type": "object",
         "properties": {

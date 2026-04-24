@@ -19,6 +19,11 @@ def write_file(path: str, content: str) -> str:
 write_file_tool = {
     "name": "write_file",
     "description": "Write content to file.",
+    "execution": {
+        "side_effects": "workspace_write",
+        "concurrency": "serial",
+        "timeout_seconds": 60,
+    },
     "input_schema": {
         "type": "object",
         "properties": {"path": {"type": "string"}, "content": {"type": "string"}},

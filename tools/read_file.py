@@ -28,6 +28,11 @@ def read_file(path: str, limit: int = None) -> str:
 read_file_tool = {
     "name": "read_file",
     "description": "Read file contents.",
+    "execution": {
+        "side_effects": "read_only",
+        "concurrency": "safe",
+        "timeout_seconds": 30,
+    },
     "input_schema": {
         "type": "object",
         "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}},

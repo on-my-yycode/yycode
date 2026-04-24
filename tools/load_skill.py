@@ -6,6 +6,11 @@ load_skill_tool = {
         "Load the full content of one or more local skills by name or path. "
         "Use this after list_skills when you need the full instructions."
     ),
+    "execution": {
+        "side_effects": "read_only",
+        "concurrency": "safe",
+        "timeout_seconds": 30,
+    },
     "input_schema": {
         "type": "object",
         "properties": {

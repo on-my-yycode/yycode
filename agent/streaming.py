@@ -82,6 +82,13 @@ class ConsoleStreamRenderer:
             if self.in_thinking_by_session.get(event.session_id):
                 print("\033[90m [done]\033[0m", flush=True)
             self.in_thinking_by_session[event.session_id] = False
+        elif event.event_type == "tool_start":
+            if self.in_thinking_by_session.get(event.session_id):
+                print("\033[90m [done]\033[0m")
+                self.in_thinking_by_session[event.session_id] = False
+            self._print_tool_start(event)
+        elif event.event_type == "tool_end":
+            self._print_tool_end(event)
         elif event.event_type == "text_delta":
             if self.in_thinking_by_session.get(event.session_id):
                 print("\033[90m [done]\033[0m")
@@ -91,6 +98,15 @@ class ConsoleStreamRenderer:
             self._print_usage(event)
         elif event.event_type == "context_compressed":
             self._print_context_compressed(event)
+
+    def _print_tool_start(self, event: StreamEvent) -> None:
+        if not self.first_line:
+            print()
+        print(f"\033[90m{self._label(event)}▶ Starting {event.content}...\033[0m", end="", flush=True)
+        self.first_line = False
+
+    def _print_tool_end(self, event: StreamEvent) -> None:
+        print("\033[90m [done]\033[0m", flush=True)
 
     def _print_text_delta(self, event: StreamEvent) -> None:
         label = self._label(event)

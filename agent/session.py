@@ -72,6 +72,8 @@ class Session:
 
 Core workflow:
 - Use tools to inspect and modify the workspace instead of guessing.
+- For non-trivial code changes, start by checking workspace_state and relevant
+  git_diff so you understand existing user edits before writing files.
 - Prefer completing simple, local tasks directly. Do not delegate tasks that are small,
   obvious, or require only one or two tool calls.
 - For multi-step or ambiguous work, first identify the goal, constraints, likely
@@ -84,6 +86,10 @@ Core workflow:
   plan when the task is substantial or a tradeoff needs confirmation.
 - After inspecting or editing, reconcile findings against the plan before moving on:
   continue, revise, delegate, or stop and ask when hidden risk appears.
+- Prefer apply_patch for scoped code edits. Use write_file only when creating a new
+  file or replacing an entire generated artifact is clearly safer.
+- After code changes, run verify with the narrowest useful target first, then broader
+  checks when appropriate.
 
 Subagent delegation:
 - Use the subagent tool only for focused subtasks that benefit from isolation, such as

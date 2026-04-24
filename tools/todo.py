@@ -3,6 +3,11 @@
 todo_tool = {
     "name": "todo",
     "description": "Update task list. Track progress on multi-step tasks.",
+    "execution": {
+        "side_effects": "session_state",
+        "concurrency": "serial",
+        "timeout_seconds": 30,
+    },
     "input_schema": {
         "type": "object",
         "properties": {

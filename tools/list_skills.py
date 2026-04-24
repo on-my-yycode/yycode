@@ -6,6 +6,11 @@ list_skills_tool = {
         "List available local skills with their names and descriptions. "
         "Use this before loading a skill when you are unsure what exists."
     ),
+    "execution": {
+        "side_effects": "read_only",
+        "concurrency": "safe",
+        "timeout_seconds": 30,
+    },
     "input_schema": {
         "type": "object",
         "properties": {},

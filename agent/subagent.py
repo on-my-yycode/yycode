@@ -15,6 +15,7 @@ from tools import TOOLS
 
 DEFAULT_MAX_TURNS = 8
 MAX_OUTPUT_CHARS = 20_000
+SUBAGENT_TOOL_TIMEOUT_SECONDS = 60
 
 
 ROLE_PROMPTS = {
@@ -244,7 +245,13 @@ class SubagentRunner:
         return format_subagent_result(role, session_id, hit_turn_limit, final_content)
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
-        return await async_run_tool_with_retry(handler, tool_name, max_retries=2, **kwargs)
+        return await async_run_tool_with_retry(
+            handler,
+            tool_name,
+            max_retries=2,
+            timeout_seconds=SUBAGENT_TOOL_TIMEOUT_SECONDS,
+            **kwargs,
+        )
 
     def _build_user_prompt(self, task: str, context: str) -> str:
         if context:
