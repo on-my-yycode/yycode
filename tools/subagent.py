@@ -2,17 +2,17 @@
 
 subagent_tool = {
     "name": "subagent",
-    "description": (
-        "Delegate a focused task to an isolated subagent and wait for its summary result. "
-        "Use explorer for research, architect for design, worker for implementation, "
-        "and tester for verification."
-    ),
+        "description": (
+            "Delegate a focused task to an isolated subagent and wait for its summary result. "
+            "Use explorer for research, architect for design, worker for implementation, "
+            "tester for verification, and security for security review."
+        ),
     "input_schema": {
         "type": "object",
         "properties": {
             "role": {
                 "type": "string",
-                "enum": ["explorer", "architect", "worker", "tester"],
+                "enum": ["explorer", "architect", "worker", "tester", "security"],
                 "description": "Subagent role to run.",
             },
             "task": {

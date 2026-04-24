@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional, AsyncGenerator, Callable
+from typing import Any, Optional, Callable
 
 
 @dataclass
@@ -35,6 +35,15 @@ class LLMProvider(ABC):
     ) -> ChatResponse:
         """Send a chat request with tool support."""
         pass
+
+    async def count_tokens(
+        self,
+        messages: list[dict],
+        system_prompt: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> Optional[int]:
+        """Return input token count when supported by the provider."""
+        return None
 
     @abstractmethod
     async def close(self) -> None:

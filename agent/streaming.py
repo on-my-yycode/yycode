@@ -89,6 +89,8 @@ class ConsoleStreamRenderer:
             self._print_text_delta(event)
         elif event.event_type == "usage":
             self._print_usage(event)
+        elif event.event_type == "context_compressed":
+            self._print_context_compressed(event)
 
     def _print_text_delta(self, event: StreamEvent) -> None:
         label = self._label(event)
@@ -119,6 +121,12 @@ class ConsoleStreamRenderer:
             f"total={usage.get('total_tokens', 0)}\033[0m",
             flush=True,
         )
+        self.first_line = False
+
+    def _print_context_compressed(self, event: StreamEvent) -> None:
+        if not self.first_line:
+            print()
+        print(f"\033[90m[context] {event.content}\033[0m", flush=True)
         self.first_line = False
 
 

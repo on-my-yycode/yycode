@@ -62,14 +62,15 @@ async def read_user_query(input_func=input) -> str:
 
 
 def build_prompt(session: Session) -> str:
-    """Build the interactive prompt with cumulative token usage."""
-    if session.has_real_usage():
-        total_tokens = session.cumulative_usage["total_tokens"]
-        formatted_tokens = format_token_count(total_tokens)
-        return f"\033[90m[{formatted_tokens} tokens]\033[0m \033[36myoyo >> \033[0m"
+    """Build the interactive prompt with current context window pressure."""
     estimated_tokens = session.estimate_token_usage()
-    formatted_tokens = format_token_count(estimated_tokens)
-    return f"\033[90m[est {formatted_tokens} tokens]\033[0m \033[36myoyo >> \033[0m"
+    formatted_used = format_token_count(estimated_tokens)
+    formatted_window = format_token_count(session.context_window_tokens)
+    percent = format_context_percent(session.estimate_context_window_percent())
+    return (
+        f"\033[90m[{formatted_used}/{formatted_window} {percent}]\033[0m "
+        f"\033[36myoyo >> \033[0m"
+    )
 
 
 def format_token_count(count: int) -> str:
@@ -79,6 +80,13 @@ def format_token_count(count: int) -> str:
     if count < 1_000_000:
         return _format_compact_number(count / 1_000, "k")
     return _format_compact_number(count / 1_000_000, "m")
+
+
+def format_context_percent(percent: float) -> str:
+    """Format context window usage percentage."""
+    if percent < 10:
+        return f"{percent:.1f}%"
+    return f"{percent:.0f}%"
 
 
 def _format_compact_number(value: float, suffix: str) -> str:

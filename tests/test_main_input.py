@@ -4,9 +4,16 @@ import asyncio
 
 from agent.providers.base import ChatResponse, LLMProvider
 from langchain_core.messages import AIMessage, ToolMessage
-from agent.session import Session
+from agent.context_compressor import ContextCompressor
+from agent.session import (
+    DOUBAO_CODE_CONTEXT_WINDOW_TOKENS,
+    Session,
+    infer_context_window_tokens,
+    parse_context_window_tokens,
+)
 from main import (
     build_prompt,
+    format_context_percent,
     format_token_count,
     read_user_query,
     read_user_query_with_session,
@@ -28,6 +35,8 @@ class FakeInput:
 class FakeProvider(LLMProvider):
     """Fake provider for session construction."""
 
+    model = "fake-model"
+
     async def chat(self, messages, tools, system_prompt=None, stream_callback=None):
         return ChatResponse(
             content="",
@@ -36,6 +45,14 @@ class FakeProvider(LLMProvider):
 
     async def close(self):
         return None
+
+
+class FakeCountingProvider(FakeProvider):
+    """Fake provider that reports exact token counts."""
+
+    async def count_tokens(self, messages, system_prompt=None, tools=None):
+        has_compressed_output = "[Compressed old tool output]" in str(messages)
+        return 100 if has_compressed_output else 900
 
 
 def test_read_user_query_returns_single_line_input():
@@ -56,17 +73,26 @@ def test_read_user_query_supports_paste_mode():
     assert len(fake_input.prompts) == 4
 
 
-def test_build_prompt_includes_estimated_tokens(tmp_path):
-    session = Session(provider=FakeProvider(), workdir=tmp_path)
+def test_build_prompt_includes_context_window_pressure(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        system_prompt="x" * 400,
+        context_window_tokens=1_000,
+    )
     prompt = build_prompt(session)
 
-    assert "[" in prompt
-    assert "tokens" in prompt
+    assert "[100/1k 10%]" in prompt
     assert "yoyo >>" in prompt
 
 
-def test_build_prompt_prefers_cumulative_real_usage(tmp_path):
-    session = Session(provider=FakeProvider(), workdir=tmp_path)
+def test_build_prompt_uses_context_window_not_cumulative_usage(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        system_prompt="x" * 1_000,
+        context_window_tokens=10_000,
+    )
     session.cumulative_usage = {
         "input_tokens": 120,
         "output_tokens": 30,
@@ -74,8 +100,8 @@ def test_build_prompt_prefers_cumulative_real_usage(tmp_path):
     }
     prompt = build_prompt(session)
 
-    assert "[153.8k tokens]" in prompt
-    assert "est" not in prompt
+    assert "[250/10k 2.5%]" in prompt
+    assert "153.8k" not in prompt
 
 
 def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
@@ -86,7 +112,8 @@ def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
 
     assert query == "hello"
     assert len(fake_input.prompts) == 1
-    assert "tokens" in fake_input.prompts[0]
+    assert "/" in fake_input.prompts[0]
+    assert "%" in fake_input.prompts[0]
 
 
 def test_format_token_count_supports_compact_units():
@@ -95,6 +122,78 @@ def test_format_token_count_supports_compact_units():
     assert format_token_count(1_250) == "1.2k"
     assert format_token_count(153_835) == "153.8k"
     assert format_token_count(1_200_000) == "1.2m"
+
+
+def test_format_context_percent():
+    assert format_context_percent(2.45) == "2.5%"
+    assert format_context_percent(10.4) == "10%"
+
+
+def test_parse_context_window_tokens():
+    assert parse_context_window_tokens("128000") == 128_000
+    assert parse_context_window_tokens("200_000") == 200_000
+    assert parse_context_window_tokens("bad") is None
+    assert parse_context_window_tokens("-1") is None
+
+
+def test_infer_context_window_tokens_supports_doubao_code():
+    provider = FakeProvider()
+    provider.model = "doubao-seed-2.0-code"
+
+    assert infer_context_window_tokens(provider) == DOUBAO_CODE_CONTEXT_WINDOW_TOKENS
+
+
+def test_session_compresses_old_tool_outputs_and_emits_event(tmp_path):
+    events = []
+
+    async def collect_event(event):
+        events.append(event)
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        system_prompt="short",
+        context_window_tokens=1_000,
+        stream_callback=collect_event,
+    )
+    session.context_compressor = ContextCompressor(
+        context_window_tokens=1_000,
+        keep_recent_messages=1,
+        max_tool_chars=100,
+    )
+    session.add_message(ToolMessage(content="x" * 4_000, tool_call_id="call-1", name="bash"))
+
+    asyncio.run(session.send("hello"))
+
+    assert session.messages[0].additional_kwargs["context_compressed"] is True
+    assert "[Compressed old tool output]" in session.messages[0].content
+    assert any(event.event_type == "context_compressed" for event in events)
+
+
+def test_session_uses_provider_token_count_for_compression(tmp_path):
+    events = []
+
+    async def collect_event(event):
+        events.append(event)
+
+    session = Session(
+        provider=FakeCountingProvider(),
+        workdir=tmp_path,
+        system_prompt="short",
+        context_window_tokens=1_000,
+        stream_callback=collect_event,
+    )
+    session.context_compressor = ContextCompressor(
+        context_window_tokens=1_000,
+        keep_recent_messages=1,
+        max_tool_chars=100,
+    )
+    session.add_message(ToolMessage(content="x" * 4_000, tool_call_id="call-1", name="bash"))
+
+    asyncio.run(session.send("hello"))
+
+    compression_event = next(event for event in events if event.event_type == "context_compressed")
+    assert "(900 -> 100 tokens, exact)" in compression_event.content
 
 
 def test_session_accumulates_real_usage(tmp_path):

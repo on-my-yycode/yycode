@@ -115,6 +115,26 @@ class AnthropicProvider(LLMProvider):
         """Close the client."""
         await self.client.close()
 
+    async def count_tokens(
+        self,
+        messages: list[dict],
+        system_prompt: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> Optional[int]:
+        """Count input tokens using the Anthropic-compatible count endpoint."""
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        if tools:
+            kwargs["tools"] = tools
+
+        response = await self.client.messages.count_tokens(**kwargs)
+        input_tokens = getattr(response, "input_tokens", None)
+        return int(input_tokens) if input_tokens is not None else None
+
     def _extract_usage(self, usage: Any) -> Optional[dict[str, int]]:
         """Normalize Anthropic usage data."""
         if usage is None:

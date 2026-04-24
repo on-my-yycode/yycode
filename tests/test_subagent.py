@@ -48,7 +48,13 @@ def test_subagent_tool_is_registered():
     role_schema = subagent_tool["input_schema"]["properties"]["role"]
 
     assert "subagent" in tool_names
-    assert set(role_schema["enum"]) == {"explorer", "architect", "worker", "tester"}
+    assert set(role_schema["enum"]) == {
+        "explorer",
+        "architect",
+        "worker",
+        "tester",
+        "security",
+    }
     assert set(subagent_tool["input_schema"]["required"]) == {"role", "task"}
     assert set(subagent_tool["input_schema"]["properties"]) == {
         "role",
@@ -64,19 +70,25 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     assert "Core workflow:" in session.system_prompt
     assert "Subagent delegation:" in session.system_prompt
     assert "Do not delegate tasks that are small" in session.system_prompt
+    assert "Build a short execution plan with concrete checkpoints" in session.system_prompt
+    assert "Keep exactly one active item in_progress" in session.system_prompt
+    assert "Do not expose long internal planning by default" in session.system_prompt
     assert "Use list_skills to discover available local skills" in session.system_prompt
     assert "Use the subagent tool with explorer for investigation" in session.system_prompt
     assert "architect for technical design" in session.system_prompt
+    assert "security for code security review" in session.system_prompt
     assert "Give each subagent a specific task" in session.system_prompt
     assert "After a subagent returns, integrate its result yourself" in session.system_prompt
     assert "Safety:" in session.system_prompt
     assert "Keep changes scoped to the user request" in session.system_prompt
 
 
-def test_subagent_roles_include_architect_and_tester():
-    assert set(ROLE_PROMPTS) == {"explorer", "architect", "worker", "tester"}
+def test_subagent_roles_include_architect_tester_and_security():
+    assert set(ROLE_PROMPTS) == {"explorer", "architect", "worker", "tester", "security"}
     assert "technical approach" in ROLE_PROMPTS["architect"]
     assert "verification" in ROLE_PROMPTS["tester"]
+    assert "security risks" in ROLE_PROMPTS["security"]
+    assert "severity" in ROLE_PROMPTS["security"]
 
 
 def test_subagent_prompt_is_concise_and_does_not_inherit_parent_prompt(tmp_path):

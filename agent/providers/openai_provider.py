@@ -4,6 +4,7 @@ import json
 from typing import Any, Optional, Callable
 
 from openai import AsyncOpenAI
+import tiktoken
 
 from .base import LLMProvider, ChatResponse, ToolCall
 
@@ -182,6 +183,50 @@ class OpenAIProvider(LLMProvider):
     async def close(self) -> None:
         """Close the client."""
         await self.client.close()
+
+    async def count_tokens(
+        self,
+        messages: list[dict],
+        system_prompt: Optional[str] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> Optional[int]:
+        """Count input tokens for OpenAI chat-style requests using tiktoken."""
+        openai_messages = self._convert_messages(messages)
+        if system_prompt:
+            openai_messages.insert(0, {"role": "system", "content": system_prompt})
+        openai_tools = self._convert_tools(tools) if tools else None
+
+        encoding = self._encoding_for_model()
+        if encoding is None:
+            return None
+        total = 0
+        for message in openai_messages:
+            total += 3
+            for key, value in message.items():
+                if value is None:
+                    continue
+                total += len(encoding.encode(self._stringify_token_value(value)))
+                if key == "name":
+                    total += 1
+        total += 3
+        if openai_tools:
+            # Tool schema accounting is model-dependent; compact JSON keeps this close.
+            total += len(encoding.encode(json.dumps(openai_tools, separators=(",", ":"))))
+        return total
+
+    def _encoding_for_model(self):
+        try:
+            return tiktoken.encoding_for_model(self.model)
+        except Exception:
+            try:
+                return tiktoken.get_encoding("o200k_base")
+            except Exception:
+                return None
+
+    def _stringify_token_value(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
     def _extract_usage(self, usage: Any) -> Optional[dict[str, int]]:
         """Normalize OpenAI usage data."""

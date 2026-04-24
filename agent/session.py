@@ -17,8 +17,14 @@ from agent.graph import build_graph
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
 from agent.skills import DEFAULT_SKILL_DIRS, SkillRegistry, parse_skill_paths
-from agent.streaming import StreamEventCallback, StreamPrinter
+from agent.context_compressor import ContextCompressor
+from agent.streaming import StreamEvent, StreamEventCallback, StreamPrinter
 from agent.todo_manager import TodoManager
+from tools import TOOLS
+
+
+DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000
+DOUBAO_CODE_CONTEXT_WINDOW_TOKENS = 224_000
 
 
 class Session:
@@ -34,6 +40,7 @@ class Session:
         stream_printer: Optional[StreamPrinter] = None,
         todo_manager: Optional[TodoManager] = None,
         session_id: Optional[str] = None,
+        context_window_tokens: Optional[int] = None,
     ):
         self.id = session_id or str(uuid.uuid4())
         self.provider = provider
@@ -54,6 +61,10 @@ class Session:
             "output_tokens": 0,
             "total_tokens": 0,
         }
+        self.context_window_tokens = context_window_tokens or infer_context_window_tokens(provider)
+        self.context_compressor = ContextCompressor(
+            context_window_tokens=self.context_window_tokens,
+        )
 
     def _default_system_prompt(self) -> str:
         """Get default system prompt."""
@@ -61,10 +72,18 @@ class Session:
 
 Core workflow:
 - Use tools to inspect and modify the workspace instead of guessing.
-- Use the todo tool for multi-step tasks. Mark one item in_progress before starting,
-  and mark items completed as work finishes.
 - Prefer completing simple, local tasks directly. Do not delegate tasks that are small,
   obvious, or require only one or two tool calls.
+- For multi-step or ambiguous work, first identify the goal, constraints, likely
+  affected files, verification path, and risks before changing code.
+- Build a short execution plan with concrete checkpoints. Prefer 3-7 meaningful
+  steps over long task lists.
+- Use the todo tool for multi-step tasks. Keep exactly one active item in_progress,
+  update statuses as work finishes, and revise the plan when new evidence changes it.
+- Do not expose long internal planning by default. Share only a concise user-facing
+  plan when the task is substantial or a tradeoff needs confirmation.
+- After inspecting or editing, reconcile findings against the plan before moving on:
+  continue, revise, delegate, or stop and ask when hidden risk appears.
 
 Subagent delegation:
 - Use the subagent tool only for focused subtasks that benefit from isolation, such as
@@ -72,7 +91,7 @@ Subagent delegation:
 - Use list_skills to discover available local skills, then use load_skill to load only
   the specific skill instructions you need.
 - Use the subagent tool with explorer for investigation, architect for technical design,
-  worker for implementation, and tester for verification.
+  worker for implementation, tester for verification, and security for code security review.
 - Give each subagent a specific task, relevant context, expected output, and clear boundaries.
 - Do not ask subagents to make broad or unrelated changes.
 - After a subagent returns, integrate its result yourself and verify the final outcome
@@ -95,11 +114,15 @@ Prefer concise final answers with what changed and how it was verified."""
         system_prompt: Optional[str] = None,
         skill_dirs: Optional[Iterable[str]] = None,
         session_id: Optional[str] = None,
+        context_window_tokens: Optional[int] = None,
     ) -> "Session":
         """Create a Session from configuration parameters or environment variables."""
         provider_type = (provider_type or os.environ.get("PROVIDER", "anthropic")).lower()
         api_key = api_key or os.environ.get("API_KEY", "")
         api_base = api_base or os.environ.get("API_BASE")
+        context_window_tokens = context_window_tokens or parse_context_window_tokens(
+            os.environ.get("YOYO_CONTEXT_WINDOW_TOKENS")
+        )
         if skill_dirs is None:
             skill_dirs = parse_skill_paths(os.environ.get("YOYO_SKILL_DIRS")) or None
 
@@ -126,6 +149,7 @@ Prefer concise final answers with what changed and how it was verified."""
             system_prompt=system_prompt,
             skill_dirs=skill_dirs,
             session_id=session_id,
+            context_window_tokens=context_window_tokens,
         )
 
     async def close(self) -> None:
@@ -177,10 +201,38 @@ Prefer concise final answers with what changed and how it was verified."""
 
     def estimate_token_usage(self) -> int:
         """Estimate current prompt/history token usage with a lightweight heuristic."""
+        return self.estimate_messages_token_usage(self.messages)
+
+    def estimate_messages_token_usage(self, messages: list[BaseMessage]) -> int:
+        """Estimate token usage for the system prompt plus the provided messages."""
         total_chars = len(self.system_prompt)
-        for message in self.messages:
+        for message in messages:
             total_chars += self._estimate_message_chars(message)
         return math.ceil(total_chars / 4) if total_chars > 0 else 0
+
+    async def count_context_tokens(
+        self,
+        messages: Optional[list[BaseMessage]] = None,
+    ) -> tuple[int, bool]:
+        """Count context tokens with provider support, falling back to estimation."""
+        messages = self.messages if messages is None else messages
+        try:
+            exact = await self.provider.count_tokens(
+                messages=self._messages_to_provider_format(messages),
+                system_prompt=self.system_prompt,
+                tools=TOOLS,
+            )
+        except Exception:
+            exact = None
+        if exact is not None:
+            return exact, True
+        return self.estimate_messages_token_usage(messages), False
+
+    def estimate_context_window_percent(self) -> float:
+        """Estimate how much of the configured context window is currently used."""
+        if self.context_window_tokens <= 0:
+            return 0.0
+        return min((self.estimate_token_usage() / self.context_window_tokens) * 100, 999.9)
 
     def _estimate_message_chars(self, message: BaseMessage) -> int:
         """Estimate message size from its content and basic metadata."""
@@ -206,12 +258,36 @@ Prefer concise final answers with what changed and how it was verified."""
 
         return total
 
+    def _messages_to_provider_format(self, messages: list[BaseMessage]) -> list[dict]:
+        """Convert LangChain messages to the provider-neutral format used by providers."""
+        provider_messages = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                provider_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                provider_messages.append({"role": "assistant", "content": msg.content})
+            elif isinstance(msg, ToolMessage):
+                provider_messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.tool_call_id,
+                                "content": msg.content,
+                            }
+                        ],
+                    }
+                )
+        return provider_messages
+
     async def send(self, content: str) -> AIMessage:
         """Send a user message and get response."""
         # Clear todo for new planning session
         self.todo_manager.prepare_for_new_input()
 
         self.add_user_message(content)
+        await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
 
         result = await self.graph.ainvoke({"messages": self.messages})
@@ -224,6 +300,7 @@ Prefer concise final answers with what changed and how it was verified."""
     async def send_stream(self, content: str) -> AsyncGenerator[str, None]:
         """Send a user message and stream response text."""
         self.add_user_message(content)
+        await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
         result = await self.graph.ainvoke({"messages": self.messages})
         self.messages = result["messages"]
@@ -260,3 +337,53 @@ Prefer concise final answers with what changed and how it was verified."""
         """Accumulate usage from all newly added messages in a graph run."""
         for message in messages:
             self._accumulate_usage(self._extract_usage_from_message(message))
+
+    async def _compress_context_if_needed(self) -> None:
+        """Compress canonical session history before invoking the graph."""
+        original_tokens, original_exact = await self.count_context_tokens()
+        result = self.context_compressor.maybe_compress(
+            self.messages,
+            original_tokens,
+            self.estimate_messages_token_usage,
+        )
+        if not result.did_compress:
+            return
+
+        self.messages = result.messages
+        compressed_tokens, compressed_exact = await self.count_context_tokens(result.messages)
+        token_source = "exact" if original_exact and compressed_exact else "estimated"
+        if self.stream_callback:
+            await self.stream_callback(
+                StreamEvent(
+                    source="main",
+                    session_id=self.id,
+                    event_type="context_compressed",
+                    content=(
+                        f"compressed {result.compressed_messages} old tool outputs "
+                        f"({original_tokens} -> {compressed_tokens} tokens, {token_source})"
+                    ),
+                )
+            )
+
+
+def parse_context_window_tokens(value: Optional[str]) -> Optional[int]:
+    """Parse an optional context window token setting."""
+    if not value:
+        return None
+    try:
+        parsed = int(value.replace("_", "").strip())
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
+def infer_context_window_tokens(provider: LLMProvider) -> int:
+    """Infer a reasonable context window from the configured provider/model."""
+    model = str(getattr(provider, "model", "")).lower()
+    if "doubao" in model and "code" in model:
+        return DOUBAO_CODE_CONTEXT_WINDOW_TOKENS
+    if "claude" in model:
+        return 200_000
+    if any(name in model for name in ("gpt-4o", "gpt-4.1", "gpt-5")):
+        return 128_000
+    return DEFAULT_CONTEXT_WINDOW_TOKENS

@@ -2,386 +2,298 @@
 
 ## 概述
 
-本文档描述了 yoyoagent 项目中自动上下文压缩功能的架构设计，用于解决 LLM 对话过程中上下文无限增长的问题。
+本文档记录 yoyoagent 当前已实现的上下文窗口显示与自动上下文压缩机制。该机制用于降低长期会话中 `messages` 无限增长带来的 API 失败、成本上升和响应变慢风险。
 
-## 问题分析
+当前实现采用保守策略：在主 `Session` 调用 graph 前，优先使用 provider/tokenizer 计数检查上下文压力；精确计数不可用时回退到本地估算。当超过阈值时，只压缩较早的长 `ToolMessage` 输出，不压缩最近消息，也不摘要用户/AI 对话。
 
-### 当前架构问题
+## 当前实现状态
 
-在现有实现中，`AgentState` 只包含一个无限增长的 `messages` 列表：
+已实现：
+
+- `yoyo >>` 前显示当前上下文压力，格式为 `[used/window percent]`，例如 `[3.2k/224k 1.4%]`。
+- 支持通过 `YOYO_CONTEXT_WINDOW_TOKENS` 覆盖上下文窗口大小。
+- 对 `doubao-seed-2.0-code` 默认使用 `224_000` tokens 窗口，按最大输入长度而不是总上下文长度估算。
+- 在 `Session.send()` 和 `Session.send_stream()` 调用 graph 前执行压缩检查。
+- 当上下文 token 数超过窗口的 `70%` 时，压缩旧的长工具输出。
+- Provider 层提供可选 `count_tokens(...)` 能力，Anthropic 使用 count endpoint，OpenAI 使用 `tiktoken` 计数。
+- 精确计数失败时自动回退到本地字符估算，不阻塞主流程。
+- 压缩触发时通过 stream 事件打印用户可见日志，例如 `[context] compressed 1 old tool outputs (1002 -> 42 tokens, exact)`。
+
+未实现：
+
+- Human/AI 对话摘要压缩。
+- 重度压缩策略。
+- 压缩历史持久化和监控指标。
+
+## 问题背景
+
+当前 LangGraph 状态使用追加式消息列表：
 
 ```python
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 ```
 
-**消息流转过程：**
+如果只在 graph 的 LLM 节点中临时压缩 `state["messages"]`，下一轮主会话仍会从 `Session.messages` 带回原始长历史。因此当前实现选择在 `Session` 层压缩 canonical history，也就是压缩真正持久存在的主会话消息列表。
+
+消息流现在是：
+
+```text
+用户输入
+  -> Session.add_user_message(...)
+  -> Session._compress_context_if_needed()
+  -> graph.ainvoke({"messages": self.messages})
+  -> Session.messages = result["messages"]
 ```
-START → llm节点 → (条件边) → tools节点 → llm节点
-```
 
-**存在的问题：**
-- 无 token 管理机制
-- 消息会无限累积
-- 最终会超出模型上下文窗口限制
-- 导致 API 调用失败或成本过高
+## 上下文窗口大小
 
-## 设计方案
+窗口大小由 `Session.context_window_tokens` 保存。
 
-### 触发时机
+来源优先级：
 
-在 LLM 节点执行**之前**进行压缩检查：
+1. 显式传入 `Session(..., context_window_tokens=...)`。
+2. 环境变量 `YOYO_CONTEXT_WINDOW_TOKENS`。
+3. 根据 provider/model 推断。
+4. 默认值 `128_000`。
+
+当前推断规则：
 
 ```python
-async def llm_node(state: AgentState) -> AgentState:
-    # 1. 检查并压缩上下文
-    # 2. 调用 LLM
-    # 3. 返回结果
+if "doubao" in model and "code" in model:
+    return 224_000
+if "claude" in model:
+    return 200_000
+if any(name in model for name in ("gpt-4o", "gpt-4.1", "gpt-5")):
+    return 128_000
+return 128_000
 ```
 
-**触发条件：**
-- 基于 token 阈值触发（如：超过模型上下文窗口的 70%）
-- 可配置的触发策略
+`doubao-seed-2.0-code` 使用 `224k` 是因为火山引擎规格中最大上下文长度为 `256k`，但最大输入长度为 `224k`，剩余空间需要留给思考内容和输出。yoyoagent 的提示符展示的是当前输入上下文压力，因此使用 `224k` 更贴近实际可用输入预算。
 
-### 压缩策略层次
+可在 `.env` 中覆盖：
 
-#### 1. 轻度压缩 (Light Compression)
-- **目标**：快速减少 token 使用
-- **策略**：仅删除 ToolMessage 内容，保留 tool_call_id 引用
-- **适用场景**：token 轻度超标
+```env
+YOYO_CONTEXT_WINDOW_TOKENS=224000
+```
 
-#### 2. 中度压缩 (Medium Compression)
-- **目标**：平衡信息保留和 token 节省
-- **策略**：将旧的 Human/AIMessage 对摘要为单条 SummaryMessage
-- **适用场景**：token 中度超标
+## Prompt 显示
 
-#### 3. 重度压缩 (Heavy Compression)
-- **目标**：最大化 token 节省
-- **策略**：除最近 K 条消息外全部摘要，保留 system prompt
-- **适用场景**：token 严重超标
+`main.build_prompt(session)` 使用以下数据生成交互提示符：
 
-### 压缩级别配置
+- `session.estimate_token_usage()`：估算当前 system prompt + messages token 数。
+- `session.context_window_tokens`：当前上下文窗口大小。
+- `session.estimate_context_window_percent()`：估算使用百分比。
+
+示例：
+
+```text
+[3.2k/224k 1.4%] yoyo >>
+```
+
+这里显示的是当前上下文压力，不是累计 API usage。累计 usage 仍保留在 `Session.cumulative_usage` 中，用于统计和 stream usage 事件。
+
+## Token 计数
+
+`LLMProvider` 提供可选计数接口：
 
 ```python
-from dataclasses import dataclass
-from typing import Literal
-
-@dataclass
-class CompressionLevel:
-    """压缩级别配置"""
-    token_threshold: int      # 触发压缩的 token 数
-    keep_recent: int         # 保留的最近消息数
-    strategy: Literal["trim_tool", "summarize", "heavy"]
-    description: str = ""
-
-@dataclass
-class CompressionConfig:
-    """压缩功能配置"""
-    enabled: bool = True
-    levels: list[CompressionLevel] = field(default_factory=list)
-    max_context_tokens: int = 128000  # 默认 Claude 3 Opus 限制
-    compression_ratio: float = 0.7    # 触发压缩的比例
+async def count_tokens(
+    self,
+    messages: list[dict],
+    system_prompt: Optional[str] = None,
+    tools: Optional[list[dict]] = None,
+) -> Optional[int]:
+    return None
 ```
 
-## 接口设计
+返回值语义：
 
-### 新增文件结构
+- `int`：provider/tokenizer 计数成功。
+- `None`：当前 provider 不支持或计数资源不可用，调用方应回退估算。
 
-```
-agent/
-├── context_compressor.py  # 核心压缩逻辑
-└── state.py               # 扩展 AgentState（可选）
-```
+当前实现：
 
-### 核心接口定义
+- Anthropic provider 调用 `client.messages.count_tokens(...)`，传入与 `chat()` 一致的 `model`、`messages`、`system`、`tools`，返回 `input_tokens`。
+- OpenAI provider 使用 `tiktoken` 对转换后的 OpenAI chat messages、system prompt 和 tools schema 计数。
+- OpenAI tokenizer 资源不可用时返回 `None`，避免因为 tokenizer 缓存缺失或离线环境影响正常对话。
+- Base provider 默认返回 `None`。
+
+`Session.count_context_tokens(...)` 是统一入口：
 
 ```python
-from abc import ABC, abstractmethod
-from typing import List, Tuple
-from langchain_core.messages import BaseMessage
-from agent.providers.base import LLMProvider
-
-class ContextCompressor:
-    """上下文压缩器"""
-    
-    def __init__(self, provider: LLMProvider, config: CompressionConfig):
-        self.provider = provider
-        self.config = config
-        self.compression_history = []
-    
-    async def maybe_compress(
-        self, 
-        messages: List[BaseMessage]
-    ) -> Tuple[List[BaseMessage], bool]:
-        """
-        检查并压缩上下文
-        
-        Args:
-            messages: 原始消息列表
-            
-        Returns:
-            (压缩后的消息列表, 是否进行了压缩)
-        """
-        token_count = await self._count_tokens(messages)
-        
-        if token_count < self._get_threshold():
-            return messages, False
-        
-        level = self._select_compression_level(token_count)
-        compressed = self._compress_messages(messages, level)
-        
-        self._record_compression(token_count, len(compressed), level)
-        return compressed, True
-    
-    async def _count_tokens(self, messages: List[BaseMessage]) -> int:
-        """
-        使用 provider 计算 token 数
-        
-        如果 provider 不支持 token 计数，使用估算方法
-        """
-        pass
-    
-    def _get_threshold(self) -> int:
-        """获取触发压缩的阈值"""
-        return int(self.config.max_context_tokens * self.config.compression_ratio)
-    
-    def _select_compression_level(self, token_count: int) -> CompressionLevel:
-        """根据 token 数量选择压缩级别"""
-        pass
-    
-    def _compress_messages(
-        self, 
-        messages: List[BaseMessage], 
-        level: CompressionLevel
-    ) -> List[BaseMessage]:
-        """执行实际压缩"""
-        pass
-    
-    def _record_compression(
-        self, 
-        original_tokens: int, 
-        compressed_count: int, 
-        level: CompressionLevel
-    ):
-        """记录压缩历史用于监控"""
-        pass
+exact = await provider.count_tokens(
+    messages=provider_messages,
+    system_prompt=self.system_prompt,
+    tools=TOOLS,
+)
+if exact is not None:
+    return exact, True
+return self.estimate_messages_token_usage(messages), False
 ```
 
-### 摘要消息类型
+初版只在压缩触发检查时调用 provider 计数，不在每次 `yoyo >>` prompt 构建时远程计数，避免额外延迟和成本。
+
+## 压缩触发条件
+
+当前压缩器位于 `agent/context_compressor.py`。
+
+默认参数：
 
 ```python
-from langchain_core.messages import BaseMessage
-
-class SummaryMessage(BaseMessage):
-    """摘要消息类型"""
-    
-    type: str = "summary"
-    
-    def __init__(self, content: str, original_range: Tuple[int, int]):
-        """
-        Args:
-            content: 摘要内容
-            original_range: 原始消息的索引范围 (start, end)
-        """
-        super().__init__(content=content)
-        self.original_range = original_range
+DEFAULT_COMPRESSION_RATIO = 0.7
+DEFAULT_KEEP_RECENT_MESSAGES = 20
+DEFAULT_MAX_TOOL_CHARS = 2_000
 ```
 
-## 集成方案
-
-### 修改点分析
-
-**需要修改的文件：**
-1. `agent/graph.py` - 在 LLM 节点中插入压缩逻辑
-2. `agent/providers/base.py` - 可选添加 `count_tokens` 抽象方法
-
-**无需修改的文件：**
-- `AgentState` 定义
-- 图结构
-- 条件边逻辑
-
-### 集成代码示例
-
-在 `agent/graph.py` 的 LLM 节点中集成：
+触发逻辑：
 
 ```python
-def create_llm_node(
-    provider: LLMProvider,
-    system_prompt: str,
-    session_id: str,
-    stream_callback: StreamEventCallback = None,
-    compression_config: CompressionConfig = None,
-):
-    """创建带上下文压缩的 LLM 节点"""
-    
-    compressor = None
-    if compression_config and compression_config.enabled:
-        compressor = ContextCompressor(provider, compression_config)
-    
-    async def llm_node(state: AgentState) -> AgentState:
-        """调用 LLM，带上下文压缩"""
-        
-        # 1. 检查并压缩上下文
-        messages_to_use = state["messages"]
-        if compressor:
-            messages_to_use, did_compress = await compressor.maybe_compress(
-                state["messages"]
-            )
-            if did_compress and stream_callback:
-                stream_callback("context_compressed", {
-                    "session_id": session_id,
-                    "original_count": len(state["messages"]),
-                    "compressed_count": len(messages_to_use),
-                })
-        
-        # 2. 构建 provider 格式消息
-        anthropic_messages = []
-        for msg in messages_to_use:
-            # ... 现有消息转换逻辑 ...
-        
-        # 3. 调用 LLM
-        response = await provider.chat(
-            messages=anthropic_messages,
-            tools=TOOLS,
-            system_prompt=system_prompt,
-            stream_callback=provider_stream_callback,
-        )
-        
-        # ... 现有返回逻辑 ...
-    
-    return llm_node
+threshold_tokens = int(context_window_tokens * compression_ratio)
+if context_tokens >= threshold_tokens:
+    compress old long ToolMessage outputs
 ```
 
-### LLMProvider 扩展
+例如对 `doubao-seed-2.0-code`：
 
-可选地在基类中添加 token 计数支持：
-
-```python
-class LLMProvider(ABC):
-    """Abstract base class for LLM providers."""
-    
-    @abstractmethod
-    async def chat(...):
-        pass
-    
-    @abstractmethod
-    async def close(self) -> None:
-        pass
-    
-    async def count_tokens(self, messages: list[dict]) -> int:
-        """
-        计算消息的 token 数（可选实现）
-        
-        默认使用简单估算，子类可以覆盖提供精确计算
-        """
-        # 简单估算：按字符数估算
-        total_chars = sum(len(str(msg)) for msg in messages)
-        return total_chars // 4  # 粗略估计：4 字符 ≈ 1 token
+```text
+context_window_tokens = 224_000
+compression_ratio = 0.7
+threshold_tokens = 156_800
 ```
 
-## 关键考虑
+## 压缩策略
 
-### 向后兼容
+当前只实现轻度压缩。
+
+策略规则：
+
+- 只处理 `ToolMessage`。
+- 只处理最近 `20` 条消息之前的旧消息。
+- 只处理内容长度超过 `2_000` 字符的工具输出。
+- 保留 `tool_call_id` 和 `name`。
+- 复制原始 `additional_kwargs`。
+- 添加 `context_compressed=True` 和 `original_chars` 元数据。
+- 不删除消息，不改变消息顺序。
+
+压缩后的工具输出示例：
+
+```text
+[Compressed old tool output]
+tool: bash
+original_chars: 12000
+reason: context window usage crossed the compression threshold.
+```
+
+这样做的目的是优先压缩最容易膨胀的 bash/read_file/load_skill/subagent 等工具结果，同时避免破坏最近一轮 tool call / tool result 的上下文关系。
+
+## 可观测性
+
+压缩发生后，`Session._compress_context_if_needed()` 会发出结构化 stream 事件：
 
 ```python
-# 默认配置禁用压缩，不影响现有功能
-default_compression_config = CompressionConfig(
-    enabled=False,
-    max_context_tokens=128000,
-    compression_ratio=0.7,
-    levels=[
-        CompressionLevel(
-            token_threshold=89600,  # 70% of 128k
-            keep_recent=10,
-            strategy="trim_tool",
-            description="轻度压缩：仅修剪工具消息"
-        ),
-        CompressionLevel(
-            token_threshold=102400,  # 80% of 128k
-            keep_recent=5,
-            strategy="summarize",
-            description="中度压缩：摘要旧消息"
-        ),
-        CompressionLevel(
-            token_threshold=115200,  # 90% of 128k
-            keep_recent=2,
-            strategy="heavy",
-            description="重度压缩：最大化压缩"
-        ),
-    ]
+StreamEvent(
+    source="main",
+    session_id=self.id,
+    event_type="context_compressed",
+    content="compressed 1 old tool outputs (1002 -> 42 tokens, exact)",
 )
 ```
 
-### 可观测性
+`ConsoleStreamRenderer` 收到该事件后打印：
 
-通过 `stream_callback` 发出压缩事件：
-
-```python
-if stream_callback:
-    stream_callback("context_compressed", {
-        "session_id": session_id,
-        "original_tokens": original_tokens,
-        "compressed_tokens": compressed_tokens,
-        "compression_ratio": compression_ratio,
-        "level_used": level_name,
-    })
+```text
+[context] compressed 1 old tool outputs (1002 -> 42 tokens, exact)
 ```
 
-### 扩展性
+计数来源会体现在日志末尾：
 
-支持自定义压缩策略：
+- `exact`：压缩前后都使用 provider/tokenizer 计数成功。
+- `estimated`：至少有一次计数回退到了本地估算。
 
-```python
-class CustomCompressionStrategy(ABC):
-    """自定义压缩策略接口"""
-    
-    @abstractmethod
-    def should_compress(self, messages: List[BaseMessage], token_count: int) -> bool:
-        pass
-    
-    @abstractmethod
-    def compress(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-        pass
+该事件也可被后续统一流式输出层转发给其它端使用。
+
+## 关键设计取舍
+
+### 为什么在 Session 层压缩
+
+`Session.messages` 是长期会话历史的真实来源。Graph state 使用 `add_messages` reducer，更适合追加节点输出，不适合替换整段历史。如果压缩只发生在 LLM node 内部，压缩结果不会自然回写到下一轮主会话。
+
+因此当前实现选择：
+
+```text
+Session.messages 压缩后再传入 graph
 ```
 
-## 实施计划
+这保证压缩结果会持续生效。
 
-### Phase 1: 基础框架
-- [ ] 创建 `context_compressor.py`
-- [ ] 实现 token 计数（估算版本）
-- [ ] 实现轻度压缩策略
+### 为什么只压缩旧 ToolMessage
 
-### Phase 2: 核心功能
-- [ ] 实现中度压缩策略
-- [ ] 实现重度压缩策略
-- [ ] 集成到 graph.py
+工具输出通常是上下文膨胀主因，尤其是 `bash`、`read_file`、`load_skill`、`subagent` 返回。先压缩旧工具输出可以用最小行为变化获得明显 token 节省。
 
-### Phase 3: 增强功能
-- [ ] 精确 token 计数（provider 特定实现）
-- [ ] 压缩历史记录
-- [ ] 性能监控
+当前不压缩 Human/AI 对话，是为了避免摘要质量不稳定导致任务意图丢失。
 
-### Phase 4: 优化
-- [ ] 自定义压缩策略支持
-- [ ] 智能压缩级别选择
-- [ ] A/B 测试框架
+### 为什么保留最近 20 条消息
 
-## 风险评估
+最近消息最可能包含当前任务状态、最新工具调用和模型下一步决策依据。保留最近 20 条可以降低破坏 OpenAI/Anthropic 工具调用顺序语义的风险。
 
-| 风险 | 影响 | 概率 | 缓解措施 |
-|------|------|------|----------|
-| 压缩导致信息丢失 | 高 | 中 | 保守的压缩策略，可配置的保留消息数 |
-| 压缩增加延迟 | 中 | 低 | 异步执行，token 估算优化 |
-| 摘要质量不稳定 | 中 | 中 | 使用专门的摘要 prompt，可回退 |
+## 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| token 估算不准 | 可能过早或过晚压缩 | 已优先使用 provider/tokenizer 计数，失败时回退估算 |
+| 工具输出被压缩后细节丢失 | 模型可能无法引用旧日志细节 | 仅压缩旧工具输出，保留最近消息 |
+| 没有可压缩 ToolMessage 时仍超过窗口 | 仍可能调用失败 | 后续增加摘要压缩或重度压缩 |
+| 压缩后的 ToolMessage 再次被压缩 | 无实际收益 | 已通过内容变短降低重复压缩概率，后续可显式跳过 `context_compressed` |
+
+## 测试覆盖
+
+当前测试覆盖：
+
+- prompt 显示上下文窗口压力，而不是累计 usage。
+- token 数格式支持 `k/m`。
+- `YOYO_CONTEXT_WINDOW_TOKENS` 解析。
+- `doubao-seed-2.0-code` 默认推断为 `224k`。
+- Base provider 默认不支持计数并返回 `None`。
+- Anthropic provider 调用 count endpoint 并返回 `input_tokens`。
+- OpenAI provider 使用 tokenizer 计数 messages/system/tools，tokenizer 不可用时返回 `None`。
+- Session 压缩优先使用 provider 计数，并在日志中标记 `exact` 或 `estimated`。
+- 超阈值时压缩旧工具输出并发出 `context_compressed` 事件。
+- usage 累计逻辑保持不变。
+
+验证命令：
+
+```bash
+pytest
+```
+
+## 后续计划
+
+### Phase 1: 计数增强
+
+- 为更多 OpenAI-compatible / Anthropic-compatible 网关验证 tokenizer 或 endpoint 支持情况。
+- 在 prompt 显示中可选标记 estimated/exact，但避免每轮输入前都调用远程计数。
+- 增加 debug 日志记录计数失败原因。
+
+### Phase 2: 中度压缩
+
+- 对较早的 Human/AI 对话生成摘要消息。
+- 摘要生成应禁用工具调用，避免递归复杂化。
+- 摘要结果需要保留用户目标、关键决策、已修改文件、测试结果和未完成事项。
+
+### Phase 3: 重度压缩
+
+- 当轻度和中度压缩仍无法降到安全阈值时，只保留 system prompt、摘要和最近 K 条消息。
+- 增加更明确的用户可见日志，说明压缩级别和潜在信息损失。
+
+### Phase 4: 可配置策略
+
+- 支持配置 `compression_ratio`、`keep_recent_messages`、`max_tool_chars`。
+- 支持禁用自动压缩。
+- 支持导出压缩历史用于调试。
 
 ## 总结
 
-本设计方案提供了一个灵活、可扩展的自动上下文压缩功能，具有以下优势：
+当前实现是一个低风险 MVP：它不改变 graph 拓扑，不引入额外 LLM 调用，不摘要用户意图，只在主会话进入 graph 前压缩旧的长工具输出，并通过 stream 事件让用户看到压缩发生。
 
-✅ 对现有 LangGraph 流程的改动最小  
-✅ 支持多级压缩策略  
-✅ 保持向后兼容  
-✅ 提供良好的可观测性  
-✅ 支持自定义扩展  
-
-通过这个设计，yoyoagent 可以有效地管理上下文长度，避免超出模型限制，同时保持对话的连贯性。
+这个版本已经能缓解长期 coding session 中最常见的上下文膨胀问题，同时为后续精确 token 计数、多级摘要压缩和统一流式输出保留了扩展空间。
