@@ -1,17 +1,18 @@
 """Bash tool."""
 
-import os
 import subprocess
 from pathlib import Path
+
+from .safety import unsafe_command_response
 
 WORKDIR = Path.cwd()
 
 
 def bash(command: str) -> str:
     """Run a shell command."""
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
+    unsafe_response = unsafe_command_response(command)
+    if unsafe_response:
+        return unsafe_response
     try:
         r = subprocess.run(
             command,

@@ -1,26 +1,20 @@
 """Edit file tool."""
 
-from pathlib import Path
-
-from .read_file import safe_path
-
-
 def edit_file(path: str, old_text: str, new_text: str) -> str:
     """Replace exact text in file."""
-    try:
-        fp = safe_path(path)
-        content = fp.read_text()
-        if old_text not in content:
-            return f"Error: Text not found in {path}"
-        fp.write_text(content.replace(old_text, new_text, 1))
-        return f"Edited {path}"
-    except Exception as e:
-        return f"Error: {e}"
+    return (
+        f"Code workflow guard blocked edit_file for: {path}\n\n"
+        "Use apply_patch with path + old_text + new_text, or a unified diff, "
+        "for code edits so the change is reviewable and the diff can be shown to the user."
+    )
 
 
 edit_file_tool = {
     "name": "edit_file",
-    "description": "Replace exact text in file.",
+    "description": (
+        "Fallback exact-text replacement for exceptional cases. Prefer apply_patch "
+        "for normal code edits so changes are reviewable as a diff."
+    ),
     "execution": {
         "side_effects": "workspace_write",
         "concurrency": "serial",

@@ -14,6 +14,12 @@ from langchain_core.messages import (
 )
 
 from agent.providers.base import LLMProvider
+from agent.approval import (
+    ApprovalCallback,
+    ApprovalDenied,
+    approval_cache_key,
+    approval_request_for_tool,
+)
 from agent.skills import SkillRegistry
 from agent.subagent import SubagentRunner
 from agent.tool_retry import async_run_tool_with_retry
@@ -32,6 +38,7 @@ DEFAULT_TOOL_EXECUTION = {
     "concurrency": "serial",
     "timeout_seconds": DEFAULT_TOOL_TIMEOUT_SECONDS,
 }
+MAX_TOOL_RESULT_PREVIEW_CHARS = 12_000
 
 
 def create_llm_node(
@@ -116,6 +123,7 @@ def create_tools_node(
     session_id: str,
     skill_dirs: list[str] | None = None,
     stream_callback: StreamEventCallback = None,
+    approval_callback: ApprovalCallback = None,
 ):
     """Create tools node with todo manager access."""
     # Create a todo handler bound to this manager
@@ -128,6 +136,7 @@ def create_tools_node(
         "workspace_state_checked": False,
         "git_diff_checked": False,
         "needs_verify": False,
+        "approved_write_keys": set(),
     }
 
     def create_subagent_runner():
@@ -140,6 +149,7 @@ def create_tools_node(
             parent_session_id=session_id,
             skill_dirs=skill_dirs,
             stream_callback=stream_callback,
+            approval_callback=approval_callback,
         )
 
     def resolve_handler(tool_name: str):
@@ -172,6 +182,57 @@ def create_tools_node(
 
     def has_preflight() -> bool:
         return workflow_guard["workspace_state_checked"] and workflow_guard["git_diff_checked"]
+
+    def path_exists(path: str) -> bool:
+        if not path:
+            return False
+        return (workdir / path).resolve().exists()
+
+    def should_require_apply_patch(tc) -> bool:
+        if tc.name == "edit_file":
+            return True
+        if tc.name == "write_file":
+            return path_exists(tc.args.get("path", ""))
+        return False
+
+    def apply_patch_required_message(tc) -> str:
+        path = tc.args.get("path", "")
+        if tc.name == "write_file":
+            return (
+                f"Code workflow guard blocked write_file for existing file: {path}\n\n"
+                "Use apply_patch with path + old_text + new_text, or a unified diff, "
+                "for existing file edits. "
+                "write_file is only allowed for brand-new files or generated artifacts."
+            )
+        return (
+            f"Code workflow guard blocked edit_file for: {path}\n\n"
+            "Use apply_patch with path + old_text + new_text, or a unified diff, "
+            "for code edits so the change is reviewable "
+            "and the diff can be shown to the user."
+        )
+
+    def diff_preview_from_output(output: str) -> str:
+        marker = "\ndiff:\n"
+        if marker in output:
+            preview = output.split(marker, 1)[1]
+        elif output.startswith("diff:\n"):
+            preview = output[len("diff:\n") :]
+        else:
+            preview = output
+        if len(preview) > MAX_TOOL_RESULT_PREVIEW_CHARS:
+            return preview[:MAX_TOOL_RESULT_PREVIEW_CHARS] + (
+                f"\n... diff preview truncated to {MAX_TOOL_RESULT_PREVIEW_CHARS} chars"
+            )
+        return preview
+
+    def tool_output_indicates_successful_write(output: str) -> bool:
+        return not output.startswith(
+            (
+                "Error:",
+                "approval_required:",
+                "Code workflow guard blocked",
+            )
+        )
 
     def _format_tool_description(tc) -> str:
         """Format a tool call for display."""
@@ -224,6 +285,25 @@ def create_tools_node(
             "Review the existing changes, then retry the write with the smallest safe patch."
         )
 
+    async def approve_tool_call(tc) -> dict:
+        request = approval_request_for_tool(tc.name, tc.args or {})
+        if request is None:
+            return tc.args
+        cache_key = approval_cache_key(request)
+        if cache_key in workflow_guard["approved_write_keys"]:
+            approved_args = dict(tc.args or {})
+            approved_args["approved"] = True
+            return approved_args
+        if approval_callback is None:
+            raise ApprovalDenied(request)
+        approved = await approval_callback(request)
+        if not approved:
+            raise ApprovalDenied(request)
+        workflow_guard["approved_write_keys"].add(cache_key)
+        approved_args = dict(tc.args or {})
+        approved_args["approved"] = True
+        return approved_args
+
     async def execute_tool_call(tc):
         # Send tool start event
         if stream_callback:
@@ -245,6 +325,13 @@ def create_tools_node(
                     tool_call_id=tc.id,
                     name=tc.name,
                 )
+            if should_require_apply_patch(tc):
+                return ToolMessage(
+                    content=apply_patch_required_message(tc),
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                )
+            approved_args = await approve_tool_call(tc)
 
             runner = create_subagent_runner() if tc.name == "subagent" else None
             handler = runner.run if runner else resolve_handler(tc.name)
@@ -253,7 +340,7 @@ def create_tools_node(
                 tc.name,
                 max_retries=2,
                 timeout_seconds=timeout_for_tool(tc.name),
-                **tc.args,
+                **approved_args,
             )
             tool_message = ToolMessage(
                 content=output,
@@ -266,8 +353,17 @@ def create_tools_node(
                 workflow_guard["workspace_state_checked"] = True
             if tc.name == "git_diff":
                 workflow_guard["git_diff_checked"] = True
-            if is_workspace_write(tc.name):
+            if is_workspace_write(tc.name) and tool_output_indicates_successful_write(output):
                 workflow_guard["needs_verify"] = True
+                if stream_callback:
+                    await stream_callback(
+                        StreamEvent(
+                            source="main",
+                            session_id=session_id,
+                            event_type="tool_result",
+                            content=diff_preview_from_output(output),
+                        )
+                    )
             if tc.name == "verify":
                 workflow_guard["needs_verify"] = False
             return tool_message
@@ -360,6 +456,7 @@ def build_graph(
     session_id: str,
     skill_dirs: list[str] | None = None,
     stream_callback: StreamEventCallback = None,
+    approval_callback: ApprovalCallback = None,
 ):
     """Build the agent graph."""
     builder = StateGraph(AgentState)
@@ -374,6 +471,7 @@ def build_graph(
             session_id,
             skill_dirs,
             stream_callback,
+            approval_callback,
         ),
     )
 

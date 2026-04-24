@@ -12,24 +12,24 @@ def test_grep_tool_is_registered():
 
     assert "grep" in tool_names
     assert TOOL_HANDLERS["grep"] is grep
-    assert grep_tool["description"] == "A powerful search tool built on ripgrep"
+    assert grep_tool["description"] == (
+        "A Python-powered grep tool for searching workspace files with regular expressions."
+    )
     assert set(grep_tool["input_schema"]["required"]) == {"pattern"}
 
 
 def test_grep_finds_matches(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.grep.WORKDIR", tmp_path)
     file_path = tmp_path / "sample.txt"
     file_path.write_text("alpha\nneedle here\nbeta\n")
 
     result = grep("needle", "sample.txt")
 
-    assert "2:needle here" in result
+    assert "sample.txt:2:needle here" in result
 
 
 def test_grep_reports_no_matches(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.grep.WORKDIR", tmp_path)
     (tmp_path / "sample.txt").write_text("alpha\n")
 
     result = grep("needle", ".")
@@ -39,9 +39,28 @@ def test_grep_reports_no_matches(tmp_path, monkeypatch):
 
 def test_grep_blocks_paths_outside_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.grep.WORKDIR", tmp_path)
     outside = Path(tmp_path).parent
 
     result = grep("needle", str(outside))
 
     assert result.startswith("Error: Path escapes workspace")
+
+
+def test_grep_reports_invalid_regex(tmp_path, monkeypatch):
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    (tmp_path / "sample.txt").write_text("alpha\n")
+
+    result = grep("[", ".")
+
+    assert result.startswith("Error: invalid regex pattern:")
+
+
+def test_grep_skips_binary_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    (tmp_path / "binary.bin").write_bytes(b"needle\x00here")
+    (tmp_path / "sample.txt").write_text("needle\n")
+
+    result = grep("needle", ".")
+
+    assert "sample.txt:1:needle" in result
+    assert "binary.bin" not in result

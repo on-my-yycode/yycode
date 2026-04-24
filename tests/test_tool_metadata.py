@@ -23,3 +23,4 @@ def test_mvp_tools_are_registered():
     tool_names = {tool["name"] for tool in TOOLS}
 
     assert {"workspace_state", "git_diff", "apply_patch", "verify"} <= tool_names
+    assert {"list_files", "read_many_files", "git_show"} <= tool_names

@@ -6,6 +6,12 @@ from typing import Callable, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
+from agent.approval import (
+    ApprovalCallback,
+    ApprovalDenied,
+    approval_cache_key,
+    approval_request_for_tool,
+)
 from agent.providers.base import LLMProvider
 from agent.skills import SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
@@ -140,6 +146,7 @@ class SubagentRunner:
         parent_session_id: Optional[str] = None,
         skill_dirs: Optional[list[str]] = None,
         stream_callback: Optional[StreamEventCallback] = None,
+        approval_callback: Optional[ApprovalCallback] = None,
     ):
         self.provider = provider
         self.workdir = workdir
@@ -150,7 +157,9 @@ class SubagentRunner:
         self.list_skills_handler = lambda: self.skill_registry.format_skill_list()
         self.load_skill_handler = lambda names: self.skill_registry.format_loaded_skills(names)
         self.stream_callback = stream_callback
+        self.approval_callback = approval_callback
         self.last_usage: Optional[dict[str, int]] = None
+        self.approved_write_keys: set[tuple[str, str, str]] = set()
         self.tool_handlers = {
             name: handler
             for name, handler in tool_handlers.items()
@@ -175,6 +184,7 @@ class SubagentRunner:
             "output_tokens": 0,
             "total_tokens": 0,
         }
+        self.approved_write_keys = set()
         session_id = str(uuid.uuid4())
         provider_stream_callback = make_provider_stream_callback(
             self.stream_callback,
@@ -245,6 +255,24 @@ class SubagentRunner:
         return format_subagent_result(role, session_id, hit_turn_limit, final_content)
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
+        request = approval_request_for_tool(tool_name, kwargs)
+        if request is not None:
+            cache_key = approval_cache_key(request)
+            if cache_key in self.approved_write_keys:
+                return await async_run_tool_with_retry(
+                    handler,
+                    tool_name,
+                    max_retries=2,
+                    timeout_seconds=SUBAGENT_TOOL_TIMEOUT_SECONDS,
+                    **{**kwargs, "approved": True},
+                )
+            if self.approval_callback is None:
+                raise ApprovalDenied(request)
+            approved = await self.approval_callback(request)
+            if not approved:
+                raise ApprovalDenied(request)
+            self.approved_write_keys.add(cache_key)
+            kwargs = {**kwargs, "approved": True}
         return await async_run_tool_with_retry(
             handler,
             tool_name,

@@ -10,6 +10,7 @@ import asyncio
 from dotenv import load_dotenv
 
 from agent import Session
+from agent.approval import ApprovalRequest
 
 # Try to enable readline for better input experience
 try:
@@ -105,6 +106,14 @@ async def read_user_query_with_session(session: Session, input_func=input) -> st
     return query
 
 
+async def console_approval_callback(request: ApprovalRequest) -> bool:
+    """Ask the user to approve a risky tool execution in the console."""
+    print()
+    print(request.format())
+    answer = await asyncio.to_thread(input, "\033[33mApprove this action? [y/N] \033[0m")
+    return answer.strip().lower() in {"y", "yes"}
+
+
 async def main():
     print("\033[33m" + LOGO + "\033[0m")
     print("Yoyo Agent - Ready!\n")
@@ -112,7 +121,7 @@ async def main():
     load_dotenv(override=True)
 
     # Create session from config/environment
-    session = Session.from_config()
+    session = Session.from_config(approval_callback=console_approval_callback)
     print(f"\033[90mSession ID: {session.id}\033[0m")
     print("\033[90mSystem Prompt:\033[0m")
     print(session.system_prompt)

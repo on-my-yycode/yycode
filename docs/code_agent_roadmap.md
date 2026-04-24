@@ -19,6 +19,7 @@
 
 - 工具系统：`read_file`、`write_file`、`edit_file`、`bash`、`grep`、skills、todo。
 - Code agent MVP 工具：`workspace_state`、`git_diff`、`apply_patch`、`verify`。
+- 代码理解工具：`list_files`、`read_many_files`、`grep`、`git_show`。
 - subagent：`explorer`、`architect`、`worker`、`tester`、`security`。
 - 上下文窗口显示和轻度压缩。
 - Provider/tokenizer token counting 与估算兜底。
@@ -32,6 +33,7 @@
 - 更强代码导航工具。
 - 长任务摘要记忆。
 - 安全审批机制。
+- 安全审批机制的完整交互 UI。
 - 本地 evals。
 
 ## MVP 实现状态
@@ -40,12 +42,14 @@
 
 - Phase 1：所有工具声明 `execution` metadata，`agent.graph` 根据 metadata 做并发和超时调度。
 - Phase 2：新增 `workspace_state` 与 `git_diff`，用于修改前了解分支、工作区状态和差异。
-- Phase 3：新增 `apply_patch`，当前 v1 接收 workspace 内的 unified diff，默认拒绝删除文件。
+- Phase 3：新增 `apply_patch`，当前支持 exact replacement 与 workspace 内 unified diff，默认阻断删除文件，且写入前需要显式授权。
 - Phase 4：新增 `verify`，支持 `all`、`tests`、`lint`、`typecheck`。
 - 主 agent prompt 已加入非简单修改前检查 workspace/git diff、优先 patch 编辑、改完验证的规则。
 - 运行时 workflow guard 会在写入类工具执行前拦截未预检的写入，自动返回 `workspace_state` 与 `git_diff` 给模型，并要求它复核后重试。
 - 写入类工具执行后，workflow guard 会追加验证提醒，推动模型先运行 `verify` 再最终回复。
 - 测试覆盖工具注册、metadata、并发调度、git 状态、diff、patch、verify 和 subagent 回归。
+- Phase 5 基础代码理解工具已实现：`list_files`、`read_many_files`、Python `grep`、`git_show`。
+- Phase 7 v1 已实现：危险 bash/git 命令、删除 patch、文件创建/编辑返回 `approval_required` 阻断信息；主会话和 subagent 的写入工具会在控制台请求用户审批后才执行，用户拒绝后终止本轮任务。
 
 ## 总体路线
 
@@ -231,7 +235,17 @@ Use edit_file only for small exact replacements.
 }
 ```
 
-说明：当前工具使用 `git apply`，因此 v1 输入格式是 unified diff，不是 Codex 内部 `*** Begin Patch` 格式。
+也可以使用更稳的 exact replacement 模式：
+
+```json
+{
+  "path": "agent/foo.py",
+  "old_text": "old",
+  "new_text": "new"
+}
+```
+
+说明：`patch` 字段使用 `git apply`，因此输入格式是 unified diff，不是 Codex 内部 `*** Begin Patch` 格式。普通已有文件小改动优先使用 `path + old_text + new_text`，避免模型手写 diff 出错。
 
 ### 风险控制
 
@@ -308,6 +322,8 @@ summary:
 
 ## Phase 5: 代码理解工具
 
+状态：基础版已实现。
+
 ### 建议工具
 
 ```text
@@ -369,6 +385,8 @@ next_steps
 
 ## Phase 7: 安全审批机制
 
+状态：v1 阻断和控制台交互式审批已实现，图形化审批 UI 未实现。
+
 ### 定义
 
 安全审批是指：当 agent 准备执行高风险操作时，不直接执行，而是先停下来向用户确认。
@@ -419,7 +437,7 @@ risk: User work may be lost.
 
 ### v1 建议
 
-先不做真正交互审批，只做阻断并提示用户手动确认。后续再升级为：
+当前已实现工具层阻断和运行时控制台审批：文件创建/编辑工具默认返回 `approval_required`；在主会话或 subagent 工具执行路径中，runtime 会先暂停并在控制台询问用户，用户批准后才临时注入 `approved=true` 执行；用户拒绝后抛出审批拒绝信号，由 Session 终止本轮任务。后续再升级为：
 
 ```text
 agent 发起 approval_request

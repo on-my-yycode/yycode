@@ -2,8 +2,10 @@
 
 import asyncio
 
+import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 
+from agent.approval import ApprovalDenied
 from agent.graph import create_llm_node, create_tools_node
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.session import Session
@@ -81,7 +83,9 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     assert "security for code security review" in session.system_prompt
     assert "Give each subagent a specific task" in session.system_prompt
     assert "After a subagent returns, integrate its result yourself" in session.system_prompt
-    assert "Prefer apply_patch for scoped code edits" in session.system_prompt
+    assert "Use apply_patch as the primary tool for editing existing files" in session.system_prompt
+    assert "Use write_file" in session.system_prompt
+    assert "brand-new files or generated artifacts" in session.system_prompt
     assert "run verify with the narrowest useful target" in session.system_prompt
     assert "Safety:" in session.system_prompt
     assert "Keep changes scoped to the user request" in session.system_prompt
@@ -187,6 +191,86 @@ def test_subagent_runner_uses_filtered_tools_and_returns_summary(tmp_path):
     assert "found the answer" in result
     assert "subagent" not in {tool["name"] for tool in provider.calls[0]["tools"]}
     assert "todo" not in {tool["name"] for tool in provider.calls[0]["tools"]}
+
+
+def test_subagent_runner_raises_approval_denied_for_self_approved_write(tmp_path):
+    called = []
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="write-1",
+                        name="write_file",
+                        args={"path": "new.py", "content": "x", "approved": True},
+                    )
+                ],
+            ),
+            ChatResponse(content="done"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"write_file": lambda **kwargs: called.append(kwargs) or "wrote"},
+        tools=[
+            {
+                "name": "write_file",
+                "description": "write",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    with pytest.raises(ApprovalDenied) as exc:
+        asyncio.run(runner.run(role="worker", task="write"))
+
+    assert called == []
+    assert exc.value.request.action == "create_file"
+
+
+def test_subagent_runner_allows_write_after_runtime_approval(tmp_path):
+    called = []
+
+    async def approve(_request):
+        return True
+
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="write-1",
+                        name="write_file",
+                        args={"path": "new.py", "content": "x"},
+                    )
+                ],
+            ),
+            ChatResponse(content="done"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"write_file": lambda **kwargs: called.append(kwargs) or "wrote"},
+        tools=[
+            {
+                "name": "write_file",
+                "description": "write",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+        approval_callback=approve,
+    )
+
+    result = asyncio.run(runner.run(role="worker", task="write"))
+
+    assert "done" in result
+    assert called == [{"path": "new.py", "content": "x", "approved": True}]
 
 
 def test_subagent_runner_emits_structured_stream_events(tmp_path):

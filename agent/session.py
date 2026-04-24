@@ -13,6 +13,7 @@ from langchain_core.messages import (
     BaseMessage,
 )
 
+from agent.approval import ApprovalCallback, ApprovalDenied
 from agent.graph import build_graph
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
@@ -37,6 +38,7 @@ class Session:
         system_prompt: Optional[str] = None,
         skill_dirs: Optional[Iterable[str]] = None,
         stream_callback: Optional[StreamEventCallback] = None,
+        approval_callback: Optional[ApprovalCallback] = None,
         stream_printer: Optional[StreamPrinter] = None,
         todo_manager: Optional[TodoManager] = None,
         session_id: Optional[str] = None,
@@ -53,6 +55,7 @@ class Session:
             self.system_prompt = f"{self.system_prompt}\n\n{self.skill_catalog_prompt}"
         self.messages: list[BaseMessage] = []
         self.stream_callback = stream_callback or (stream_printer or StreamPrinter()).callback
+        self.approval_callback = approval_callback
         self._graph = None
         self.todo_manager = todo_manager or TodoManager()
         self.last_usage: Optional[dict[str, int]] = None
@@ -86,10 +89,13 @@ Core workflow:
   plan when the task is substantial or a tradeoff needs confirmation.
 - After inspecting or editing, reconcile findings against the plan before moving on:
   continue, revise, delegate, or stop and ask when hidden risk appears.
-- Prefer apply_patch for scoped code edits. Use write_file only when creating a new
-  file or replacing an entire generated artifact is clearly safer.
+- Use apply_patch as the primary tool for editing existing files. Use write_file
+  only for brand-new files or generated artifacts; avoid edit_file unless patching
+  is impossible.
 - After code changes, run verify with the narrowest useful target first, then broader
   checks when appropriate.
+- Prefer code-navigation tools such as list_files, read_many_files, grep, git_show,
+  and git_diff over ad-hoc shell commands when exploring the repository.
 
 Subagent delegation:
 - Use the subagent tool only for focused subtasks that benefit from isolation, such as
@@ -105,6 +111,9 @@ Subagent delegation:
 
 Safety:
 - Avoid destructive commands unless explicitly requested.
+- If a tool returns approval_required, stop and ask the user before retrying that action.
+- Set approved=true on file-writing tools only after the user explicitly approves the
+  specific create/edit operation.
 - Keep changes scoped to the user request.
 - If unexpected file changes appear, avoid overwriting them.
 Prefer concise final answers with what changed and how it was verified."""
@@ -121,6 +130,7 @@ Prefer concise final answers with what changed and how it was verified."""
         skill_dirs: Optional[Iterable[str]] = None,
         session_id: Optional[str] = None,
         context_window_tokens: Optional[int] = None,
+        approval_callback: Optional[ApprovalCallback] = None,
     ) -> "Session":
         """Create a Session from configuration parameters or environment variables."""
         provider_type = (provider_type or os.environ.get("PROVIDER", "anthropic")).lower()
@@ -156,6 +166,7 @@ Prefer concise final answers with what changed and how it was verified."""
             skill_dirs=skill_dirs,
             session_id=session_id,
             context_window_tokens=context_window_tokens,
+            approval_callback=approval_callback,
         )
 
     async def close(self) -> None:
@@ -174,7 +185,8 @@ Prefer concise final answers with what changed and how it was verified."""
                 self.workdir,
                 self.id,
                 self.skill_dirs,
-                self.stream_callback
+                self.stream_callback,
+                self.approval_callback,
             )
         return self._graph
 
@@ -291,13 +303,17 @@ Prefer concise final answers with what changed and how it was verified."""
         """Send a user message and get response."""
         # Clear todo for new planning session
         self.todo_manager.prepare_for_new_input()
+        self._graph = None  # Reset per-turn workflow and approval caches.
 
         self.add_user_message(content)
         await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
 
-        result = await self.graph.ainvoke({"messages": self.messages})
-        self.messages = result["messages"]
+        try:
+            result = await self.graph.ainvoke({"messages": self.messages})
+            self.messages = result["messages"]
+        except ApprovalDenied as exc:
+            self.messages.append(self._approval_denied_message(exc))
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -305,16 +321,29 @@ Prefer concise final answers with what changed and how it was verified."""
 
     async def send_stream(self, content: str) -> AsyncGenerator[str, None]:
         """Send a user message and stream response text."""
+        self._graph = None  # Reset per-turn workflow and approval caches.
         self.add_user_message(content)
         await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
-        result = await self.graph.ainvoke({"messages": self.messages})
-        self.messages = result["messages"]
+        try:
+            result = await self.graph.ainvoke({"messages": self.messages})
+            self.messages = result["messages"]
+        except ApprovalDenied as exc:
+            self.messages.append(self._approval_denied_message(exc))
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
         if last_msg and hasattr(last_msg, "content"):
             yield last_msg.content
+
+    def _approval_denied_message(self, exc: ApprovalDenied) -> AIMessage:
+        """Create a terminal assistant message when the user denies approval."""
+        return AIMessage(
+            content=(
+                "Task stopped because the requested action was not approved.\n\n"
+                f"{exc.request.format()}"
+            )
+        )
 
     def _extract_usage_from_message(
         self,

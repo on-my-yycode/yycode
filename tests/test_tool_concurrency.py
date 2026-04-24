@@ -3,8 +3,10 @@
 import asyncio
 import time
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from agent.approval import ApprovalDenied
 from agent.graph import create_tools_node, execute_tool_calls
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.todo_manager import TodoManager
@@ -237,10 +239,19 @@ def test_tools_node_blocks_workspace_write_until_preflight(tmp_path, monkeypatch
 
 def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, monkeypatch):
     captured = []
+    events = []
 
     async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
         captured.append(tool_name)
+        if tool_name == "apply_patch":
+            return "Applied patch.\n\ndiff:\n@@ -1 +1 @@\n-old\n+new"
         return f"{tool_name}:ok"
+
+    async def collect_event(event):
+        events.append(event)
+
+    async def approve(_request):
+        return True
 
     monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
     monkeypatch.setattr(
@@ -266,6 +277,8 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
         todo_manager=TodoManager(),
         workdir=tmp_path,
         session_id="session",
+        stream_callback=collect_event,
+        approval_callback=approve,
     )
     ai_msg = AIMessage(content="")
     ai_msg.additional_kwargs["tool_calls_data"] = [
@@ -284,3 +297,233 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
     ]
     assert isinstance(result["messages"][3], HumanMessage)
     assert "Run verify" in result["messages"][3].content
+    tool_result_events = [event for event in events if event.event_type == "tool_result"]
+    assert len(tool_result_events) == 1
+    assert tool_result_events[0].content == "@@ -1 +1 @@\n-old\n+new"
+
+
+def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypatch):
+    approvals = []
+    captured = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append((tool_name, kwargs))
+        if tool_name == "apply_patch":
+            return "Applied patch.\n\ndiff:\n@@ -1 +1 @@\n-old\n+new"
+        return f"{tool_name}:ok"
+
+    async def approve(request):
+        approvals.append(request)
+        return True
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "apply_patch": lambda **kwargs: "patched",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("apply_patch", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        approval_callback=approve,
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+        ToolCall(
+            id="3",
+            name="apply_patch",
+            args={
+                "patch": "\n".join(
+                    [
+                        "diff --git a/example.py b/example.py",
+                        "--- a/example.py",
+                        "+++ b/example.py",
+                        "@@ -1 +1 @@",
+                        "-old",
+                        "+new",
+                    ]
+                )
+            },
+        ),
+        ToolCall(
+            id="4",
+            name="apply_patch",
+            args={"path": "example.py", "old_text": "old", "new_text": "new"},
+        ),
+    ]
+
+    asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert len(approvals) == 1
+    assert approvals[0].path == "example.py"
+    apply_patch_calls = [kwargs for tool_name, kwargs in captured if tool_name == "apply_patch"]
+    assert len(apply_patch_calls) == 2
+    assert all(kwargs["approved"] is True for kwargs in apply_patch_calls)
+
+
+def test_tools_node_raises_approval_denied_for_rejected_write(tmp_path, monkeypatch):
+    captured = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append(tool_name)
+        if tool_name == "apply_patch":
+            return "approval_required:\naction: edit_file"
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "apply_patch": lambda patch: "patched",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("apply_patch", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+        ToolCall(id="3", name="apply_patch", args={"patch": "diff"}),
+    ]
+
+    with pytest.raises(ApprovalDenied) as exc:
+        asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert captured == ["workspace_state", "git_diff"]
+    assert exc.value.request.action == "edit_file"
+
+
+def test_tools_node_requires_apply_patch_for_existing_file_write(tmp_path, monkeypatch):
+    (tmp_path / "existing.py").write_text("old\n")
+    captured = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append(tool_name)
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "write_file": lambda path, content: "wrote",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("write_file", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+    )
+
+    preflight_msg = AIMessage(content="")
+    preflight_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+    ]
+    asyncio.run(tools_node({"messages": [preflight_msg]}))
+
+    write_msg = AIMessage(content="")
+    write_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="3", name="write_file", args={"path": "existing.py", "content": "new\n"}),
+    ]
+    result = asyncio.run(tools_node({"messages": [write_msg]}))
+
+    assert captured == ["workspace_state", "git_diff"]
+    assert len(result["messages"]) == 1
+    assert "blocked write_file for existing file" in result["messages"][0].content
+    assert "Use apply_patch" in result["messages"][0].content
+
+
+def test_tools_node_allows_write_file_for_new_file(tmp_path, monkeypatch):
+    captured = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append(tool_name)
+        return f"{tool_name}:ok"
+
+    async def approve(_request):
+        return True
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "write_file": lambda path, content: "wrote",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("write_file", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        approval_callback=approve,
+    )
+
+    preflight_msg = AIMessage(content="")
+    preflight_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+    ]
+    asyncio.run(tools_node({"messages": [preflight_msg]}))
+
+    write_msg = AIMessage(content="")
+    write_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="3", name="write_file", args={"path": "new.py", "content": "new\n"}),
+    ]
+    result = asyncio.run(tools_node({"messages": [write_msg]}))
+
+    assert captured == ["workspace_state", "git_diff", "write_file"]
+    assert result["messages"][0].name == "write_file"

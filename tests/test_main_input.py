@@ -3,6 +3,7 @@
 import asyncio
 
 from agent.providers.base import ChatResponse, LLMProvider
+from agent.approval import ApprovalRequest
 from langchain_core.messages import AIMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
 from agent.session import (
@@ -53,6 +54,24 @@ class FakeCountingProvider(FakeProvider):
     async def count_tokens(self, messages, system_prompt=None, tools=None):
         has_compressed_output = "[Compressed old tool output]" in str(messages)
         return 100 if has_compressed_output else 900
+
+
+class FakeApprovalProvider(FakeProvider):
+    """Fake provider that asks for a write tool."""
+
+    async def chat(self, messages, tools, system_prompt=None, stream_callback=None):
+        from agent.providers.base import ToolCall
+
+        return ChatResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="write-1",
+                    name="write_file",
+                    args={"path": "new.txt", "content": "hello"},
+                )
+            ],
+        )
 
 
 def test_read_user_query_returns_single_line_input():
@@ -233,3 +252,25 @@ def test_session_accumulates_usage_from_tool_messages(tmp_path):
         "output_tokens": 7,
         "total_tokens": 37,
     }
+
+
+def test_session_stops_when_approval_is_denied(tmp_path):
+    approvals = []
+
+    async def deny(request: ApprovalRequest):
+        approvals.append(request)
+        return False
+
+    session = Session(
+        provider=FakeApprovalProvider(),
+        workdir=tmp_path,
+        approval_callback=deny,
+    )
+
+    result = asyncio.run(session.send("create a file"))
+
+    assert len(approvals) == 1
+    assert approvals[0].action == "create_file"
+    assert result.content.startswith("Task stopped because the requested action was not approved.")
+    assert "approval_required:" in result.content
+    assert not (tmp_path / "new.txt").exists()

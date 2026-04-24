@@ -7,6 +7,16 @@ from typing import Awaitable, Callable, Optional
 StreamEventCallback = Callable[["StreamEvent"], Awaitable[None]]
 ProviderStreamCallback = Callable[[str, str], Awaitable[None]]
 
+ANSI_RESET = "\033[0m"
+ANSI_DIM = "\033[90m"
+ANSI_GREEN = "\033[32m"
+ANSI_RED = "\033[31m"
+ANSI_CYAN = "\033[36m"
+ANSI_BG_GREEN = "\033[48;5;22m"
+ANSI_BG_RED = "\033[48;5;52m"
+ANSI_BG_BLUE = "\033[48;5;24m"
+ANSI_BG_GRAY = "\033[48;5;236m"
+
 
 @dataclass(frozen=True)
 class StreamEvent:
@@ -60,6 +70,27 @@ def make_provider_stream_callback(
     return callback
 
 
+def colorize_diff(diff: str) -> str:
+    """Return a diff with background colors for changed line groups."""
+    lines = []
+    for line in diff.splitlines():
+        if line.startswith("@@"):
+            lines.append(f"{ANSI_BG_BLUE}{line}{ANSI_RESET}")
+        elif line.startswith("diff --git") or line.startswith("index "):
+            lines.append(f"{ANSI_BG_GRAY}{line}{ANSI_RESET}")
+        elif line.startswith("+++") or line.startswith("---"):
+            lines.append(f"{ANSI_BG_GRAY}{line}{ANSI_RESET}")
+        elif line.startswith("+"):
+            lines.append(f"{ANSI_BG_GREEN}{line}{ANSI_RESET}")
+        elif line.startswith("-"):
+            lines.append(f"{ANSI_BG_RED}{line}{ANSI_RESET}")
+        else:
+            lines.append(line)
+    if diff.endswith("\n"):
+        return "\n".join(lines) + "\n"
+    return "\n".join(lines)
+
+
 class ConsoleStreamRenderer:
     """Render structured stream events to the console."""
 
@@ -89,6 +120,8 @@ class ConsoleStreamRenderer:
             self._print_tool_start(event)
         elif event.event_type == "tool_end":
             self._print_tool_end(event)
+        elif event.event_type == "tool_result":
+            self._print_tool_result(event)
         elif event.event_type == "text_delta":
             if self.in_thinking_by_session.get(event.session_id):
                 print("\033[90m [done]\033[0m")
@@ -107,6 +140,15 @@ class ConsoleStreamRenderer:
 
     def _print_tool_end(self, event: StreamEvent) -> None:
         print("\033[90m [done]\033[0m", flush=True)
+
+    def _print_tool_result(self, event: StreamEvent) -> None:
+        if not event.content.strip():
+            return
+        if not self.first_line:
+            print()
+        print(f"\033[90m{self._label(event)}diff:\033[0m")
+        print(colorize_diff(event.content), flush=True)
+        self.first_line = False
 
     def _print_text_delta(self, event: StreamEvent) -> None:
         label = self._label(event)

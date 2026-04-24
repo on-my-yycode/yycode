@@ -32,7 +32,7 @@ def test_apply_patch_tool_is_registered():
     assert "apply_patch" in TOOL_HANDLERS
 
 
-def test_apply_patch_applies_unified_diff(tmp_path, monkeypatch):
+def test_apply_patch_requires_approval_for_unified_diff(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
     monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
@@ -46,7 +46,30 @@ def test_apply_patch_applies_unified_diff(tmp_path, monkeypatch):
 
     result = apply_patch(patch)
 
+    assert result.startswith("approval_required:")
+    assert "action: edit_file" in result
+    assert (tmp_path / "sample.txt").read_text() == "old\n"
+
+
+def test_apply_patch_applies_unified_diff_after_approval(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    patch = """diff --git a/sample.txt b/sample.txt
+--- a/sample.txt
++++ b/sample.txt
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+    result = apply_patch(patch, approved=True)
+
     assert result.startswith("Applied patch.")
+    assert "diff_stat:" in result
+    assert "diff:" in result
+    assert "-old" in result
+    assert "+new" in result
     assert (tmp_path / "sample.txt").read_text() == "new\n"
 
 
@@ -64,7 +87,8 @@ deleted file mode 100644
 
     result = apply_patch(patch)
 
-    assert "file deletion is not allowed" in result
+    assert result.startswith("approval_required:")
+    assert "action: delete_file" in result
     assert (tmp_path / "sample.txt").exists()
 
 
@@ -72,3 +96,36 @@ def test_apply_patch_rejects_begin_patch_format():
     result = apply_patch("*** Begin Patch\n*** End Patch")
 
     assert "unified diff" in result
+
+
+def test_apply_patch_supports_exact_replacement_mode(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+
+    result = apply_patch(path="sample.txt", old_text="old\n", new_text="new\n", approved=True)
+
+    assert result.startswith("Applied replacement patch to sample.txt.")
+    assert "diff_stat:" in result
+    assert "diff:" in result
+    assert "-old" in result
+    assert "+new" in result
+    assert (tmp_path / "sample.txt").read_text() == "new\n"
+
+
+def test_apply_patch_replacement_requires_path_and_old_text():
+    result = apply_patch(path="sample.txt", new_text="new\n")
+
+    assert result == "Error: path and old_text are required for replacement patches"
+
+
+def test_apply_patch_replacement_requires_approval(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+
+    result = apply_patch(path="sample.txt", old_text="old\n", new_text="new\n")
+
+    assert result.startswith("approval_required:")
+    assert "action: edit_file" in result
+    assert (tmp_path / "sample.txt").read_text() == "old\n"
