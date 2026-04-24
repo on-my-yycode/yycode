@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇游戏测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🐍 贪吃蛇游戏功能测试</h1>
+    
+    <div class="test-section">
+        <h2>测试说明</h2>
+        <p>此页面用于验证贪吃蛇游戏的各项功能。请按照以下步骤进行测试：</p>
+        <ol>
+            <li>检查游戏画布是否存在</li>
+            <li>验证分数显示功能</li>
+            <li>测试开始/暂停/重置按钮</li>
+            <li>测试键盘方向控制</li>
+            <li>验证游戏逻辑</li>
+            <li>检查代码可读性</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>游戏预览</h2>
+        <iframe id="gameFrame" src="snake_game.html"></iframe>
+    </div>
+
+    <div class="test-section">
+        <h2>测试结果</h2>
+        <div id="testResults"></div>
+        <button onclick="runTests()">运行自动化测试</button>
+        <button onclick="resetTests()">重置测试</button>
+    </div>
+
+    <div class="test-section">
+        <h2>手动测试清单</h2>
+        <div id="manualChecklist">
+            <div class="test-result info">
+                <strong>1. 游戏画布检查：</strong>
+                <input type="checkbox" id="check1"> 确认画布存在且可见
+            </div>
+            <div class="test-result info">
+                <strong>2. 分数显示：</strong>
+                <input type="checkbox" id="check2"> 确认分数和最高分显示正常
+            </div>
+            <div class="test-result info">
+                <strong>3. 按钮功能：</strong>
+                <input type="checkbox" id="check3"> 开始按钮工作正常<br>
+                <input type="checkbox" id="check4"> 暂停/继续按钮工作正常<br>
+                <input type="checkbox" id="check5"> 重置按钮工作正常
+            </div>
+            <div class="test-result info">
+                <strong>4. 键盘控制：</strong>
+                <input type="checkbox" id="check6"> 方向键 ↑ ↓ ← → 工作正常<br>
+                <input type="checkbox" id="check7"> WASD 键工作正常
+            </div>
+            <div class="test-result info">
+                <strong>5. 游戏逻辑：</strong>
+                <input type="checkbox" id="check8"> 蛇可以移动<br>
+                <input type="checkbox" id="check9"> 吃到食物可以加分和变长<br>
+                <input type="checkbox" id="check10"> 撞墙检测正常<br>
+                <input type="checkbox" id="check11"> 撞自己检测正常
+            </div>
+            <div class="test-result info">
+                <strong>6. 代码质量：</strong>
+                <input type="checkbox" id="check12"> 代码结构清晰<br>
+                <input type="checkbox" id="check13"> 变量命名合理<br>
+                <input type="checkbox" id="check14"> 有适当的注释
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let testResults = [];
+
+        function addTestResult(name, passed, message) {
+            const result = { name, passed, message };
+            testResults.push(result);
+            displayResults();
+        }
+
+        function displayResults() {
+            const container = document.getElementById('testResults');
+            container.innerHTML = testResults.map(r => `
+                <div class="test-result ${r.passed ? 'pass' : 'fail'}">
+                    <strong>${r.passed ? '✓' : '✗'} ${r.name}:</strong> ${r.message}
+                </div>
+            `).join('');
+        }
+
+        async function runTests() {
+            testResults = [];
+            
+            // 等待iframe加载
+            const iframe = document.getElementById('gameFrame');
+            await new Promise(resolve => {
+                if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                    resolve();
+                } else {
+                    iframe.onload = resolve;
+                }
+            });
+
+            const doc = iframe.contentDocument;
+            
+            // 测试1: 检查游戏画布是否存在
+            const canvas = doc.getElementById('gameCanvas');
+            addTestResult('游戏画布存在性', canvas !== null, 
+                canvas ? '找到游戏画布，尺寸: ' + canvas.width + 'x' + canvas.height : '未找到游戏画布');
+
+            // 测试2: 检查分数显示
+            const scoreElement = doc.getElementById('score');
+            const highScoreElement = doc.getElementById('highScore');
+            addTestResult('分数显示元素', scoreElement && highScoreElement,
+                (scoreElement ? '找到分数显示 ' : '未找到分数显示 ') + 
+                (highScoreElement ? '找到最高分显示' : '未找到最高分显示'));
+
+            // 测试3: 检查按钮
+            const startBtn = doc.getElementById('startBtn');
+            const pauseBtn = doc.getElementById('pauseBtn');
+            const resetBtns = doc.querySelectorAll('button');
+            const hasResetBtn = Array.from(resetBtns).some(btn => btn.textContent.includes('重置'));
+            
+            addTestResult('按钮存在性', startBtn !== null,
+                (startBtn ? '找到开始按钮 ' : '未找到开始按钮 ') + 
+                (pauseBtn ? '找到暂停按钮 ' : '未找到暂停按钮 ') + 
+                (hasResetBtn ? '找到重置按钮' : '未找到重置按钮'));
+
+            // 测试4: 检查代码结构（通过检查script标签）
+            const scripts = doc.querySelectorAll('script');
+            const hasGameClass = scripts.length > 0 && scripts[scripts.length - 1].textContent.includes('class SnakeGame');
+            addTestResult('代码结构', hasGameClass,
+                hasGameClass ? '找到SnakeGame类定义' : '未找到SnakeGame类定义');
+
+            addTestResult('自动化测试完成', true, '请继续完成手动测试清单');
+        }
+
+        function resetTests() {
+            testResults = [];
+            document.getElementById('testResults').innerHTML = '';
+            const checkboxes = document.querySelectorAll('#manualChecklist input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+        }
+    </script>
+</body>
+</html>
