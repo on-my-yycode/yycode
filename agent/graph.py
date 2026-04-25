@@ -14,6 +14,7 @@ from langchain_core.messages import (
 )
 
 from agent.providers.base import LLMProvider
+from agent.llm_retry import chat_with_retry
 from agent.approval import (
     ApprovalCallback,
     ApprovalDenied,
@@ -24,7 +25,10 @@ from agent.skills import SkillRegistry
 from agent.subagent import SubagentRunner
 from agent.tool_retry import async_run_tool_with_retry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
+from agent.logger import get_logger
 from tools import TOOL_HANDLERS, TOOLS
+
+logger = get_logger(__name__)
 
 
 class AgentState(TypedDict):
@@ -32,7 +36,7 @@ class AgentState(TypedDict):
 
 
 CONCURRENT_SUBAGENT_ROLES = {"explorer", "architect", "tester", "security"}
-DEFAULT_TOOL_TIMEOUT_SECONDS = 60
+DEFAULT_TOOL_TIMEOUT_SECONDS = 3600  # 1 hour for long-running tools
 DEFAULT_TOOL_EXECUTION = {
     "side_effects": "unknown",
     "concurrency": "serial",
@@ -76,11 +80,15 @@ def create_llm_node(
                     }
                 )
 
-        response = await provider.chat(
+        response = await chat_with_retry(
+            provider,
             messages=anthropic_messages,
             tools=TOOLS,
             system_prompt=system_prompt,
             stream_callback=provider_stream_callback,
+            event_callback=stream_callback,
+            source="main",
+            session_id=session_id,
         )
         if stream_callback and response.usage:
             await stream_callback(
@@ -95,7 +103,7 @@ def create_llm_node(
         tool_calls = [
             {
                 "name": tc.name,
-                "args": tc.args,
+                "args": dict(tc.args or {}),
                 "id": tc.id,
             }
             for tc in response.tool_calls
@@ -318,6 +326,13 @@ def create_tools_node(
             )
 
         try:
+            logger.debug(f"Calling tool: {getattr(tc, 'name', 'unknown')}")
+            logger.debug(f"Full tc object: {tc!r}")
+            logger.debug(f"tc type: {type(tc)}")
+            logger.debug(f"tc.name: {getattr(tc, 'name', 'N/A')!r}")
+            logger.debug(f"tc.args: {getattr(tc, 'args', 'N/A')!r}")
+            logger.debug(f"tc.id: {getattr(tc, 'id', 'N/A')!r}")
+
             if is_workspace_write(tc.name) and not has_preflight():
                 output = await run_guard_preflight()
                 return ToolMessage(
@@ -338,10 +353,13 @@ def create_tools_node(
             output = await async_run_tool_with_retry(
                 handler,
                 tc.name,
-                max_retries=2,
+                max_retries=3,
                 timeout_seconds=timeout_for_tool(tc.name),
                 **approved_args,
             )
+
+            logger.debug(f"Tool output: {output[:200]}...")
+            logger.debug(f"End tool: {getattr(tc, 'name', 'unknown')}")
             tool_message = ToolMessage(
                 content=output,
                 tool_call_id=tc.id,
@@ -397,7 +415,7 @@ def create_tools_node(
         # Check if we need to add a todo reminder
         additional_messages = []
         if todo_manager.needs_reminder():
-            reminder = todo_manager.get_reminder_message()
+            reminder = todo_manager.consume_reminder_message()
             additional_messages.append(HumanMessage(content=reminder))
         if workflow_guard["needs_verify"] and not any(tc.name == "verify" for tc in tool_calls_data):
             additional_messages.append(
@@ -441,11 +459,27 @@ async def execute_tool_calls(tool_calls, execute_tool_call, can_run_concurrently
     return results
 
 
-def should_continue(state: AgentState) -> Literal["tools", END]:
+def create_task_guard_node(todo_manager):
+    """Create a guard node that prevents finishing before Task State is complete."""
+
+    async def task_guard_node(state: AgentState) -> AgentState:
+        if not todo_manager.has_incomplete_task_state():
+            return {"messages": []}
+        return {"messages": [HumanMessage(content=todo_manager.get_finish_blocker_message())]}
+
+    return task_guard_node
+
+
+def should_continue(state: AgentState) -> Literal["tools", "task_guard"]:
     """Determine if we should continue tool execution or end."""
     last_msg = state["messages"][-1]
     tool_calls_data = last_msg.additional_kwargs.get("tool_calls_data", [])
-    return "tools" if tool_calls_data else END
+    return "tools" if tool_calls_data else "task_guard"
+
+
+def should_finish_after_guard(state: AgentState, todo_manager) -> Literal["llm", END]:
+    """Determine if the guard allows the task to finish."""
+    return END if not todo_manager.has_incomplete_task_state() else "llm"
 
 
 def build_graph(
@@ -461,6 +495,7 @@ def build_graph(
     """Build the agent graph."""
     builder = StateGraph(AgentState)
     builder.add_node("llm", create_llm_node(provider, system_prompt, session_id, stream_callback))
+    builder.add_node("task_guard", create_task_guard_node(todo_manager))
     builder.add_node(
         "tools",
         create_tools_node(
@@ -477,6 +512,10 @@ def build_graph(
 
     builder.add_edge(START, "llm")
     builder.add_conditional_edges("llm", should_continue)
+    builder.add_conditional_edges(
+        "task_guard",
+        lambda state: should_finish_after_guard(state, todo_manager),
+    )
     builder.add_edge("tools", "llm")
 
     return builder.compile()

@@ -4,7 +4,11 @@ from typing import Any, Optional, Callable
 
 from anthropic import AsyncAnthropic
 
+from agent.logger import get_logger
+
 from .base import LLMProvider, ChatResponse, ToolCall
+
+logger = get_logger(__name__)
 
 
 class AnthropicProvider(LLMProvider):
@@ -30,11 +34,7 @@ class AnthropicProvider(LLMProvider):
         stream_callback: Optional[Callable[[str, str], None]] = None,
     ) -> ChatResponse:
         """Send chat request to Anthropic API."""
-        full_content = []
-        current_text = ""
-        tool_calls_data = []
-        current_tool_use = None
-        in_thinking = False
+        import traceback
 
         kwargs = {
             "model": self.model,
@@ -45,6 +45,66 @@ class AnthropicProvider(LLMProvider):
             kwargs["system"] = system_prompt
         if tools:
             kwargs["tools"] = tools
+
+        try:
+            # First try non-streaming mode (more reliable for compatible APIs)
+            return await self._chat_non_streaming(kwargs, stream_callback)
+        except Exception as e:
+            logger.warning(f"Non-streaming failed, trying streaming: {e}")
+            try:
+                return await self._chat_streaming(kwargs, stream_callback)
+            except Exception as e2:
+                logger.error(f"Both modes failed. Last error: {type(e2).__name__}: {e2}")
+                logger.error(f"Traceback:\n{traceback.format_exc()}")
+                raise
+
+    async def _chat_non_streaming(
+        self,
+        kwargs: dict,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> ChatResponse:
+        """Non-streaming chat mode."""
+        message = await self.client.messages.create(**kwargs)
+
+        current_text = ""
+        tool_calls_data = []
+
+        for block in message.content:
+            if block.type == "text":
+                current_text += block.text
+                if stream_callback:
+                    await stream_callback("text_delta", block.text)
+            elif block.type == "tool_use":
+                tool_calls_data.append({
+                    "name": block.name,
+                    "args": block.input,
+                    "id": block.id,
+                })
+
+        usage = self._extract_usage(getattr(message, "usage", None))
+
+        tool_calls = [
+            ToolCall(id=tc["id"], name=tc["name"], args=tc["args"])
+            for tc in tool_calls_data
+        ]
+
+        return ChatResponse(
+            content=current_text,
+            tool_calls=tool_calls,
+            raw_response=message,
+            usage=usage,
+        )
+
+    async def _chat_streaming(
+        self,
+        kwargs: dict,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> ChatResponse:
+        """Streaming chat mode (fallback)."""
+        current_text = ""
+        tool_calls_data = []
+        current_tool_use = None
+        in_thinking = False
 
         async with self.client.messages.stream(**kwargs) as stream:
             async for event in stream:
@@ -93,11 +153,8 @@ class AnthropicProvider(LLMProvider):
                         })
                         current_tool_use = None
 
-        if current_text:
-            full_content.append(current_text)
-
-        final_message = await stream.get_final_message()
-        usage = self._extract_usage(getattr(final_message, "usage", None))
+            final_message = await stream.get_final_message()
+            usage = self._extract_usage(getattr(final_message, "usage", None))
 
         tool_calls = [
             ToolCall(id=tc["id"], name=tc["name"], args=tc["args"])
@@ -122,18 +179,22 @@ class AnthropicProvider(LLMProvider):
         tools: Optional[list[dict]] = None,
     ) -> Optional[int]:
         """Count input tokens using the Anthropic-compatible count endpoint."""
-        kwargs = {
-            "model": self.model,
-            "messages": messages,
-        }
-        if system_prompt:
-            kwargs["system"] = system_prompt
-        if tools:
-            kwargs["tools"] = tools
+        try:
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+            }
+            if system_prompt:
+                kwargs["system"] = system_prompt
+            if tools:
+                kwargs["tools"] = tools
 
-        response = await self.client.messages.count_tokens(**kwargs)
-        input_tokens = getattr(response, "input_tokens", None)
-        return int(input_tokens) if input_tokens is not None else None
+            response = await self.client.messages.count_tokens(**kwargs)
+            input_tokens = getattr(response, "input_tokens", None)
+            return int(input_tokens) if input_tokens is not None else None
+        except Exception:
+            logger.warning("Count tokens not supported, falling back to estimation")
+            return None
 
     def _extract_usage(self, usage: Any) -> Optional[dict[str, int]]:
         """Normalize Anthropic usage data."""

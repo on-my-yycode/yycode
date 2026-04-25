@@ -105,6 +105,21 @@ def test_execute_tool_calls_keeps_worker_subagent_serial():
     assert serial_roles == ["explorer", "worker", "security"]
 
 
+def test_todo_reminder_resets_after_it_is_consumed():
+    manager = TodoManager()
+    manager.set_items([{"id": "1", "text": "Long task", "status": "in_progress"}])
+    manager.record_tool_call("read_file")
+    manager.record_tool_call("grep")
+    manager.record_tool_call("read_file")
+
+    assert manager.needs_reminder() is True
+    reminder = manager.consume_reminder_message()
+
+    assert "Long task" in reminder
+    assert manager.consecutive_non_todo_rounds == 0
+    assert manager.needs_reminder() is False
+
+
 def test_tools_node_passes_default_tool_timeouts(tmp_path, monkeypatch):
     captured = []
 

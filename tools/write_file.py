@@ -1,5 +1,7 @@
 """Write file tool."""
 
+from difflib import unified_diff
+
 from .diff_utils import format_diff_result
 from .read_file import safe_path
 from .safety import approval_required
@@ -31,6 +33,26 @@ def write_file(path: str, content: str, approved: bool = False) -> str:
         return format_diff_result(f"Wrote {len(content)} bytes to {path}", [path])
     except Exception as e:
         return f"Error: {e}"
+
+
+def preview_write_file_diff(path: str, content: str) -> str:
+    """Return the diff that write_file would create without writing."""
+    try:
+        fp = safe_path(path)
+        if fp.exists():
+            return ""
+        lines = "\n".join(
+            unified_diff(
+                [],
+                content.splitlines(),
+                fromfile="/dev/null",
+                tofile=f"b/{path}",
+                lineterm="",
+            )
+        )
+        return lines
+    except Exception:
+        return ""
 
 
 write_file_tool = {

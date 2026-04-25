@@ -131,6 +131,8 @@ class ConsoleStreamRenderer:
             self._print_usage(event)
         elif event.event_type == "context_compressed":
             self._print_context_compressed(event)
+        elif event.event_type in ["llm_waiting", "llm_timeout", "llm_retry", "llm_error"]:
+            self._print_llm_status(event)
 
     def _print_tool_start(self, event: StreamEvent) -> None:
         if not self.first_line:
@@ -185,6 +187,32 @@ class ConsoleStreamRenderer:
         if not self.first_line:
             print()
         print(f"\033[90m[context] {event.content}\033[0m", flush=True)
+        self.first_line = False
+
+    def _print_llm_status(self, event: StreamEvent) -> None:
+        """Print LLM status updates so user knows the agent is still working."""
+        if self.in_thinking_by_session.get(event.session_id):
+            print("\033[90m [waiting]\033[0m")
+            self.in_thinking_by_session[event.session_id] = False
+        if not self.first_line:
+            print()
+
+        color = ANSI_DIM
+        prefix = "[llm]"
+        if event.event_type == "llm_error":
+            color = ANSI_RED
+            prefix = "[error]"
+        elif event.event_type == "llm_timeout":
+            color = ANSI_YELLOW
+            prefix = "[timeout]"
+        elif event.event_type == "llm_retry":
+            color = ANSI_CYAN
+            prefix = "[retry]"
+        elif event.event_type == "llm_waiting":
+            color = ANSI_DIM
+            prefix = "[waiting]"
+
+        print(f"{color}{self._label(event)}{prefix} {event.content}{ANSI_RESET}", flush=True)
         self.first_line = False
 
 

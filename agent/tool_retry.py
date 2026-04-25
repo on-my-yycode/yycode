@@ -5,6 +5,8 @@ import inspect
 import time
 from typing import Callable, TypeVar
 
+from agent.llm_retry import LLMCallError
+
 T = TypeVar("T")
 
 
@@ -52,12 +54,23 @@ def run_tool_with_retry(
 async def async_run_tool_with_retry(
     handler: Callable[..., str],
     tool_name: str,
-    max_retries: int = 2,
+    max_retries: int = 5,
     timeout_seconds: float | None = None,
     **kwargs
 ) -> str:
     """Run a sync or async tool handler with retry and error handling."""
     retry_count = 0
+
+    # Filter out unexpected keyword arguments that the handler doesn't accept
+    if handler:
+        sig = inspect.signature(handler)
+        accepts_var_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in sig.parameters.values()
+        )
+        if not accepts_var_kwargs:
+            param_names = list(sig.parameters.keys())
+            kwargs = {k: v for k, v in kwargs.items() if k in param_names}
 
     while retry_count <= max_retries:
         try:
@@ -69,6 +82,8 @@ async def async_run_tool_with_retry(
             if retry_count > max_retries:
                 return f"Error executing tool {tool_name}: Timeout after {timeout_seconds}s"
             await asyncio.sleep(0.5 * retry_count)
+        except LLMCallError:
+            raise
         except Exception as e:
             retry_count += 1
             if retry_count > max_retries:

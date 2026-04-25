@@ -69,20 +69,26 @@ def test_subagent_tool_is_registered():
 def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     session = Session(provider=FakeProvider([]), workdir=tmp_path)
 
+    assert "Task State contract:" in session.system_prompt
     assert "Core workflow:" in session.system_prompt
+    assert "Tools and editing:" in session.system_prompt
     assert "Subagent delegation:" in session.system_prompt
-    assert "checking workspace_state and relevant" in session.system_prompt
-    assert "git_diff" in session.system_prompt
-    assert "Do not delegate tasks that are small" in session.system_prompt
-    assert "Build a short execution plan with concrete checkpoints" in session.system_prompt
+    assert "Skills:" in session.system_prompt
+    assert "Final answer:" in session.system_prompt
+    assert "Every user request must be represented in Task State" in session.system_prompt
+    assert "Create todo even for simple work" in session.system_prompt
     assert "Keep exactly one active item in_progress" in session.system_prompt
-    assert "Do not expose long internal planning by default" in session.system_prompt
+    assert "Do not provide a final answer while any todo item is pending or in_progress" in session.system_prompt
+    assert "check workspace_state and relevant git_diff" in session.system_prompt
+    assert "git_diff" in session.system_prompt
+    assert "Use a short execution plan, usually 1-7 concrete todo items" in session.system_prompt
+    assert "do not expose long internal reasoning" in session.system_prompt
     assert "Use list_skills to discover available local skills" in session.system_prompt
-    assert "Use the subagent tool with explorer for investigation" in session.system_prompt
-    assert "architect for technical design" in session.system_prompt
-    assert "security for code security review" in session.system_prompt
+    assert "Use explorer for investigation" in session.system_prompt
+    assert "architect for design" in session.system_prompt
+    assert "security for security review" in session.system_prompt
     assert "Give each subagent a specific task" in session.system_prompt
-    assert "After a subagent returns, integrate its result yourself" in session.system_prompt
+    assert "After a subagent returns, integrate its result yourself and update Task State" in session.system_prompt
     assert "Use apply_patch as the primary tool for editing existing files" in session.system_prompt
     assert "Use write_file" in session.system_prompt
     assert "brand-new files or generated artifacts" in session.system_prompt

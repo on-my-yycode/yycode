@@ -13,15 +13,16 @@ from agent.approval import (
     approval_request_for_tool,
 )
 from agent.providers.base import LLMProvider
+from agent.llm_retry import chat_with_retry
 from agent.skills import SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
 from agent.tool_retry import async_run_tool_with_retry
 from tools import TOOLS
 
 
-DEFAULT_MAX_TURNS = 8
+DEFAULT_MAX_TURNS = 20
 MAX_OUTPUT_CHARS = 20_000
-SUBAGENT_TOOL_TIMEOUT_SECONDS = 60
+SUBAGENT_TOOL_TIMEOUT_SECONDS = 3600  # 1 hour for subagent tools
 
 
 ROLE_PROMPTS = {
@@ -205,11 +206,17 @@ class SubagentRunner:
 
         for _ in range(max_turns):
             provider_messages = _messages_to_provider_format(messages)
-            response = await self.provider.chat(
+            response = await chat_with_retry(
+                self.provider,
                 messages=provider_messages,
                 tools=self.tools,
                 system_prompt=system_prompt,
                 stream_callback=provider_stream_callback,
+                event_callback=self.stream_callback,
+                source="subagent",
+                session_id=session_id,
+                role=role,
+                parent_session_id=self.parent_session_id,
             )
             self._accumulate_usage(response.usage)
             if self.stream_callback and response.usage:
@@ -226,7 +233,7 @@ class SubagentRunner:
             tool_calls = [
                 {
                     "name": tc.name,
-                    "args": tc.args,
+                    "args": dict(tc.args or {}),
                     "id": tc.id,
                 }
                 for tc in response.tool_calls

@@ -8,10 +8,10 @@ from .safety import unsafe_command_response
 WORKDIR = Path.cwd()
 
 
-def bash(command: str) -> str:
+def bash(command: str, approved: bool = False) -> str:
     """Run a shell command."""
     unsafe_response = unsafe_command_response(command)
-    if unsafe_response:
+    if unsafe_response and not approved:
         return unsafe_response
     try:
         r = subprocess.run(
@@ -38,7 +38,13 @@ bash_tool = {
     },
     "input_schema": {
         "type": "object",
-        "properties": {"command": {"type": "string"}},
+        "properties": {
+            "command": {"type": "string"},
+            "approved": {
+                "type": "boolean",
+                "description": "Set true only after this command is approved by runtime approval.",
+            },
+        },
         "required": ["command"],
     },
 }

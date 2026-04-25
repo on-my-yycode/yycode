@@ -3,6 +3,7 @@
 
 import os
 import sys
+import argparse
 from pathlib import Path
 import asyncio
 
@@ -11,6 +12,8 @@ from dotenv import load_dotenv
 
 from agent import Session
 from agent.approval import ApprovalRequest
+from agent.logger import setup_logging, debug_print
+from agent.streaming import colorize_diff
 
 # Try to enable readline for better input experience
 try:
@@ -33,13 +36,16 @@ except ImportError:
 
 
 LOGO = """
-__  __                     ___                    __ 
-\ \/ /___  __  ______     /   | ____ ____  ____  / /_
- \  / __ \/ / / / __ \   / /| |/ __ `/ _ \/ __ \/ __/
- / / /_/ / /_/ / /_/ /  / ___ / /_/ /  __/ / / / /_  
-/_/\____/\__, /\____/  /_/  |_\__, /\___/_/ /_/\__/  
-        /____/               /____/                    
+__  __                     ___                    __
+\\ \\/ /___  __  ______     /   | ____ ____  ____  / /_
+ \\  / __ \\/ / / / __ \\   / /| |/ __ `/ _ \\/ __ \\/ __/
+ / / /_/ / /_/ / /_/ /  / ___ / /_/ /  __/ / / / /_
+/_/\\____/\\__, /\\____/  /_/  |_\\__, /\\___/_/ /_/\\__/
+        /____/               /____/
 """
+
+
+PASTE_COMMANDS = {"/p", "/paste"}
 
 
 def read_multiline_input(input_func=input) -> str:
@@ -57,7 +63,7 @@ def read_multiline_input(input_func=input) -> str:
 async def read_user_query(input_func=input) -> str:
     """Read a single-line query or a multiline paste block."""
     query = await asyncio.to_thread(input_func, "\033[36myoyo >> \033[0m")
-    if query.strip().lower() == "/paste":
+    if query.strip().lower() in PASTE_COMMANDS:
         query = await asyncio.to_thread(read_multiline_input, input_func)
     return query
 
@@ -100,8 +106,11 @@ def _format_compact_number(value: float, suffix: str) -> str:
 
 async def read_user_query_with_session(session: Session, input_func=input) -> str:
     """Read a query using a prompt that includes current token usage."""
-    query = await asyncio.to_thread(input_func, build_prompt(session))
-    if query.strip().lower() == "/paste":
+    # Print the prompt separately so readline doesn't count ANSI colors
+    prompt = build_prompt(session)
+    print(prompt, end="", flush=True)
+    query = await asyncio.to_thread(input_func, "")
+    if query.strip().lower() in PASTE_COMMANDS:
         query = await asyncio.to_thread(read_multiline_input, input_func)
     return query
 
@@ -109,19 +118,63 @@ async def read_user_query_with_session(session: Session, input_func=input) -> st
 async def console_approval_callback(request: ApprovalRequest) -> bool:
     """Ask the user to approve a risky tool execution in the console."""
     print()
-    print(request.format())
-    answer = await asyncio.to_thread(input, "\033[33mApprove this action? [y/N] \033[0m")
+    print(request.format(include_diff=False))
+    if request.diff_preview:
+        print("\033[90mdiff_preview:\033[0m")
+        print(colorize_diff(request.diff_preview))
+    answer = await asyncio.to_thread(
+        input,
+        "\033[33mApprove this action? [y/N] \033[0m",
+    )
     return answer.strip().lower() in {"y", "yes"}
 
 
+async def auto_approval_callback(_request: ApprovalRequest) -> bool:
+    """Approve runtime approval requests without prompting."""
+    return True
+
+
+def env_flag_enabled(name: str) -> bool:
+    """Return whether an environment flag is truthy."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 async def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Yoyo Agent")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging to console",
+    )
+    parser.add_argument(
+        "--log-file",
+        action="store_true",
+        help="Write logs to agent_debug.log",
+    )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="Run without approval prompts; risky actions are automatically approved",
+    )
+    args = parser.parse_args()
+
+    # Set up logging
+    setup_logging(debug=args.debug, log_to_file=args.log_file)
+
     print("\033[33m" + LOGO + "\033[0m")
     print("Yoyo Agent - Ready!\n")
+    if args.debug:
+        print("\033[90m[DEBUG] Debug mode enabled. Logs written to agent_debug.log\033[0m\n")
 
     load_dotenv(override=True)
 
     # Create session from config/environment
-    session = Session.from_config(approval_callback=console_approval_callback)
+    silent_mode = args.silent or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
+    approval_callback = auto_approval_callback if silent_mode else console_approval_callback
+    if silent_mode:
+        print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
+    session = Session.from_config(approval_callback=approval_callback)
     print(f"\033[90mSession ID: {session.id}\033[0m")
     print("\033[90mSystem Prompt:\033[0m")
     print(session.system_prompt)

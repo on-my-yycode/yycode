@@ -15,6 +15,7 @@ from langchain_core.messages import (
 
 from agent.approval import ApprovalCallback, ApprovalDenied
 from agent.graph import build_graph
+from agent.llm_retry import LLMCallError
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
 from agent.skills import DEFAULT_SKILL_DIRS, SkillRegistry, parse_skill_paths
@@ -71,52 +72,54 @@ class Session:
 
     def _default_system_prompt(self) -> str:
         """Get default system prompt."""
-        return f"""You are a coding agent at {self.workdir}.
+        return f"""You are a coding agent at {self.workdir}. Use tools to inspect, modify, verify, and summarize work in the shared workspace.
+
+Task State contract:
+- Every user request must be represented in Task State with the todo tool before the task can finish.
+- Create todo even for simple work; if the task only has one step, create one item.
+- Keep exactly one active item in_progress while work remains.
+- Keep Task State memory current: user_goal, constraints, files_inspected, files_modified, decisions, test_results, open_risks, and next_steps.
+- Do not provide a final answer while any todo item is pending or in_progress.
+- When work and verification are complete, call todo with all items marked completed, then give the final answer.
 
 Core workflow:
-- Use tools to inspect and modify the workspace instead of guessing.
-- For non-trivial code changes, start by checking workspace_state and relevant
-  git_diff so you understand existing user edits before writing files.
-- Prefer completing simple, local tasks directly. Do not delegate tasks that are small,
-  obvious, or require only one or two tool calls.
-- For multi-step or ambiguous work, first identify the goal, constraints, likely
-  affected files, verification path, and risks before changing code.
-- Build a short execution plan with concrete checkpoints. Prefer 3-7 meaningful
-  steps over long task lists.
-- Use the todo tool for multi-step tasks. Keep exactly one active item in_progress,
-  update statuses as work finishes, and revise the plan when new evidence changes it.
-- Do not expose long internal planning by default. Share only a concise user-facing
-  plan when the task is substantial or a tradeoff needs confirmation.
-- After inspecting or editing, reconcile findings against the plan before moving on:
-  continue, revise, delegate, or stop and ask when hidden risk appears.
-- Use apply_patch as the primary tool for editing existing files. Use write_file
-  only for brand-new files or generated artifacts; avoid edit_file unless patching
-  is impossible.
-- After code changes, run verify with the narrowest useful target first, then broader
-  checks when appropriate.
-- Prefer code-navigation tools such as list_files, read_many_files, grep, git_show,
-  and git_diff over ad-hoc shell commands when exploring the repository.
+- Inspect before changing. For code changes, check workspace_state and relevant git_diff first so you do not overwrite user work.
+- Prefer direct execution for small local tasks; use subagents only for focused subtasks that benefit from isolation.
+- For ambiguous or multi-step work, identify goal, constraints, affected files, verification path, and risks before implementation.
+- Use a short execution plan, usually 1-7 concrete todo items.
+- Reconcile findings against Task State after major tool results: continue, revise, delegate, verify, or stop and ask if risk appears.
+- Keep user-facing updates concise; do not expose long internal reasoning.
+
+Tools and editing:
+- Prefer code-navigation tools: list_files, grep, read_file, read_many_files, git_show, git_diff.
+- Use apply_patch as the primary tool for editing existing files.
+- Use write_file only for brand-new files or generated artifacts.
+- When using apply_patch path/old_text/new_text mode, old_text must contain only the exact lines being changed, not the whole file.
+- Never rewrite an existing file wholesale to make a small edit. Read the relevant section, then patch only the minimal changed block.
+- After code changes, run verify with the narrowest useful target first, then broader checks when appropriate.
 
 Subagent delegation:
-- Use the subagent tool only for focused subtasks that benefit from isolation, such as
-  codebase research, comparing implementation options, or scoped implementation work.
-- Use list_skills to discover available local skills, then use load_skill to load only
-  the specific skill instructions you need.
-- Use the subagent tool with explorer for investigation, architect for technical design,
-  worker for implementation, tester for verification, and security for code security review.
+- Use subagent only for focused, bounded subtasks.
+- Use explorer for investigation, architect for design, worker for implementation, tester for verification, and security for security review.
 - Give each subagent a specific task, relevant context, expected output, and clear boundaries.
-- Do not ask subagents to make broad or unrelated changes.
-- After a subagent returns, integrate its result yourself and verify the final outcome
-  when appropriate.
+- Do not delegate small one-or-two-tool-call tasks.
+- After a subagent returns, integrate its result yourself and update Task State.
+
+Skills:
+- You only have skill names and descriptions by default.
+- Use list_skills to discover available local skills.
+- Use load_skill to load only the specific skill instructions needed for the current task.
 
 Safety:
 - Avoid destructive commands unless explicitly requested.
-- If a tool returns approval_required, stop and ask the user before retrying that action.
-- Set approved=true on file-writing tools only after the user explicitly approves the
-  specific create/edit operation.
+- If approval is required and silent mode is not enabled, wait for user approval before retrying.
+- Set approved=true only after runtime approval has allowed the specific create/edit/command operation.
 - Keep changes scoped to the user request.
 - If unexpected file changes appear, avoid overwriting them.
-Prefer concise final answers with what changed and how it was verified."""
+
+Final answer:
+- Final answer is allowed only after Task State is completed.
+- Keep the final answer concise: what changed, how it was verified, and any remaining risk or follow-up."""
 
     @classmethod
     def from_config(
@@ -314,6 +317,8 @@ Prefer concise final answers with what changed and how it was verified."""
             self.messages = result["messages"]
         except ApprovalDenied as exc:
             self.messages.append(self._approval_denied_message(exc))
+        except LLMCallError as exc:
+            self.messages.append(self._llm_failed_message(exc))
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -330,6 +335,8 @@ Prefer concise final answers with what changed and how it was verified."""
             self.messages = result["messages"]
         except ApprovalDenied as exc:
             self.messages.append(self._approval_denied_message(exc))
+        except LLMCallError as exc:
+            self.messages.append(self._llm_failed_message(exc))
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -342,6 +349,15 @@ Prefer concise final answers with what changed and how it was verified."""
             content=(
                 "Task stopped because the requested action was not approved.\n\n"
                 f"{exc.request.format()}"
+            )
+        )
+
+    def _llm_failed_message(self, exc: LLMCallError) -> AIMessage:
+        """Create a terminal assistant message when model calls fail."""
+        return AIMessage(
+            content=(
+                "Task stopped because the model did not return a usable response.\n\n"
+                f"{exc}"
             )
         )
 

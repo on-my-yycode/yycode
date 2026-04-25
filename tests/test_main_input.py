@@ -2,7 +2,7 @@
 
 import asyncio
 
-from agent.providers.base import ChatResponse, LLMProvider
+from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
 from langchain_core.messages import AIMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
@@ -13,7 +13,9 @@ from agent.session import (
     parse_context_window_tokens,
 )
 from main import (
+    auto_approval_callback,
     build_prompt,
+    env_flag_enabled,
     format_context_percent,
     format_token_count,
     read_user_query,
@@ -38,7 +40,30 @@ class FakeProvider(LLMProvider):
 
     model = "fake-model"
 
+    def __init__(self):
+        self.calls = 0
+
     async def chat(self, messages, tools, system_prompt=None, stream_callback=None):
+        self.calls += 1
+        if self.calls % 2 == 1:
+            return ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id=f"todo-{self.calls}",
+                        name="todo",
+                        args={
+                            "items": [
+                                {
+                                    "id": "1",
+                                    "text": "Handle test request",
+                                    "status": "completed",
+                                }
+                            ]
+                        },
+                    )
+                ],
+            )
         return ChatResponse(
             content="",
             usage={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
@@ -60,8 +85,6 @@ class FakeApprovalProvider(FakeProvider):
     """Fake provider that asks for a write tool."""
 
     async def chat(self, messages, tools, system_prompt=None, stream_callback=None):
-        from agent.providers.base import ToolCall
-
         return ChatResponse(
             content="",
             tool_calls=[
@@ -85,6 +108,15 @@ def test_read_user_query_returns_single_line_input():
 
 def test_read_user_query_supports_paste_mode():
     fake_input = FakeInput(["/paste", "line one", "line two", "/end"])
+
+    query = asyncio.run(read_user_query(fake_input))
+
+    assert query == "line one\nline two"
+    assert len(fake_input.prompts) == 4
+
+
+def test_read_user_query_supports_short_paste_command():
+    fake_input = FakeInput(["/p", "line one", "line two", "/end"])
 
     query = asyncio.run(read_user_query(fake_input))
 
@@ -131,8 +163,7 @@ def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
 
     assert query == "hello"
     assert len(fake_input.prompts) == 1
-    assert "/" in fake_input.prompts[0]
-    assert "%" in fake_input.prompts[0]
+    assert fake_input.prompts[0] == ""
 
 
 def test_format_token_count_supports_compact_units():
@@ -274,3 +305,21 @@ def test_session_stops_when_approval_is_denied(tmp_path):
     assert result.content.startswith("Task stopped because the requested action was not approved.")
     assert "approval_required:" in result.content
     assert not (tmp_path / "new.txt").exists()
+
+
+def test_auto_approval_callback_allows_silent_mode():
+    request = ApprovalRequest(
+        action="edit_file",
+        tool_name="apply_patch",
+        path="x.py",
+        reason="test",
+        risk="test",
+    )
+
+    assert asyncio.run(auto_approval_callback(request)) is True
+
+
+def test_env_flag_enabled_accepts_truthy_values(monkeypatch):
+    monkeypatch.setenv("YOYO_SILENT", "true")
+
+    assert env_flag_enabled("YOYO_SILENT") is True

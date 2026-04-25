@@ -5,6 +5,9 @@ import re
 from typing import Awaitable, Callable, Optional
 
 from tools.safety import approval_required
+from tools.safety import unsafe_command_response
+from tools.apply_patch import preview_apply_patch_diff
+from tools.write_file import preview_write_file_diff
 
 
 ApprovalCallback = Callable[["ApprovalRequest"], Awaitable[bool]]
@@ -28,20 +31,35 @@ class ApprovalRequest:
     risk: str
     path: str = ""
     command: str = ""
+    diff_preview: str = ""
 
-    def format(self) -> str:
+    def format(self, include_diff: bool = True) -> str:
         """Format the request using the stable tool response shape."""
-        return approval_required(
+        formatted = approval_required(
             action=self.action,
             command=self.command,
             path=self.path,
             reason=self.reason,
             risk=self.risk,
         )
+        if include_diff and self.diff_preview:
+            formatted = f"{formatted}\n\ndiff_preview:\n{self.diff_preview}"
+        return formatted
 
 
 def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRequest]:
     """Return an approval request for tool calls that require runtime confirmation."""
+    if tool_name == "bash":
+        command = args.get("command", "")
+        if unsafe_command_response(command):
+            return ApprovalRequest(
+                action="run_command",
+                tool_name=tool_name,
+                command=command,
+                reason="bash command matches a high-risk command pattern.",
+                risk="This operation may be destructive or affect files outside the intended task.",
+            )
+        return None
     if tool_name == "apply_patch":
         path = args.get("path") or _paths_from_unified_diff(args.get("patch", ""))
         return ApprovalRequest(
@@ -50,6 +68,12 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
             path=path,
             reason="apply_patch edits workspace files.",
             risk="File edits can overwrite user work or introduce unintended code changes.",
+            diff_preview=preview_apply_patch_diff(
+                patch=args.get("patch", ""),
+                path=args.get("path", ""),
+                old_text=args.get("old_text", ""),
+                new_text=args.get("new_text", ""),
+            ),
         )
     if tool_name == "write_file":
         return ApprovalRequest(
@@ -58,6 +82,7 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
             path=args.get("path", ""),
             reason="write_file creates a new workspace file.",
             risk="Creating files changes the workspace and may add unwanted artifacts.",
+            diff_preview=preview_write_file_diff(args.get("path", ""), args.get("content", "")),
         )
     return None
 
