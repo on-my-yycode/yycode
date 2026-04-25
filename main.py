@@ -6,6 +6,7 @@ import sys
 import argparse
 from pathlib import Path
 import asyncio
+import contextlib
 
 
 from dotenv import load_dotenv
@@ -46,6 +47,28 @@ __  __                     ___                    __
 
 
 PASTE_COMMANDS = {"/p", "/paste"}
+READLINE_PROMPT_START = "\001"
+READLINE_PROMPT_END = "\002"
+ANSI_CYAN = "\033[36m"
+ANSI_GRAY = "\033[90m"
+ANSI_RESET = "\033[0m"
+
+
+def _protect_prompt_color(sequence: str) -> str:
+    """Mark ANSI escape sequences as zero-width for readline prompt editing."""
+    if readline is None:
+        return sequence
+    return f"{READLINE_PROMPT_START}{sequence}{READLINE_PROMPT_END}"
+
+
+def cyan(text: str) -> str:
+    """Return cyan text, with ANSI escapes protected for readline prompts."""
+    return f"{_protect_prompt_color(ANSI_CYAN)}{text}{_protect_prompt_color(ANSI_RESET)}"
+
+
+def gray(text: str) -> str:
+    """Return gray text, with ANSI escapes protected for readline prompts."""
+    return f"{_protect_prompt_color(ANSI_GRAY)}{text}{_protect_prompt_color(ANSI_RESET)}"
 
 
 def read_multiline_input(input_func=input) -> str:
@@ -53,7 +76,7 @@ def read_multiline_input(input_func=input) -> str:
     print("\033[90mPaste multiline input. Submit with /end on its own line.\033[0m")
     lines = []
     while True:
-        line = input_func("\033[36m... >> \033[0m")
+        line = input_func(cyan("... >> "))
         if line.strip() == "/end":
             break
         lines.append(line)
@@ -62,7 +85,7 @@ def read_multiline_input(input_func=input) -> str:
 
 async def read_user_query(input_func=input) -> str:
     """Read a single-line query or a multiline paste block."""
-    query = await asyncio.to_thread(input_func, "\033[36myoyo >> \033[0m")
+    query = await asyncio.to_thread(input_func, cyan("yoyo >> "))
     if query.strip().lower() in PASTE_COMMANDS:
         query = await asyncio.to_thread(read_multiline_input, input_func)
     return query
@@ -74,10 +97,7 @@ def build_prompt(session: Session) -> str:
     formatted_used = format_token_count(estimated_tokens)
     formatted_window = format_token_count(session.context_window_tokens)
     percent = format_context_percent(session.estimate_context_window_percent())
-    return (
-        f"\033[90m[{formatted_used}/{formatted_window} {percent}]\033[0m "
-        f"\033[36myoyo >> \033[0m"
-    )
+    return f"{gray(f'[{formatted_used}/{formatted_window} {percent}]')} {cyan('yoyo >> ')}"
 
 
 def format_token_count(count: int) -> str:
@@ -106,10 +126,8 @@ def _format_compact_number(value: float, suffix: str) -> str:
 
 async def read_user_query_with_session(session: Session, input_func=input) -> str:
     """Read a query using a prompt that includes current token usage."""
-    # Print the prompt separately so readline doesn't count ANSI colors
     prompt = build_prompt(session)
-    print(prompt, end="", flush=True)
-    query = await asyncio.to_thread(input_func, "")
+    query = await asyncio.to_thread(input_func, prompt)
     if query.strip().lower() in PASTE_COMMANDS:
         query = await asyncio.to_thread(read_multiline_input, input_func)
     return query
@@ -137,6 +155,21 @@ async def auto_approval_callback(_request: ApprovalRequest) -> bool:
 def env_flag_enabled(name: str) -> bool:
     """Return whether an environment flag is truthy."""
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+async def run_agent_task(session: Session, query: str) -> bool:
+    """Run one agent task and let Ctrl+C cancel the task without exiting the CLI."""
+    task = asyncio.create_task(session.send(query))
+    try:
+        await task
+        print("\n")
+        return True
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        print("\n\033[90m[current task cancelled]\033[0m\n")
+        return False
 
 
 async def main():
@@ -199,8 +232,7 @@ async def main():
             if readline:
                 readline.add_history(query)
 
-            await session.send(query)
-            print("\n")
+            await run_agent_task(session, query)
     finally:
         if readline:
             try:

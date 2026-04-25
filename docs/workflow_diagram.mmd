@@ -1,28 +1,37 @@
 graph TD
-    UserInput[User Input] --> Session[Session Management<br/>session_id, stream_callback, workdir, system_prompt]
-    
-    Session --> LangGraph[LangGraph<br/>StateGraph]
-    Session --> TodoManager[TodoManager<br/>Task Tracking]
-    
-    TodoManager -.-> LangGraph
-    
-    LangGraph --> LLMNode[LLM Node]
-    LangGraph --> ToolsNode[Tools Node]
-    
-    LLMNode -.-> ToolsNode
-    ToolsNode -.-> LLMNode
-    
-    ToolsNode --> RegularTools[Regular Tools]
-    ToolsNode --> SubagentRunner[Subagent Runner]
-    
-    SubagentRunner --> SubagentGraph[Subagent Graph<br/>Isolated State]
-    
+    UserInput[User Input] --> Session[Session<br/>history, context, usage, callbacks]
+    Session --> LangGraph[LangGraph<br/>thin graph.py]
+    Session --> TodoManager[TodoManager<br/>Task State]
+
+    LangGraph --> LLMNode[LLM Node<br/>agent/nodes/llm_node.py]
+    LLMNode -->|tool_calls| ToolsNode[Tools Node<br/>agent/nodes/tools_node.py]
+    LLMNode -->|no tool_calls| TaskGuard[Task Guard<br/>agent/nodes/task_guard_node.py]
+    TaskGuard -->|Task State complete| End[END]
+    TaskGuard -->|Task State incomplete| LLMNode
+    ToolsNode --> LLMNode
+
+    ToolsNode --> RuntimeContext[AgentRuntimeContext]
+    RuntimeContext --> ToolRegistry[ToolRegistry<br/>todo, skills, subagent, tools]
+    RuntimeContext --> WorkflowGuard[WorkflowGuard<br/>preflight, write guard, verify reminder]
+    RuntimeContext --> ApprovalService[ApprovalService<br/>approval cache, diff preview]
+    RuntimeContext --> ToolScheduler[ToolScheduler<br/>concurrent/serial batches]
+    ToolScheduler --> ToolExecutor[ToolExecutor<br/>single tool lifecycle]
+
+    ToolExecutor --> RegularTools[Regular Tools]
+    ToolExecutor --> SubagentRunner[Subagent Runner]
+    SubagentRunner --> SubagentSession[Isolated Subagent Session]
+    ToolRegistry --> SkillRegistry[SkillRegistry<br/>list/load skills]
+    TodoManager -.-> TaskGuard
+    TodoManager -.-> ToolsNode
+
     style UserInput fill:#e1f5ff
     style Session fill:#fff4e1
     style LangGraph fill:#f4e1ff
-    style TodoManager fill:#ffe1e1
     style LLMNode fill:#e1ffe1
     style ToolsNode fill:#e1ffe1
-    style RegularTools fill:#fff9e1
-    style SubagentRunner fill:#fff9e1
-    style SubagentGraph fill:#e1f5ff
+    style TaskGuard fill:#ffe1e1
+    style RuntimeContext fill:#f7f7f7
+    style ToolExecutor fill:#fff9e1
+    style ApprovalService fill:#ffe1e1
+    style WorkflowGuard fill:#ffe1e1
+    style End fill:#e1f5ff

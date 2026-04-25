@@ -20,6 +20,7 @@ from main import (
     format_token_count,
     read_user_query,
     read_user_query_with_session,
+    run_agent_task,
 )
 
 
@@ -97,6 +98,22 @@ class FakeApprovalProvider(FakeProvider):
         )
 
 
+class SlowSession:
+    """Fake session that records task cancellation."""
+
+    def __init__(self):
+        self.cancelled = False
+        self.started = asyncio.Event()
+
+    async def send(self, query):
+        try:
+            self.started.set()
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
 def test_read_user_query_returns_single_line_input():
     fake_input = FakeInput(["hello"])
 
@@ -163,7 +180,23 @@ def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
 
     assert query == "hello"
     assert len(fake_input.prompts) == 1
-    assert fake_input.prompts[0] == ""
+    assert "/128k" in fake_input.prompts[0]
+    assert "yoyo >>" in fake_input.prompts[0]
+
+
+def test_run_agent_task_cancels_current_task_without_reraising():
+    async def run():
+        session = SlowSession()
+        task = asyncio.create_task(run_agent_task(session, "long task"))
+        await session.started.wait()
+        task.cancel()
+        result = await task
+        return result, session.cancelled
+
+    result, cancelled = asyncio.run(run())
+
+    assert result is False
+    assert cancelled is True
 
 
 def test_format_token_count_supports_compact_units():

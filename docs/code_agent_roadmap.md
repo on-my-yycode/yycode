@@ -34,6 +34,7 @@
 - 长任务摘要记忆。
 - 安全审批机制。
 - 安全审批机制的完整交互 UI。
+- 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
 - 本地 evals。
 
 ## MVP 实现状态
@@ -63,7 +64,8 @@
 5. 代码理解工具
 6. 上下文任务摘要
 7. 安全审批机制
-8. evals
+8. 任务依赖图 / DAG 调度
+9. evals
 ```
 
 其中 MVP 建议先做前 4 项。
@@ -74,7 +76,11 @@
 
 ### 背景
 
-当前并发、串行、超时规则主要硬编码在 `agent/graph.py` 中。随着工具增加，这种方式会越来越难维护。
+并发、串行、超时规则最初硬编码在 `agent/graph.py` 中。当前已重构到 runtime 层：
+
+- `agent/runtime/tool_registry.py` 读取工具 metadata。
+- `agent/runtime/tool_scheduler.py` 根据 metadata 调度并发/串行批次。
+- `agent/runtime/tool_executor.py` 负责单个工具生命周期。
 
 ### 目标
 
@@ -342,6 +348,8 @@ references(symbol)
 dependency_graph(path)
 ```
 
+语义级代码导航建议通过 LSP 工具实现，设计见 [LSP 集成设计](lsp_integration_design.md)。
+
 ### 目标
 
 减少 agent 为建立项目地图而反复调用 bash，提高代码理解效率。
@@ -437,7 +445,7 @@ risk: User work may be lost.
 
 ### v1 建议
 
-当前已实现工具层阻断和运行时控制台审批：文件创建/编辑工具默认返回 `approval_required`；在主会话或 subagent 工具执行路径中，runtime 会先暂停并在控制台询问用户，用户批准后才临时注入 `approved=true` 执行；用户拒绝后抛出审批拒绝信号，由 Session 终止本轮任务。后续再升级为：
+当前已实现工具层阻断和运行时控制台审批：文件创建/编辑工具默认返回 `approval_required`；在主会话或 subagent 工具执行路径中，runtime 会先暂停并在控制台询问用户，用户批准后才临时注入 `approved=true` 执行；用户拒绝后抛出审批拒绝信号，由 Session 终止本轮任务。文件写入审批已支持执行前 `diff_preview`，用户能先查看待应用 diff 再确认。后续再升级为：
 
 ```text
 agent 发起 approval_request

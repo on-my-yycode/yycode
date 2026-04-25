@@ -45,7 +45,26 @@ def test_bash_allows_dangerous_command_after_runtime_approval():
     result = bash("git reset -h", approved=True)
 
     assert not result.startswith("approval_required:")
+    assert "status:" in result
+    assert "exit_code:" in result
     assert "usage: git reset" in result.lower()
+
+
+def test_bash_reports_success_for_command_with_no_output():
+    result = bash("true")
+
+    assert "status: success" in result
+    assert "exit_code: 0" in result
+    assert "stdout:\n(empty)" in result
+    assert "stderr:\n(empty)" in result
+
+
+def test_bash_reports_failure_with_exit_code_and_stderr():
+    result = bash("python3 -c 'import sys; print(\"bad\", file=sys.stderr); sys.exit(7)'")
+
+    assert "status: failed" in result
+    assert "exit_code: 7" in result
+    assert "stderr:\nbad" in result
 
 
 def test_approval_request_detects_dangerous_bash_command():

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Canvas 塔防游戏</title>
+    <title>三角洲塔防</title>
     <style>
         * {
             margin: 0;
@@ -12,32 +12,36 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         body {
-            background: #1a1a2e;
+            background: #1e2918;
+            background-image: radial-gradient(#2d3a26 2px, transparent 2px), radial-gradient(#2d3a26 2px, #1e2918 2px);
+            background-size: 40px 40px;
+            background-position: 0 0, 20px 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 20px;
-            color: white;
+            color: #f3f4f6;
+            font-family: 'Courier New', monospace;
         }
         #game-container {
             position: relative;
-            border: 3px solid #0f3460;
+            border: 3px solid #3e4b33;
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 0 30px rgba(0, 191, 255, 0.2);
+            box-shadow: 0 0 30px rgba(34, 197, 94, 0.15);
         }
         canvas {
             display: block;
-            background: #16213e;
+            background: #262f20;
         }
         #ui-bar {
             width: 800px;
-            background: #0f3460;
+            background: #4a5a3f;
             padding: 12px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid #e94560;
+            border-bottom: 2px solid #b91c1c;
         }
         .stat {
             display: flex;
@@ -130,7 +134,7 @@
     </style>
 </head>
 <body>
-    <h1 style="margin-bottom: 20px; color: #00bfff; text-shadow: 0 0 10px rgba(0,191,255,0.5);">HTML5 Canvas 塔防游戏</h1>
+    <h1 style="margin-bottom: 20px; color: #00bfff; text-shadow: 0 0 10px rgba(0,191,255,0.5);">三角洲塔防</h1>
     <div id="game-container">
         <div id="ui-bar">
             <div class="stat">
@@ -157,7 +161,7 @@
             <button class="btn btn-speed" data-speed="3">x3</button>
             <div class="tower-select">
                 <button class="tower-btn" data-tower="basic">
-                    <span>基础塔</span>
+                    <span>步枪塔</span>
                     <span class="cost">50G</span>
                 </button>
                 <button class="tower-btn" data-tower="cannon">
@@ -167,6 +171,18 @@
                 <button class="tower-btn" data-tower="ice">
                     <span>冰冻塔</span>
                     <span class="cost">80G</span>
+                </button>
+                <button class="tower-btn" data-tower="rocket">
+                    <span>火箭塔</span>
+                    <span class="cost">150G</span>
+                </button>
+                <button class="tower-btn" data-tower="sniper">
+                    <span>狙击塔</span>
+                    <span class="cost">130G</span>
+                </button>
+                <button class="tower-btn" data-tower="emp">
+                    <span>EMP塔</span>
+                    <span class="cost">100G</span>
                 </button>
             </div>
         </div>
@@ -267,7 +283,7 @@
         // 防御塔配置
         const TOWER_TYPES = {
             basic: {
-                cost: 50,
+                cost: 40,
                 range: 120,
                 damage: 10,
                 fireRate: 1000,
@@ -276,7 +292,7 @@
                 projectileSpeed: 5
             },
             cannon: {
-                cost: 120,
+                cost: 90,
                 range: 150,
                 damage: 40,
                 fireRate: 2500,
@@ -286,7 +302,7 @@
                 splash: 40
             },
             ice: {
-                cost: 80,
+                cost: 60,
                 range: 100,
                 damage: 5,
                 fireRate: 800,
@@ -295,6 +311,66 @@
                 projectileSpeed: 6,
                 slowFactor: 0.5,
                 slowDuration: 2000
+            },
+            laser: {
+                cost: 70,
+                range: 130,
+                damage: 15,
+                fireRate: 500,
+                color: '#a855f7',
+                projectileColor: '#a855f7',
+                projectileSpeed: 8
+            },
+            missile: {
+                cost: 110,
+                range: 180,
+                damage: 60,
+                fireRate: 3000,
+                color: '#f97316',
+                projectileColor: '#f97316',
+                projectileSpeed: 4,
+                splash: 60
+            },
+            buff: {
+                cost: 50,
+                range: 80,
+                damage: 0,
+                fireRate: 0,
+                color: '#22c55e',
+                projectileColor: '#22c55e',
+                projectileSpeed: 0,
+                buffFactor: 1.3,
+                buffRange: 100
+            },
+            rocket: {
+                cost: 150,
+                range: 170,
+                damage: 90,
+                fireRate: 3500,
+                color: '#4b5563',
+                projectileColor: '#f97316',
+                projectileSpeed: 3.5,
+                splash: 80
+            },
+            sniper: {
+                cost: 130,
+                range: 260,
+                damage: 130,
+                fireRate: 4000,
+                color: '#78350f',
+                projectileColor: '#fbbf24',
+                projectileSpeed: 10
+            },
+            emp: {
+                cost: 100,
+                range: 110,
+                damage: 8,
+                fireRate: 1200,
+                color: '#06b6d4',
+                projectileColor: '#22d3ee',
+                projectileSpeed: 7,
+                slowFactor: 0.2,
+                slowDuration: 3000
             }
         };
 
@@ -610,6 +686,16 @@
 
             startNextWave() {
                 this.wave++;
+                // 波数达到上限，游戏胜利
+                if (this.wave > 20) {
+                    this.running = false;
+                    const gameOverEl = document.getElementById('game-over');
+                    gameOverEl.querySelector('h2').textContent = '🎉 任务完成！';
+                    gameOverEl.querySelector('p').textContent = '你成功通关了全部20波敌人，保卫了基地！';
+                    gameOverEl.style.display = 'block';
+                    this.audio.play('gameOver');
+                    return;
+                }
                 this.enemiesToSpawn = 5 + Math.floor(this.wave * 1.5);
                 this.enemiesSpawned = 0;
                 this.nextWaveTimer = 10000;
@@ -638,8 +724,8 @@
                 }
 
                 // 绘制路径
-                this.ctx.strokeStyle = 'rgba(233, 69, 96, 0.3)';
-                this.ctx.lineWidth = TILE_SIZE;
+                this.ctx.strokeStyle = 'rgba(185, 28, 28, 0.3)';
+                this.ctx.lineWidth = 30;
                 this.ctx.lineCap = 'round';
                 this.ctx.lineJoin = 'round';
                 this.ctx.beginPath();

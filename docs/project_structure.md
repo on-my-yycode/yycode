@@ -18,11 +18,26 @@ yoyoagent/
 │
 ├── agent/                    # 核心智能体逻辑
 │   ├── __init__.py
-│   ├── graph.py              # LangGraph工作流定义 ⭐
+│   ├── graph.py              # LangGraph薄编排层
+│   ├── llm_retry.py          # LLM超时、心跳和重试
+│   ├── logger.py             # 调试日志
 │   ├── subagent.py           # 子代理执行器
 │   ├── todo_manager.py       # 任务管理器
 │   ├── tool_retry.py         # 工具重试机制
 │   ├── streaming.py          # 流式输出处理
+│   ├── nodes/                # LangGraph节点实现
+│   │   ├── state.py          # AgentState定义
+│   │   ├── llm_node.py       # LLM节点
+│   │   ├── tools_node.py     # 工具节点
+│   │   └── task_guard_node.py # Task State结束保护
+│   ├── runtime/              # 运行时服务
+│   │   ├── context.py        # AgentRuntimeContext
+│   │   ├── tool_registry.py  # 工具绑定和metadata
+│   │   ├── tool_scheduler.py # 工具并发/串行调度
+│   │   ├── tool_executor.py  # 单工具执行流水线
+│   │   ├── workflow_guard.py # workspace/verify guard
+│   │   ├── approval_service.py # 运行时审批
+│   │   └── tool_events.py    # 工具事件格式化
 │   └── providers/            # LLM提供商抽象
 │       ├── __init__.py
 │       ├── base.py           # LLMProvider基类
@@ -74,12 +89,8 @@ class AgentState(TypedDict):
 ### 工作流图 (LangGraph)
 
 ```
-START → [LLM节点] ──(有工具调用)──→ [Tools节点]
-    ↑                     ↓
-    └─────────────────────┘
-         (无工具调用)
-         ↓
-        END
+START → [LLM节点] ──(有工具调用)──→ [Tools节点] ──→ [LLM节点]
+                 └─(无工具调用)──→ [Task Guard] ──→ END 或 LLM节点
 ```
 
 **消息流转**：
@@ -87,7 +98,8 @@ START → [LLM节点] ──(有工具调用)──→ [Tools节点]
 2. LLM 决定是否调用工具
 3. 如果有工具调用，进入 Tools 节点执行
 4. Tools 执行完后返回 LLM 节点继续
-5. 如果没有工具调用，结束对话
+5. 如果没有工具调用，进入 Task Guard
+6. Task State 完成后结束，否则追加提醒并回到 LLM 节点
 
 ### 核心节点
 
@@ -97,11 +109,19 @@ START → [LLM节点] ──(有工具调用)──→ [Tools节点]
 - 调用 LLM 并获取响应
 - 支持工具调用和流式输出
 
-#### Tools 节点 (create_tools_node)
-- 执行 LLM 请求的工具
-- 集成 TodoManager 进行任务追踪
-- 支持子代理执行
-- 包含工具重试机制
+#### Tools 节点
+- 从 AIMessage 中提取工具调用
+- 使用 RuntimeToolRegistry 解析工具
+- 使用 ToolScheduler 调度并发/串行执行
+- 使用 ToolExecutor 执行单个工具调用
+- 使用 WorkflowGuard 追加验证提醒
+
+#### Runtime 层
+- `ToolRegistry`: 绑定 todo、skills、subagent 和普通工具
+- `ToolScheduler`: 保持顺序的并发/串行调度
+- `ToolExecutor`: 审批、执行、事件、ToolMessage
+- `WorkflowGuard`: workspace preflight、写入保护、verify reminder
+- `ApprovalService`: 审批缓存、diff preview、approved=true 注入
 
 ## 依赖分析
 
@@ -114,18 +134,19 @@ START → [LLM节点] ──(有工具调用)──→ [Tools节点]
 
 ## 当前架构的问题
 
-### 1. 上下文无限增长
-- `AgentState` 中的 `messages` 列表会无限累积
-- 没有 token 管理机制
-- 可能导致超出模型上下文窗口限制
+### 1. Subagent 执行链仍可进一步复用
+- 主 agent 工具执行已拆到 runtime 层
+- subagent 仍有一部分自有工具循环和审批逻辑
+- 后续可继续迁移到 RuntimeToolRegistry / ToolExecutor
 
-### 2. 缺乏上下文管理
-- 没有自动压缩或摘要机制
-- 长期对话会导致性能下降和成本增加
+### 2. 更复杂的异步 DAG 尚未实现
+- 当前工具调度支持批次并发
+- 还不是完整 task graph / dependency graph
+- 后续可在 ToolScheduler 基础上扩展依赖关系
 
 ## 扩展建议
 
-1. **添加上下文压缩机制** - 参考 `context_compression_design.md`
-2. **增加状态持久化** - 支持对话历史保存和加载
-3. **添加指标监控** - 监控 token 使用、响应时间等
-4. **支持更多 LLM 提供商** - 扩展 provider 抽象层
+1. **继续统一 subagent 工具执行链** - 复用 ApprovalService 和 ToolExecutor
+2. **实现任务依赖图调度** - 在 ToolScheduler 基础上支持 DAG
+3. **增加状态持久化** - 支持对话历史保存和加载
+4. **添加指标监控** - 监控 token 使用、响应时间等

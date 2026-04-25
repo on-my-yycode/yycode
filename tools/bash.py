@@ -6,6 +6,27 @@ from pathlib import Path
 from .safety import unsafe_command_response
 
 WORKDIR = Path.cwd()
+MAX_OUTPUT_CHARS = 50_000
+
+
+def _format_stream(name: str, content: str) -> str:
+    """Format a subprocess stream with an explicit empty marker."""
+    text = content.strip()
+    return f"{name}:\n{text or '(empty)'}"
+
+
+def _format_bash_result(returncode: int, stdout: str, stderr: str) -> str:
+    """Return a model-readable command result."""
+    status = "success" if returncode == 0 else "failed"
+    result = (
+        f"status: {status}\n"
+        f"exit_code: {returncode}\n"
+        f"{_format_stream('stdout', stdout)}\n"
+        f"{_format_stream('stderr', stderr)}"
+    )
+    if len(result) > MAX_OUTPUT_CHARS:
+        return result[:MAX_OUTPUT_CHARS] + f"\n... output truncated to {MAX_OUTPUT_CHARS} chars"
+    return result
 
 
 def bash(command: str, approved: bool = False) -> str:
@@ -22,8 +43,7 @@ def bash(command: str, approved: bool = False) -> str:
             text=True,
             timeout=120,
         )
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
+        return _format_bash_result(r.returncode, r.stdout, r.stderr)
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
 

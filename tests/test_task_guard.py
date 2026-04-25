@@ -74,3 +74,35 @@ def test_session_forces_todo_creation_and_completion_before_exit(tmp_path):
     assert "Task State is required" in str(provider.calls[1])
     assert "Task State still has unfinished work" in str(provider.calls[3])
     assert session.todo_manager.can_finish_task() is True
+
+
+def test_session_ends_when_todo_completion_already_has_final_answer(tmp_path):
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="All work is complete. Final answer.",
+                tool_calls=[
+                    ToolCall(
+                        id="todo-1",
+                        name="todo",
+                        args={
+                            "items": [
+                                {
+                                    "id": "1",
+                                    "text": "Complete the requested task",
+                                    "status": "completed",
+                                }
+                            ]
+                        },
+                    )
+                ],
+            ),
+        ]
+    )
+    session = Session(provider=provider, workdir=tmp_path, system_prompt="test")
+
+    result = asyncio.run(session.send("do a task"))
+
+    assert result.content == "All work is complete. Final answer."
+    assert len(provider.calls) == 1
+    assert session.todo_manager.can_finish_task() is True
