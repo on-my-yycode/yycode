@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="YoyoAgent Architecture">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ====== TIER 1: CLI & Session Layer ====== -->
+        <mxCell id="sw1" value="CLI &amp; Session Layer" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="820" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="2" value="main.py&#xa;(Entry Point)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="sw1">
+          <mxGeometry x="30" y="45" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Session&#xa;Manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="sw1">
+          <mxGeometry x="180" y="45" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Approval&#xa;Callbacks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="sw1">
+          <mxGeometry x="330" y="45" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="Stream&#xa;Events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="sw1">
+          <mxGeometry x="480" y="45" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="TodoManager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="sw1">
+          <mxGeometry x="630" y="45" width="120" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ====== TIER 2: LangGraph Orchestration ====== -->
+        <mxCell id="sw2" value="LangGraph Orchestration" style="swimlane;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="190" width="820" height="175" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="StateGraph&#xa;Builder" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="sw2">
+          <mxGeometry x="30" y="40" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="LLM Node" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="sw2">
+          <mxGeometry x="210" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="Tools Node" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="sw2">
+          <mxGeometry x="380" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="Task Guard&#xa;Node" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="sw2">
+          <mxGeometry x="550" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="AgentState (messages)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;dashed=1;" vertex="1" parent="sw2">
+          <mxGeometry x="300" y="115" width="200" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Edges in sw2 -->
+        <mxCell id="e10_11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="sw2" source="10" target="11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11_12" value="has tool_calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=9;fontColor=#6c8ebf;" edge="1" parent="sw2" source="11" target="12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12_11" value="loop back" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontSize=9;fontColor=#d79b00;" edge="1" parent="sw2" source="12" target="11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="100" />
+              <mxPoint x="270" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11_13" value="no tool_calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=9;fontColor=#82b366;" edge="1" parent="sw2" source="11" target="13">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="360" y="62" />
+              <mxPoint x="360" y="62" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13_11" value="task incomplete" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontSize=9;fontColor=#b85450;dashed=1;" edge="1" parent="sw2" source="13" target="11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="610" y="100" />
+              <mxPoint x="270" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13_end" value="completed → END" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;fontSize=9;fontColor=#82b366;" edge="1" parent="sw2" source="13" target="14">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720" y="62" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ====== TIER 3: Runtime Services ====== -->
+        <mxCell id="sw3" value="Runtime Services" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="385" width="820" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="ToolExecutor&#xa;(single tool pipeline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="30" y="45" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="RuntimeToolRegistry&#xa;(bind todo/skills/subagent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="200" y="45" width="155" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="ToolScheduler&#xa;(concurrent batch + serial)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="385" y="45" width="145" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="ApprovalService&#xa;(cache, diff, inject)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="560" y="45" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="WorkflowGuard&#xa;(preflight, write protect, verify)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="30" y="115" width="155" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="AgentRuntimeContext&#xa;(per-invocation state)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="sw3">
+          <mxGeometry x="215" y="115" width="155" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ====== TIER 4A: LLM Providers ====== -->
+        <mxCell id="sw4" value="LLM Providers" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="585" width="390" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="LLMProvider&#xa;(Base)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="30" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="OpenAI&#xa;Provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="180" y="40" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="Anthropic&#xa;Provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="30" y="95" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="Text Tool Calls Parser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="180" y="95" width="120" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ====== TIER 4B: Subagent System ====== -->
+        <mxCell id="sw5" value="Subagent System" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="440" y="585" width="410" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="40" value="SubagentRunner&#xa;(isolated tool loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="sw5">
+          <mxGeometry x="30" y="40" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="Roles: explorer | architect&#xa;worker | tester | security" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="sw5">
+          <mxGeometry x="210" y="40" width="175" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ====== TIER 5: Tools Layer ====== -->
+        <mxCell id="sw6" value="Tools Layer" style="swimlane;startSize=30;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="745" width="820" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="50" value="File Tools&#xa;read_file, write_file&#xa;edit_file, apply_patch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="sw6">
+          <mxGeometry x="30" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="51" value="Navigation Tools&#xa;grep, list_files&#xa;git_diff, git_show" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="sw6">
+          <mxGeometry x="205" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="52" value="Execution Tools&#xa;bash, verify" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="sw6">
+          <mxGeometry x="380" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="53" value="Control Tools&#xa;todo, subagent&#xa;list_skills, load_skill" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="sw6">
+          <mxGeometry x="555" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="54" value="State Tools&#xa;workspace_state, read_many_files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="sw6">
+          <mxGeometry x="30" y="105" width="150" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ====== SIDE BOX: Supporting ====== -->
+        <mxCell id="sw_support" value="Supporting" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="880" y="20" width="195" height="880" as="geometry" />
+        </mxCell>
+        <mxCell id="60" value="Skills&#xa;drawio, code_review&#xa;code_workflow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="40" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="61" value="Examples&#xa;snake_game, math_game&#xa;tower_defense" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="115" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="62" value="Tests&#xa;30+ test files covering&#xa;tools, nodes, providers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="190" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="63" value="Utils&#xa;retry decorator&#xa;helper functions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="265" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="64" value="Docs&#xa;design docs, roadmap&#xa;code reviews" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="340" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="65" value="Config&#xa;.env, pyproject.toml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="sw_support">
+          <mxGeometry x="20" y="415" width="155" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ====== CROSS-TIER EDGES ====== -->
+        <!-- main.py → Session -->
+        <mxCell id="ce_2_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Session → Graph Builder -->
+        <mxCell id="ce_3_10" value="builds" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#6c8ebf;" edge="1" parent="1" source="3" target="10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Tools Node → ToolExecutor -->
+        <mxCell id="ce_12_20" value="delegates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#82b366;" edge="1" parent="1" source="12" target="20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ToolExecutor → RuntimeToolRegistry -->
+        <mxCell id="ce_20_21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="20" target="21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- RuntimeToolRegistry → providers (uses) -->
+        <mxCell id="ce_21_31" value="uses" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#d6b656;" edge="1" parent="1" source="21" target="31">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- RuntimeToolRegistry → SubagentRunner (creates) -->
+        <mxCell id="ce_21_40" value="creates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#d79b00;" edge="1" parent="1" source="21" target="40">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="278" y="540" />
+              <mxPoint x="505" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- SubagentRunner → Tools (uses tools) -->
+        <mxCell id="ce_40_51" value="uses tools" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#d79b00;" edge="1" parent="1" source="40" target="51">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LLM Node → Providers -->
+        <mxCell id="ce_11_30" value="calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#d6b656;dashed=1;" edge="1" parent="1" source="11" target="30">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="270" y="540" />
+              <mxPoint x="90" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Skills → Supporting connection -->
+        <mxCell id="ce_53_60" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;dashed=1;" edge="1" parent="1" source="53" target="60">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="YoyoAgent Core Workflow">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- SWIMLANE 1: Entry & Session -->
+        <mxCell id="sw1" value="Entry &amp; Session" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="880" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="2" value="User Input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="sw1">
+          <mxGeometry x="30" y="45" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Session (message history, context compression, usage tracking, stream/approval callback, TodoManager)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="sw1">
+          <mxGeometry x="190" y="35" width="450" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e2_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 2: LangGraph Core Loop -->
+        <mxCell id="sw2" value="LangGraph Core Loop (agent/graph.py)" style="swimlane;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="30" y="170" width="880" height="520" as="geometry" />
+        </mxCell>
+
+        <mxCell id="10" value="START" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="40" y="40" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="LLM Node&#xa;agent/nodes/llm_node.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="40" y="120" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="has&#xa;tool_calls?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="45" y="220" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="Tools Node&#xa;agent/nodes/tools_node.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="280" y="235" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="Task Guard&#xa;agent/nodes/task_guard_node.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="45" y="345" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="Task State&#xa;complete?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="50" y="440" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" vertex="1" parent="sw2">
+          <mxGeometry x="50" y="555" width="70" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="Runtime Services&#xa;AgentRuntimeContext&#xa;RuntimeToolRegistry&#xa;ToolScheduler&#xa;ToolExecutor&#xa;WorkflowGuard&#xa;ApprovalService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="sw2">
+          <mxGeometry x="280" y="340" width="180" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Edges in sw2 -->
+        <mxCell id="e10_11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="sw2" source="10" target="11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11_12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="sw2" source="11" target="12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12_13_yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11;fontColor=#82b366;fontStyle=1;" edge="1" parent="sw2" source="12" target="13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12_14_no" value="NO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;fontColor=#b85450;fontStyle=1;" edge="1" parent="sw2" source="12" target="14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13_11_loop" value="ToolMessage(s) → loop back" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;fontSize=10;fontColor=#d79b00;fontStyle=1;dashed=1;" edge="1" parent="sw2" source="13" target="11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="262" />
+              <mxPoint x="260" y="148" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13_17" value="delegates to" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=10;fontColor=#82b366;" edge="1" parent="sw2" source="13" target="17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14_15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="sw2" source="14" target="15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15_11_no" value="NO — incomplete&#xa;→ blocker HumanMessage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;entryX=0;entryY=1;fontSize=10;fontColor=#b85450;fontStyle=1;dashed=1;" edge="1" parent="sw2" source="15" target="11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="20" y="480" />
+              <mxPoint x="20" y="175" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15_16_yes" value="YES" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=11;fontColor=#82b366;fontStyle=1;" edge="1" parent="sw2" source="15" target="16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 3: Runtime Tool Execution -->
+        <mxCell id="sw3" value="Runtime Tool Execution Pipeline (ToolExecutor.execute)" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="30" y="710" width="880" height="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="20" value="1. emit&#xa;tool_start" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="20" y="50" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="2. WorkflowGuard&#xa;preflight check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="140" y="50" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="3. Block unsafe&#xa;write_file/edit_file" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="270" y="50" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="4. ApprovalService&#xa;builds request+diff" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="400" y="50" width="115" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="5. User approves&#xa;or silent auto-approve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="535" y="50" width="115" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="6. Registry resolves&#xa;handler (todo/skills/subagent/tool)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="670" y="50" width="145" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="26" value="7. runtime.run_tool&#xa;(timeout + retry)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="140" y="120" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="27" value="8. WorkflowGuard&#xa;updates state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="270" y="120" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="28" value="9. emit tool_result&#xa;diff preview" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="400" y="120" width="115" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="10. emit&#xa;tool_end" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="535" y="120" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="29b" value="11. return&#xa;ToolMessage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;" vertex="1" parent="sw3">
+          <mxGeometry x="670" y="120" width="100" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e20_21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="20" target="21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21_22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="21" target="22">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22_23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="22" target="23">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23_24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="23" target="24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e24_25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="24" target="25">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e25_26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="sw3" source="25" target="26">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e26_27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="26" target="27">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e27_28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="27" target="28">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e28_29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="28" target="29">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e29_29b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="sw3" source="29" target="29b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 4: Subagent & Task State -->
+        <mxCell id="sw4" value="Subagent System &amp; Task State Contract" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="30" y="930" width="880" height="220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="30" value="SubagentRunner&#xa;(isolated child sessions)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="sw4">
+          <mxGeometry x="30" y="45" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="explorer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="30" y="115" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="32" value="architect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="108" y="115" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="33" value="worker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="30" y="155" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="34" value="tester" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="108" y="155" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="security" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="sw4">
+          <mxGeometry x="69" y="190" width="70" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="Cannot call subagent or todo&#xa;(no recursive delegation)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;dashed=1;" vertex="1" parent="sw4">
+          <mxGeometry x="220" y="115" width="190" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="40" value="TodoManager (Task State)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1;" vertex="1" parent="sw4">
+          <mxGeometry x="460" y="45" width="180" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="41" value="Fields:&#xa;todo items (id/text/status)&#xa;user_goal / constraints&#xa;files_inspected / files_modified&#xa;decisions / test_results&#xa;open_risks / next_steps" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="sw4">
+          <mxGeometry x="460" y="100" width="230" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="42" value="Task Guard prevents END:&#xa;1. Task State created&#xa;2. All items completed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;dashed=1;align=left;spacingLeft=8;" vertex="1" parent="sw4">
+          <mxGeometry x="720" y="100" width="140" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- CROSS-TIER EDGES -->
+        <mxCell id="ce_3_10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="3" target="10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ce_13_20" value="internals" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#82b366;dashed=1;" edge="1" parent="1" source="13" target="20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ce_25_30" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=9;fontColor=#d79b00;dashed=1;" edge="1" parent="1" source="25" target="30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

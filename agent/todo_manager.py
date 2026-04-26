@@ -26,6 +26,8 @@ class TodoManager:
         self.consecutive_non_todo_rounds: int = 0
         self.task_state_started: bool = False
         self.task_completed: bool = False
+        self.last_incomplete_signature: Optional[tuple] = None
+        self.repeated_incomplete_updates: int = 0
 
     def _empty_memory(self) -> Dict[str, Any]:
         """Return an empty task memory shape."""
@@ -58,6 +60,14 @@ class TodoManager:
         if len(items) > self.MAX_ITEMS:
             logger.warning(f"Todo list exceeds maximum of {self.MAX_ITEMS} items. Truncated.")
             items = items[:self.MAX_ITEMS]
+
+        signature = self._items_signature(items)
+        is_incomplete = bool(items) and not self._items_all_completed(items)
+        if is_incomplete and signature == self.last_incomplete_signature:
+            self.repeated_incomplete_updates += 1
+        else:
+            self.repeated_incomplete_updates = 0
+        self.last_incomplete_signature = signature if is_incomplete else None
 
         self.todo_items = items
         if items:
@@ -94,9 +104,24 @@ class TodoManager:
 
     def _all_completed(self) -> bool:
         """Check if all todo items are completed."""
-        if not self.todo_items:
+        return self._items_all_completed(self.todo_items)
+
+    def _items_all_completed(self, items: List[Dict[str, Any]]) -> bool:
+        """Check if all provided todo items are completed."""
+        if not items:
             return False
-        return all(item.get("status") == "completed" for item in self.todo_items)
+        return all(item.get("status") == "completed" for item in items)
+
+    def _items_signature(self, items: List[Dict[str, Any]]) -> tuple:
+        """Return a stable signature for detecting repeated incomplete updates."""
+        return tuple(
+            (
+                str(item.get("id", "")),
+                str(item.get("text", "")),
+                str(item.get("status", "")),
+            )
+            for item in items
+        )
 
     def _clear_on_completion(self) -> None:
         """Clear todo list when all items are completed."""
@@ -112,6 +137,8 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.last_incomplete_signature = None
+        self.repeated_incomplete_updates = 0
 
     def clear(self) -> None:
         """Explicitly clear todo list."""
@@ -120,6 +147,8 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.last_incomplete_signature = None
+        self.repeated_incomplete_updates = 0
 
     def prepare_for_new_input(self) -> None:
         """Prepare for a new user input - clear previous tasks for new planning."""
@@ -130,6 +159,8 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.last_incomplete_signature = None
+        self.repeated_incomplete_updates = 0
 
     def can_finish_task(self) -> bool:
         """Return whether the current task may finish normally."""
@@ -193,6 +224,23 @@ class TodoManager:
         if reminder:
             self.consecutive_non_todo_rounds = 0
         return reminder
+
+    def has_repeated_incomplete_update(self) -> bool:
+        """Return whether the same incomplete todo state was repeated."""
+        return self.repeated_incomplete_updates >= 1 and bool(self.todo_items)
+
+    def consume_repeated_incomplete_message(self) -> str:
+        """Return a no-progress warning and reset the repeated update counter."""
+        if not self.has_repeated_incomplete_update():
+            return ""
+        self.repeated_incomplete_updates = 0
+        return (
+            "Task State did not change: you repeated the same incomplete todo list. "
+            "Do not call todo again with the same in_progress item. Take the next concrete "
+            "action now, such as running a verification tool or inspecting the relevant "
+            "file. If the work is already verified or no further automated verification is "
+            "possible, call todo with all items marked completed and then provide the final answer."
+        )
 
     def create_todo_handler(self) -> Callable:
         """Create a todo handler bound to this manager."""

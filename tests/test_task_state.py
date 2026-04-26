@@ -101,3 +101,20 @@ def test_reminder_contains_memory_and_resets_counter():
     assert "Files inspected: main.py" in reminder
     assert "Next steps: continue implementation" in reminder
     assert manager.consecutive_non_todo_rounds == 0
+
+
+def test_repeated_incomplete_todo_update_returns_no_progress_warning():
+    manager = TodoManager()
+    items = [{"id": "1", "text": "Verify game", "status": "in_progress"}]
+
+    manager.set_items(items)
+    assert manager.has_repeated_incomplete_update() is False
+
+    manager.set_items(items)
+    assert manager.has_repeated_incomplete_update() is True
+
+    message = manager.consume_repeated_incomplete_message()
+
+    assert "Task State did not change" in message
+    assert "Do not call todo again" in message
+    assert manager.has_repeated_incomplete_update() is False

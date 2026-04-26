@@ -120,6 +120,44 @@ def test_todo_reminder_resets_after_it_is_consumed():
     assert manager.needs_reminder() is False
 
 
+def test_tools_node_warns_when_todo_repeats_same_incomplete_state(tmp_path):
+    manager = TodoManager()
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=manager,
+        workdir=tmp_path,
+        session_id="session",
+    )
+
+    def todo_message(call_id):
+        ai_msg = AIMessage(content="")
+        ai_msg.additional_kwargs["tool_calls_data"] = [
+            ToolCall(
+                id=call_id,
+                name="todo",
+                args={
+                    "items": [
+                        {
+                            "id": "1",
+                            "text": "Verify game",
+                            "status": "in_progress",
+                        }
+                    ]
+                },
+            )
+        ]
+        return ai_msg
+
+    asyncio.run(tools_node({"messages": [todo_message("todo-1")]}))
+    result = asyncio.run(tools_node({"messages": [todo_message("todo-2")]}))
+
+    assert any(
+        isinstance(message, HumanMessage) and "Task State did not change" in message.content
+        for message in result["messages"]
+    )
+
+
 def test_tools_node_passes_default_tool_timeouts(tmp_path, monkeypatch):
     captured = []
 

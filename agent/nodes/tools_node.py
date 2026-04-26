@@ -1,6 +1,6 @@
 """Tools graph node."""
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.nodes.state import AgentState
 from agent.runtime.approval_service import ApprovalService
@@ -34,6 +34,9 @@ def create_tools_node(runtime: AgentRuntimeContext):
                 runtime.todo_manager.record_tool_call(tool_calls_data[0].name)
 
         additional_messages = workflow_guard.after_batch_messages(tool_calls_data)
+        repeated_todo_message = runtime.todo_manager.consume_repeated_incomplete_message()
+        if repeated_todo_message:
+            additional_messages.append(HumanMessage(content=repeated_todo_message))
         if (
             any(tc.name == "todo" for tc in tool_calls_data)
             and runtime.todo_manager.can_finish_task()

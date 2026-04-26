@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 import tiktoken
 
 from .base import LLMProvider, ChatResponse, ToolCall
+from .text_tool_calls import TextToolCallStreamFilter, parse_text_tool_calls
 
 
 class OpenAIProvider(LLMProvider):
@@ -112,6 +113,7 @@ class OpenAIProvider(LLMProvider):
         usage = None
 
         if stream_callback:
+            text_filter = TextToolCallStreamFilter()
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=openai_messages,
@@ -132,7 +134,8 @@ class OpenAIProvider(LLMProvider):
 
                 if delta.content:
                     current_text += delta.content
-                    await stream_callback("text_delta", delta.content)
+                    for safe_text in text_filter.feed(delta.content):
+                        await stream_callback("text_delta", safe_text)
 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
@@ -145,6 +148,8 @@ class OpenAIProvider(LLMProvider):
                             current_tool_call = tool_calls_data[-1]
                         if tc.function and tc.function.arguments:
                             current_tool_call["args"] += tc.function.arguments
+            for safe_text in text_filter.flush():
+                await stream_callback("text_delta", safe_text)
         else:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -172,6 +177,11 @@ class OpenAIProvider(LLMProvider):
             except json.JSONDecodeError:
                 args = {}
             tool_calls.append(ToolCall(id=tc["id"], name=tc["name"], args=args))
+
+        cleaned_text, text_tool_calls = parse_text_tool_calls(current_text)
+        if text_tool_calls:
+            current_text = cleaned_text
+            tool_calls.extend(text_tool_calls)
 
         return ChatResponse(
             content=current_text,

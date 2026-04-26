@@ -35,12 +35,13 @@
             background: #262f20;
         }
         #ui-bar {
-            width: 800px;
+            width: 1200px;
             background: #4a5a3f;
-            padding: 12px 20px;
+            padding: 14px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-size: 16px;
             border-bottom: 2px solid #b91c1c;
         }
         .stat {
@@ -59,7 +60,7 @@
         .stat .gold { background: #ffd700; }
         .stat .wave { background: #00bfff; }
         #control-bar {
-            width: 800px;
+            width: 1200px;
             background: #16213e;
             padding: 15px 20px;
             display: flex;
@@ -139,21 +140,25 @@
         <div id="ui-bar">
             <div class="stat">
                 <div class="icon lives"></div>
-                <span>生命值: <span id="lives">20</span></span>
+                <span>生命值: <span id="lives">30</span></span>
             </div>
             <div class="stat">
                 <div class="icon gold"></div>
-                <span>金币: <span id="gold">200</span></span>
+                <span>金币: <span id="gold">300</span></span>
             </div>
             <div class="stat">
                 <div class="icon wave"></div>
-                <span>波数: <span id="wave">1</span> / 20</span>
+                <span>关卡: <span id="level-display">第1关</span></span>
+            </div>
+            <div class="stat">
+                <div class="icon wave"></div>
+                <span>波数: <span id="wave">1</span> / <span id="total-waves">30</span></span>
             </div>
             <div class="stat">
                 <span>下一波: <span id="next-wave">10</span>s</span>
             </div>
         </div>
-        <canvas id="game-canvas" width="800" height="500"></canvas>
+        <canvas id="game-canvas" width="1200" height="700"></canvas>
         <div id="control-bar">
             <button class="btn btn-primary" id="start-btn">开始游戏</button>
             <button class="btn btn-speed active" data-speed="1">x1</button>
@@ -162,15 +167,15 @@
             <div class="tower-select">
                 <button class="tower-btn" data-tower="basic">
                     <span>步枪塔</span>
-                    <span class="cost">50G</span>
+                    <span class="cost">45G</span>
                 </button>
                 <button class="tower-btn" data-tower="cannon">
                     <span>加农炮</span>
-                    <span class="cost">120G</span>
+                    <span class="cost">100G</span>
                 </button>
                 <button class="tower-btn" data-tower="ice">
                     <span>冰冻塔</span>
-                    <span class="cost">80G</span>
+                    <span class="cost">65G</span>
                 </button>
                 <button class="tower-btn" data-tower="rocket">
                     <span>火箭塔</span>
@@ -181,8 +186,8 @@
                     <span class="cost">130G</span>
                 </button>
                 <button class="tower-btn" data-tower="emp">
-                    <span>EMP塔</span>
-                    <span class="cost">100G</span>
+                    <span>震荡炮</span>
+                    <span class="cost">350G</span>
                 </button>
             </div>
         </div>
@@ -267,23 +272,76 @@
 
         // 游戏常量
         const TILE_SIZE = 40;
-        const COLS = 20;
-        const ROWS = 12.5;
+        const COLS = 30;
+        const ROWS = 17.5;
 
-        // 敌人路径
-        const PATH = [
-            {x: 0, y: 200},
-            {x: 600, y: 200},
-            {x: 600, y: 400},
-            {x: 200, y: 400},
-            {x: 200, y: 100},
-            {x: 800, y: 100}
+        // 关卡配置：5个独立关卡，每关独立地图
+        const LEVELS = [
+            {
+                name: '第一关 · 边境巡逻',
+                waves: 30,
+                startGold: 300,
+                startLives: 30,
+                path: [
+                    {x: 0, y: 200}, {x: 250, y: 200}, {x: 250, y: 420},
+                    {x: 650, y: 420}, {x: 650, y: 120}, {x: 1200, y: 120}
+                ]
+            },
+            {
+                name: '第二关 · 峡谷通道',
+                waves: 30,
+                startGold: 300,
+                startLives: 25,
+                path: [
+                    {x: 0, y: 80}, {x: 280, y: 80}, {x: 280, y: 380},
+                    {x: 560, y: 380}, {x: 560, y: 620}, {x: 880, y: 620},
+                    {x: 880, y: 140}, {x: 1200, y: 140}
+                ]
+            },
+            {
+                name: '第三关 · 十字路口',
+                waves: 30,
+                startGold: 300,
+                startLives: 20,
+                path: [
+                    {x: 0, y: 320}, {x: 320, y: 320}, {x: 320, y: 80},
+                    {x: 640, y: 80}, {x: 640, y: 520}, {x: 960, y: 520},
+                    {x: 960, y: 320}, {x: 1200, y: 320}
+                ]
+            },
+            {
+                name: '第四关 · 蛇形回廊',
+                waves: 30,
+                startGold: 350,
+                startLives: 20,
+                path: [
+                    {x: 0, y: 60}, {x: 320, y: 60}, {x: 320, y: 280},
+                    {x: 120, y: 280}, {x: 120, y: 500}, {x: 520, y: 500},
+                    {x: 520, y: 160}, {x: 320, y: 160}, {x: 320, y: 380},
+                    {x: 720, y: 380}, {x: 720, y: 60}, {x: 920, y: 60},
+                    {x: 920, y: 580}, {x: 1200, y: 580}
+                ]
+            },
+            {
+                name: '第五关 · 最后堡垒',
+                waves: 30,
+                startGold: 350,
+                startLives: 15,
+                path: [
+                    {x: 0, y: 80}, {x: 200, y: 80}, {x: 200, y: 620},
+                    {x: 520, y: 620}, {x: 520, y: 160}, {x: 340, y: 160},
+                    {x: 340, y: 460}, {x: 700, y: 460}, {x: 700, y: 240},
+                    {x: 520, y: 240}, {x: 520, y: 380}, {x: 880, y: 380},
+                    {x: 880, y: 80}, {x: 1060, y: 80}, {x: 1060, y: 520},
+                    {x: 1200, y: 520}
+                ]
+            }
         ];
 
         // 防御塔配置
         const TOWER_TYPES = {
             basic: {
-                cost: 40,
+                cost: 45,
                 range: 120,
                 damage: 10,
                 fireRate: 1000,
@@ -292,7 +350,7 @@
                 projectileSpeed: 5
             },
             cannon: {
-                cost: 90,
+                cost: 100,
                 range: 150,
                 damage: 40,
                 fireRate: 2500,
@@ -302,7 +360,7 @@
                 splash: 40
             },
             ice: {
-                cost: 60,
+                cost: 65,
                 range: 100,
                 damage: 5,
                 fireRate: 800,
@@ -362,24 +420,24 @@
                 projectileSpeed: 10
             },
             emp: {
-                cost: 100,
+                cost: 350,
                 range: 110,
-                damage: 8,
-                fireRate: 1200,
+                damage: 35,
+                fireRate: 1800,
                 color: '#06b6d4',
                 projectileColor: '#22d3ee',
-                projectileSpeed: 7,
-                slowFactor: 0.2,
-                slowDuration: 3000
+                projectileSpeed: 6,
+                splash: 90,
+                multiTarget: true
             }
         };
 
         // 敌人配置
         const ENEMY_TYPES = {
             basic: {
-                health: 60,
+                health: 45,
                 speed: 1.5,
-                reward: 10,
+                reward: 12,
                 color: '#f38181',
                 size: 16
             },
@@ -396,6 +454,13 @@
                 reward: 15,
                 color: '#fce38a',
                 size: 14
+            },
+            boss: {
+                health: 800,
+                speed: 0.5,
+                reward: 100,
+                color: '#8b0000',
+                size: 32
             }
         };
 
@@ -409,17 +474,20 @@
                 // 游戏状态
                 this.running = false;
                 this.gameSpeed = 1;
-                this.lives = 20;
-                this.gold = 200;
+                this.currentLevel = 0;
+                this.currentPath = LEVELS[0].path;
+                this.lives = LEVELS[0].startLives;
+                this.gold = LEVELS[0].startGold;
                 this.wave = 1;
+                this.totalWaves = LEVELS[0].waves;
                 this.nextWaveTimer = 10000;
                 this.enemies = [];
                 this.towers = [];
                 this.projectiles = [];
                 this.enemiesSpawned = 0;
-                this.enemiesToSpawn = 5;
+                this.enemiesToSpawn = 4;
                 this.spawnTimer = 0;
-                this.spawnInterval = 1500;
+                this.spawnInterval = 1600;
                 this.selectedTower = null;
                 this.mousePos = {x: 0, y: 0};
                 
@@ -489,6 +557,28 @@
                         this.updateUI();
                     }
                 });
+
+                // 右键铲除防御塔（返还50%金币）
+                this.canvas.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    const tower = this.findTowerAt(this.mousePos);
+                    if (tower) {
+                        const refund = Math.floor(tower.cost / 2);
+                        this.gold += refund;
+                        this.towers = this.towers.filter(t => t !== tower);
+                        this.audio.play('place');
+                        this.updateUI();
+                    }
+                });
+            }
+
+            findTowerAt(pos) {
+                for (const tower of this.towers) {
+                    const dx = pos.x - tower.x;
+                    const dy = pos.y - tower.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < TILE_SIZE/2) return tower;
+                }
+                return null;
             }
 
             getGridPosition(pos) {
@@ -500,9 +590,9 @@
 
             canPlaceTower(pos) {
                 // 检查是否在路径上
-                for (let i = 0; i < PATH.length - 1; i++) {
-                    const p1 = PATH[i];
-                    const p2 = PATH[i+1];
+                for (let i = 0; i < this.currentPath.length - 1; i++) {
+                    const p1 = this.currentPath[i];
+                    const p2 = this.currentPath[i+1];
                     if (this.isPointOnLineSegment(pos.x, pos.y, p1.x, p1.y, p2.x, p2.y, TILE_SIZE)) {
                         return false;
                     }
@@ -529,18 +619,24 @@
 
             spawnEnemy() {
                 if (this.enemiesSpawned >= this.enemiesToSpawn) return;
-                const types = Object.keys(ENEMY_TYPES);
+                
+                // 每关最后一波，最后30个敌人生成boss
                 let type;
-                if (this.wave < 5) type = 'basic';
-                else if (this.wave < 10) type = Math.random() > 0.5 ? 'basic' : 'speedy';
-                else if (this.wave < 15) type = Math.random() > 0.6 ? 'heavy' : (Math.random() > 0.5 ? 'basic' : 'speedy');
-                else type = types[Math.floor(Math.random() * types.length)];
+                if (this.wave === this.totalWaves && this.enemiesSpawned >= this.enemiesToSpawn - 30) {
+                    type = 'boss';
+                } else {
+                    const types = Object.keys(ENEMY_TYPES).filter(t => t !== 'boss');
+                    if (this.wave < 8) type = 'basic';
+                    else if (this.wave < 16) type = Math.random() > 0.5 ? 'basic' : 'speedy';
+                    else if (this.wave < 24) type = Math.random() > 0.6 ? 'heavy' : (Math.random() > 0.5 ? 'basic' : 'speedy');
+                    else type = types[Math.floor(Math.random() * types.length)];
+                }
                 
                 this.enemies.push({
                     type,
                     pathIndex: 0,
-                    x: PATH[0].x,
-                    y: PATH[0].y,
+                    x: this.currentPath[0].x,
+                    y: this.currentPath[0].y,
                     slowEnd: 0,
                     ...ENEMY_TYPES[type],
                     maxHealth: ENEMY_TYPES[type].health
@@ -572,7 +668,7 @@
                 // 更新敌人
                 for (let i = this.enemies.length - 1; i >= 0; i--) {
                     const enemy = this.enemies[i];
-                    const target = PATH[enemy.pathIndex];
+                    const target = this.currentPath[enemy.pathIndex];
                     const dx = target.x - enemy.x;
                     const dy = target.y - enemy.y;
                     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -582,7 +678,7 @@
                     
                     if (dist < speed) {
                         enemy.pathIndex++;
-                        if (enemy.pathIndex >= PATH.length) {
+                        if (enemy.pathIndex >= this.currentPath.length) {
                             // 敌人到达终点
                             this.lives--;
                             this.enemies.splice(i, 1);
@@ -599,6 +695,35 @@
                 const now = Date.now();
                 for (const tower of this.towers) {
                     if (now - tower.lastFire < tower.fireRate) continue;
+                    
+                    // 多目标塔：向范围内所有敌人同时开火
+                    if (tower.multiTarget) {
+                        let fired = false;
+                        for (const enemy of this.enemies) {
+                            const dx = enemy.x - tower.x;
+                            const dy = enemy.y - tower.y;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+                            if (dist < tower.range) {
+                                this.projectiles.push({
+                                    x: tower.x,
+                                    y: tower.y,
+                                    target: enemy,
+                                    damage: tower.damage,
+                                    speed: tower.projectileSpeed,
+                                    color: tower.projectileColor,
+                                    splash: tower.splash,
+                                    slowFactor: tower.slowFactor,
+                                    slowDuration: tower.slowDuration
+                                });
+                                fired = true;
+                            }
+                        }
+                        if (fired) {
+                            tower.lastFire = now;
+                            this.audio.play('shoot');
+                        }
+                        continue;
+                    }
                     
                     // 找范围内最近的敌人
                     let target = null;
@@ -686,20 +811,46 @@
 
             startNextWave() {
                 this.wave++;
-                // 波数达到上限，游戏胜利
-                if (this.wave > 20) {
-                    this.running = false;
-                    const gameOverEl = document.getElementById('game-over');
-                    gameOverEl.querySelector('h2').textContent = '🎉 任务完成！';
-                    gameOverEl.querySelector('p').textContent = '你成功通关了全部20波敌人，保卫了基地！';
-                    gameOverEl.style.display = 'block';
-                    this.audio.play('gameOver');
-                    return;
+                // 当前关卡波数完成，进入下一关
+                if (this.wave > this.totalWaves) {
+                    if (this.currentLevel < LEVELS.length - 1) {
+                        // 进入下一关
+                        this.currentLevel++;
+                        const nextLevel = LEVELS[this.currentLevel];
+                        this.currentPath = nextLevel.path;
+                        this.wave = 1;
+                        this.totalWaves = nextLevel.waves;
+                        this.gold = 500;
+                        this.nextWaveTimer = 10000;
+                        this.enemies = [];
+                        this.towers = [];
+                        this.projectiles = [];
+                        this.enemiesSpawned = 0;
+                        this.enemiesToSpawn = 4 + Math.floor(this.wave * 1.3);
+                        this.spawnTimer = 0;
+                        this.spawnInterval = Math.max(700, 1600 - this.wave * 50);
+                        this.running = false;
+                        document.getElementById('start-btn').textContent = '开始游戏';
+                        this.audio.play('waveStart');
+                        this.updateUI();
+                        return;
+                    } else {
+                        // 全部5关通关！
+                        this.running = false;
+                        const gameOverEl = document.getElementById('game-over');
+                        gameOverEl.querySelector('h2').textContent = '🎉 任务完成！';
+                        gameOverEl.querySelector('p').textContent = '你成功通关了全部5个关卡，保卫了基地！';
+                        gameOverEl.style.display = 'block';
+                        this.audio.play('gameOver');
+                        return;
+                    }
                 }
-                this.enemiesToSpawn = 5 + Math.floor(this.wave * 1.5);
+                this.enemiesToSpawn = 4 + Math.floor(this.wave * 1.3);
+                // 最后一波敌人数量x10
+                if (this.wave === this.totalWaves) this.enemiesToSpawn *= 10;
                 this.enemiesSpawned = 0;
                 this.nextWaveTimer = 10000;
-                this.spawnInterval = Math.max(500, 1500 - this.wave * 50);
+                this.spawnInterval = Math.max(700, 1600 - this.wave * 50);
                 this.audio.play('waveStart');
             }
 
@@ -729,43 +880,393 @@
                 this.ctx.lineCap = 'round';
                 this.ctx.lineJoin = 'round';
                 this.ctx.beginPath();
-                this.ctx.moveTo(PATH[0].x, PATH[0].y);
-                for (let i = 1; i < PATH.length; i++) {
-                    this.ctx.lineTo(PATH[i].x, PATH[i].y);
+                this.ctx.moveTo(this.currentPath[0].x, this.currentPath[0].y);
+                for (let i = 1; i < this.currentPath.length; i++) {
+                    this.ctx.lineTo(this.currentPath[i].x, this.currentPath[i].y);
                 }
                 this.ctx.stroke();
 
-                // 绘制敌人
+                // 绘制敌人 - 美术风格
                 for (const enemy of this.enemies) {
-                    // 敌人本体
-                    this.ctx.fillStyle = enemy.color;
-                    this.ctx.beginPath();
-                    this.ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
-                    this.ctx.fill();
+                    const ex = enemy.x, ey = enemy.y;
+                    const sz = enemy.size;
+                    
+                    if (enemy.type === 'boss') {
+                        // Boss：恐怖恶魔风格 - 暗黑盔甲+角+红色辉光
+                        const pulseR = sz + Math.sin(Date.now() * 0.004) * 4;
+                        // 暗红色光环
+                        this.ctx.fillStyle = 'rgba(180, 0, 0, 0.25)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex, ey, pulseR + 8, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 主体 - 暗红装甲
+                        this.ctx.fillStyle = '#2a0a0a';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex, ey, sz, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#8b0000';
+                        this.ctx.lineWidth = 4;
+                        this.ctx.stroke();
+                        // 内甲
+                        this.ctx.fillStyle = '#4a1010';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex, ey, sz * 0.75, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#cc0000';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        // 恶魔角
+                        this.ctx.fillStyle = '#1a0a0a';
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(ex - sz * 0.5, ey - sz * 0.3);
+                        this.ctx.lineTo(ex - sz * 0.8, ey - sz * 1.3);
+                        this.ctx.lineTo(ex - sz * 0.2, ey - sz * 0.5);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#8b0000';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(ex + sz * 0.5, ey - sz * 0.3);
+                        this.ctx.lineTo(ex + sz * 0.8, ey - sz * 1.3);
+                        this.ctx.lineTo(ex + sz * 0.2, ey - sz * 0.5);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.stroke();
+                        // 猩红双眼
+                        this.ctx.fillStyle = '#ff0000';
+                        this.ctx.shadowColor = '#ff0000';
+                        this.ctx.shadowBlur = 8;
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.25, ey - sz * 0.15, sz * 0.2, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.25, ey - sz * 0.15, sz * 0.2, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.shadowBlur = 0;
+                        // 瞳孔
+                        this.ctx.fillStyle = '#ffcc00';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.25, ey - sz * 0.15, sz * 0.07, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.25, ey - sz * 0.15, sz * 0.07, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 獠牙
+                        this.ctx.fillStyle = '#fff';
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(ex - sz * 0.15, ey + sz * 0.1);
+                        this.ctx.lineTo(ex - sz * 0.2, ey + sz * 0.45);
+                        this.ctx.lineTo(ex - sz * 0.05, ey + sz * 0.15);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(ex + sz * 0.15, ey + sz * 0.1);
+                        this.ctx.lineTo(ex + sz * 0.2, ey + sz * 0.45);
+                        this.ctx.lineTo(ex + sz * 0.05, ey + sz * 0.15);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                    } else if (enemy.type === 'heavy') {
+                        this.ctx.fillStyle = '#5a3e7a';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex, ey, sz, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#3a1e5a';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#7a5e9a';
+                        this.ctx.fillRect(ex - sz * 0.6, ey - sz * 0.3, sz * 1.2, sz * 0.6);
+                        this.ctx.fillStyle = '#fff';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.35, ey - sz * 0.3, sz * 0.25, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.35, ey - sz * 0.3, sz * 0.25, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = '#ff0000';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.35, ey - sz * 0.3, sz * 0.13, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.35, ey - sz * 0.3, sz * 0.13, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else if (enemy.type === 'speedy') {
+                        this.ctx.fillStyle = enemy.color;
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(ex, ey, sz * 0.7, sz, 0, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#fff3b0';
+                        this.ctx.lineWidth = 1.5;
+                        this.ctx.stroke();
+                        this.ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                        this.ctx.lineWidth = 1;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(ex - sz * 0.5, ey - sz * 0.6);
+                        this.ctx.lineTo(ex - sz * 0.5, ey + sz * 0.6);
+                        this.ctx.moveTo(ex + sz * 0.5, ey - sz * 0.6);
+                        this.ctx.lineTo(ex + sz * 0.5, ey + sz * 0.6);
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#fff';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.2, ey - sz * 0.3, sz * 0.2, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.2, ey - sz * 0.3, sz * 0.2, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = '#ffd700';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.2, ey - sz * 0.3, sz * 0.1, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.2, ey - sz * 0.3, sz * 0.1, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else {
+                        this.ctx.fillStyle = enemy.color;
+                        this.ctx.beginPath();
+                        const spikes = 8;
+                        for (let i = 0; i < spikes; i++) {
+                            const angle = (Math.PI * 2 / spikes) * i;
+                            const outerR = sz * (i % 2 === 0 ? 1.1 : 0.9);
+                            const px = ex + Math.cos(angle) * outerR;
+                            const py = ey + Math.sin(angle) * outerR;
+                            if (i === 0) this.ctx.moveTo(px, py);
+                            else this.ctx.lineTo(px, py);
+                        }
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#c44';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#fff';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.3, ey - sz * 0.25, sz * 0.3, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.3, ey - sz * 0.25, sz * 0.3, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = '#111';
+                        this.ctx.beginPath();
+                        this.ctx.arc(ex - sz * 0.3, ey - sz * 0.25, sz * 0.15, 0, Math.PI * 2);
+                        this.ctx.arc(ex + sz * 0.3, ey - sz * 0.25, sz * 0.15, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
 
-                    // 血条
-                    const barWidth = enemy.size * 1.5;
+                    // 血条 - 根据血量变色
+                    const barWidth = sz * 1.5;
                     const barHeight = 3;
-                    this.ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    this.ctx.fillRect(enemy.x - barWidth/2, enemy.y - enemy.size - 8, barWidth, barHeight);
-                    this.ctx.fillStyle = '#4ade80';
-                    this.ctx.fillRect(enemy.x - barWidth/2, enemy.y - enemy.size - 8, barWidth * (enemy.health / enemy.maxHealth), barHeight);
+                    const barY = ey - sz - 8;
+                    this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    this.ctx.fillRect(ex - barWidth/2, barY, barWidth, barHeight);
+                    const hpRatio = enemy.health / enemy.maxHealth;
+                    const hpColor = hpRatio > 0.5 ? '#4ade80' : hpRatio > 0.25 ? '#facc15' : '#ef4444';
+                    this.ctx.fillStyle = hpColor;
+                    this.ctx.fillRect(ex - barWidth/2, barY, barWidth * hpRatio, barHeight);
+                    this.ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    this.ctx.lineWidth = 0.5;
+                    this.ctx.strokeRect(ex - barWidth/2, barY, barWidth, barHeight);
                 }
 
-                // 绘制防御塔
+                // 绘制防御塔 - 美术风格：每种塔独立绘制
+                const hoveredTower = this.findTowerAt(this.mousePos);
                 for (const tower of this.towers) {
-                    // 塔底座
+                    const tx = tower.x, ty = tower.y;
+                    const r = TILE_SIZE / 2 - 4;
+                    const clr = tower.color;
+                    const type = tower.type;
+                    
+                    // 通用：塔基座
                     this.ctx.fillStyle = '#1a1a2e';
+                    this.ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                    this.ctx.lineWidth = 1;
                     this.ctx.beginPath();
-                    this.ctx.arc(tower.x, tower.y, TILE_SIZE/2 - 4, 0, Math.PI * 2);
+                    this.ctx.arc(tx, ty, r + 2, 0, Math.PI * 2);
                     this.ctx.fill();
-                    this.ctx.strokeStyle = tower.color;
-                    this.ctx.lineWidth = 2;
                     this.ctx.stroke();
 
-                    // 炮塔
-                    this.ctx.fillStyle = tower.color;
-                    this.ctx.fillRect(tower.x - 6, tower.y - 12, 12, 16);
+                    if (type === 'basic') {
+                        this.ctx.fillStyle = '#3a4a5a';
+                        this.ctx.beginPath();
+                        for (let i = 0; i < 6; i++) {
+                            const a = Math.PI / 3 * i - Math.PI / 6;
+                            const px = tx + Math.cos(a) * r;
+                            const py = ty + Math.sin(a) * r;
+                            i === 0 ? this.ctx.moveTo(px, py) : this.ctx.lineTo(px, py);
+                        }
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = clr;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#555';
+                        this.ctx.fillRect(tx - 3, ty - 16, 6, 14);
+                        this.ctx.fillStyle = '#333';
+                        this.ctx.fillRect(tx - 2, ty - 20, 4, 6);
+                        this.ctx.fillStyle = '#222';
+                        for (let i = 0; i < 3; i++) {
+                            this.ctx.fillRect(tx - 4, ty - 14 + i * 5, 8, 2);
+                        }
+                        this.ctx.strokeStyle = '#ffd700';
+                        this.ctx.lineWidth = 1;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(tx + 6, ty - 4);
+                        for (let i = 0; i < 5; i++) {
+                            this.ctx.lineTo(tx + 10 + i * 3, ty - 2 + (i % 2) * 4);
+                        }
+                        this.ctx.stroke();
+                    } else if (type === 'cannon') {
+                        this.ctx.fillStyle = '#5a3a2a';
+                        this.ctx.fillRect(tx - r, ty - r * 0.6, r * 2, r * 1.2);
+                        this.ctx.strokeStyle = '#8b5a3c';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.strokeRect(tx - r, ty - r * 0.6, r * 2, r * 1.2);
+                        this.ctx.fillStyle = '#3a2a1a';
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx - r * 0.6, ty + r * 0.5, 5, 0, Math.PI * 2);
+                        this.ctx.arc(tx + r * 0.6, ty + r * 0.5, 5, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#666';
+                        this.ctx.lineWidth = 1;
+                        this.ctx.stroke();
+                        const grad = this.ctx.createLinearGradient(tx, ty - 12, tx, ty - 6);
+                        grad.addColorStop(0, '#aaa');
+                        grad.addColorStop(1, '#555');
+                        this.ctx.fillStyle = grad;
+                        this.ctx.fillRect(tx - 5, ty - 18, 10, 14);
+                        this.ctx.strokeStyle = '#222';
+                        this.ctx.lineWidth = 1.5;
+                        this.ctx.strokeRect(tx - 5, ty - 18, 10, 14);
+                        this.ctx.fillStyle = 'rgba(255, 160, 30, 0.7)';
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(tx - 7, ty - 18);
+                        this.ctx.lineTo(tx, ty - 28);
+                        this.ctx.lineTo(tx + 7, ty - 18);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                    } else if (type === 'ice') {
+                        this.ctx.fillStyle = 'rgba(149, 225, 211, 0.3)';
+                        this.ctx.beginPath();
+                        for (let i = 0; i < 6; i++) {
+                            const a = Math.PI / 3 * i;
+                            const outerR = r * (i % 2 === 0 ? 1 : 0.7);
+                            const px = tx + Math.cos(a) * outerR;
+                            const py = ty + Math.sin(a) * outerR;
+                            i === 0 ? this.ctx.moveTo(px, py) : this.ctx.lineTo(px, py);
+                        }
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = clr;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#e0f7fa';
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(tx, ty - 16);
+                        this.ctx.lineTo(tx - 5, ty);
+                        this.ctx.lineTo(tx + 5, ty);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#80deea';
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                        for (let i = 0; i < 4; i++) {
+                            const a = Math.PI / 2 * i;
+                            this.ctx.fillRect(tx + Math.cos(a) * r * 0.7 - 1, ty + Math.sin(a) * r * 0.7 - 1, 2, 2);
+                        }
+                    } else if (type === 'rocket') {
+                        this.ctx.fillStyle = '#4a5568';
+                        this.ctx.fillRect(tx - r, ty - 4, r * 2, 8);
+                        this.ctx.strokeStyle = '#2d3748';
+                        this.ctx.lineWidth = 1.5;
+                        this.ctx.strokeRect(tx - r, ty - 4, r * 2, 8);
+                        for (let i = -1; i <= 2; i++) {
+                            this.ctx.fillStyle = '#718096';
+                            this.ctx.fillRect(tx - 4 + i * 5, ty - 18, 4, 14);
+                            this.ctx.strokeStyle = '#2d3748';
+                            this.ctx.lineWidth = 1;
+                            this.ctx.strokeRect(tx - 4 + i * 5, ty - 18, 4, 14);
+                            this.ctx.fillStyle = '#f97316';
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(tx - 2 + i * 5, ty - 20);
+                            this.ctx.lineTo(tx + 2 + i * 5, ty - 20);
+                            this.ctx.lineTo(tx + i * 5, ty - 24);
+                            this.ctx.closePath();
+                            this.ctx.fill();
+                        }
+                        this.ctx.fillStyle = '#2d3748';
+                        this.ctx.fillRect(tx - r * 0.8, ty + 4, r * 1.6, 6);
+                    } else if (type === 'sniper') {
+                        this.ctx.fillStyle = '#5a4a3a';
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(tx - r * 0.5, ty + 4);
+                        this.ctx.lineTo(tx - r * 0.8, ty + r * 0.8);
+                        this.ctx.lineTo(tx + r * 0.8, ty + r * 0.8);
+                        this.ctx.lineTo(tx + r * 0.5, ty + 4);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#3a2a1a';
+                        this.ctx.lineWidth = 1.5;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#4a3728';
+                        this.ctx.fillRect(tx - 1.5, ty - 22, 3, 18);
+                        this.ctx.fillStyle = '#2a1a0a';
+                        this.ctx.fillRect(tx - 1, ty - 26, 2, 6);
+                        this.ctx.fillStyle = '#222';
+                        this.ctx.fillRect(tx - 0.5, ty - 16, 1, 8);
+                        this.ctx.fillStyle = 'rgba(251, 191, 36, 0.8)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx, ty - 20, 2.5, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = 'rgba(251, 191, 36, 0.25)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx, ty - 20, 6, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else if (type === 'emp') {
+                        this.ctx.fillStyle = '#1a3a4a';
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(tx, ty + 4, r, r * 0.4, 0, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = clr;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        this.ctx.fillStyle = '#555';
+                        this.ctx.fillRect(tx - 2, ty - 14, 4, 18);
+                        this.ctx.fillStyle = clr;
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx, ty - 16, 6, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = 'rgba(34, 211, 238, 0.5)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx, ty - 16, 3, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)';
+                        this.ctx.lineWidth = 1;
+                        for (let i = 0; i < 3; i++) {
+                            const a = Math.PI * 2 / 3 * i + Date.now() * 0.003 % (Math.PI * 2);
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(tx, ty - 16);
+                            this.ctx.lineTo(tx + Math.cos(a) * r * 0.7, ty - 16 + Math.sin(a) * r * 0.7);
+                            this.ctx.stroke();
+                        }
+                        this.ctx.strokeStyle = 'rgba(6, 182, 212, 0.3)';
+                        this.ctx.lineWidth = 1;
+                        const pulseR = 8 + Math.sin(Date.now() * 0.005) * 3;
+                        this.ctx.beginPath();
+                        this.ctx.arc(tx, ty - 16, pulseR, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                    } else {
+                        this.ctx.fillStyle = clr;
+                        this.ctx.fillRect(tx - 6, ty - 12, 12, 16);
+                    }
+                    
+                    this.ctx.strokeStyle = clr;
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.arc(tx, ty, r, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                }
+
+                // hover高亮已放置的塔
+                if (hoveredTower) {
+                    this.ctx.strokeStyle = 'rgba(255, 255, 100, 0.7)';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.setLineDash([5, 3]);
+                    this.ctx.beginPath();
+                    this.ctx.arc(hoveredTower.x, hoveredTower.y, TILE_SIZE/2, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                    // 显示范围圈
+                    this.ctx.strokeStyle = 'rgba(255, 255, 100, 0.2)';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.fillStyle = 'rgba(255, 255, 100, 0.05)';
+                    this.ctx.beginPath();
+                    this.ctx.arc(hoveredTower.x, hoveredTower.y, hoveredTower.range, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
                 }
 
                 // 绘制子弹
@@ -799,7 +1300,9 @@
             updateUI() {
                 document.getElementById('lives').textContent = this.lives;
                 document.getElementById('gold').textContent = this.gold;
+                document.getElementById('level-display').textContent = LEVELS[this.currentLevel].name;
                 document.getElementById('wave').textContent = this.wave;
+                document.getElementById('total-waves').textContent = this.totalWaves;
                 document.getElementById('next-wave').textContent = Math.ceil(this.nextWaveTimer / 1000);
 
                 // 更新塔按钮状态
@@ -811,21 +1314,25 @@
 
             gameOver() {
                 this.running = false;
-                document.getElementById('final-wave').textContent = this.wave;
+                document.getElementById('final-wave').textContent = 
+                    LEVELS[this.currentLevel].name + ' - 第 ' + this.wave + ' 波';
                 document.getElementById('game-over').style.display = 'block';
                 this.audio.play('gameOver');
             }
 
             restart() {
-                this.lives = 20;
-                this.gold = 200;
+                this.currentLevel = 0;
+                this.currentPath = LEVELS[0].path;
+                this.lives = LEVELS[0].startLives;
+                this.gold = LEVELS[0].startGold;
                 this.wave = 1;
+                this.totalWaves = LEVELS[0].waves;
                 this.nextWaveTimer = 10000;
                 this.enemies = [];
                 this.towers = [];
                 this.projectiles = [];
                 this.enemiesSpawned = 0;
-                this.enemiesToSpawn = 5;
+                this.enemiesToSpawn = 4;
                 this.spawnTimer = 0;
                 this.running = false;
                 this.selectedTower = null;
