@@ -64,3 +64,16 @@ def test_grep_skips_binary_files(tmp_path, monkeypatch):
 
     assert "sample.txt:1:needle" in result
     assert "binary.bin" not in result
+
+
+def test_grep_supports_context_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    (tmp_path / "sample.txt").write_text("alpha\nbeta\nneedle here\ngamma\ndelta\n")
+
+    result = grep("needle", ".", before_context=1, after_context=2)
+
+    assert "sample.txt:3:" in result
+    assert "  2: beta" in result or " 2: beta" in result
+    assert "> 3: needle here" in result
+    assert "  4: gamma" in result or " 4: gamma" in result
+    assert "  5: delta" in result or " 5: delta" in result

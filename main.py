@@ -157,6 +157,20 @@ def env_flag_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def format_startup_info(session: Session) -> str:
+    """Return non-sensitive startup details for the current session."""
+    model = getattr(session.provider, "model", "(unknown)")
+    skill_names = [skill.name for skill in session.skill_registry.list_skills()]
+    skills = ", ".join(skill_names) if skill_names else "(none)"
+    return "\n".join(
+        [
+            f"\033[90mSession ID: {session.id}\033[0m",
+            f"\033[90mModel: {model}\033[0m",
+            f"\033[90mSkills: {skills}\033[0m",
+        ]
+    )
+
+
 async def run_agent_task(session: Session, query: str) -> bool:
     """Run one agent task and let Ctrl+C cancel the task without exiting the CLI."""
     task = asyncio.create_task(session.send(query))
@@ -208,9 +222,7 @@ async def main():
     if silent_mode:
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
     session = Session.from_config(approval_callback=approval_callback)
-    print(f"\033[90mSession ID: {session.id}\033[0m")
-    print("\033[90mSystem Prompt:\033[0m")
-    print(session.system_prompt)
+    print(format_startup_info(session))
     print()
 
     try:

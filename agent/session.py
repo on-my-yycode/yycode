@@ -16,6 +16,7 @@ from langchain_core.messages import (
 from agent.approval import ApprovalCallback, ApprovalDenied
 from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
+from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
 from agent.skills import DEFAULT_SKILL_DIRS, SkillRegistry, parse_skill_paths
@@ -92,6 +93,7 @@ Core workflow:
 
 Tools and editing:
 - Prefer code-navigation tools: list_files, grep, read_file, read_many_files, git_show, git_diff.
+- Use bash for workspace inspection only when the built-in navigation tools cannot express the query.
 - Use apply_patch as the primary tool for editing existing files.
 - Use write_file only for brand-new files or generated artifacts.
 - When using apply_patch path/old_text/new_text mode, old_text must contain only the exact lines being changed, not the whole file.
@@ -281,26 +283,7 @@ Final answer:
 
     def _messages_to_provider_format(self, messages: list[BaseMessage]) -> list[dict]:
         """Convert LangChain messages to the provider-neutral format used by providers."""
-        provider_messages = []
-        for msg in messages:
-            if isinstance(msg, HumanMessage):
-                provider_messages.append({"role": "user", "content": msg.content})
-            elif isinstance(msg, AIMessage):
-                provider_messages.append({"role": "assistant", "content": msg.content})
-            elif isinstance(msg, ToolMessage):
-                provider_messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": msg.tool_call_id,
-                                "content": msg.content,
-                            }
-                        ],
-                    }
-                )
-        return provider_messages
+        return messages_to_provider_format(messages)
 
     async def send(self, content: str) -> AIMessage:
         """Send a user message and get response."""

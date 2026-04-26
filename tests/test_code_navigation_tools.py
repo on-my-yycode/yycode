@@ -5,6 +5,7 @@ import subprocess
 from tools import TOOL_HANDLERS, TOOLS
 from tools.git_show import git_show
 from tools.list_files import list_files
+from tools.read_file import read_file
 from tools.read_many_files import read_many_files
 
 
@@ -58,6 +59,15 @@ def test_read_many_files_adds_headers_and_limits_lines(tmp_path, monkeypatch):
 
     assert "--- a.py ---\none\n... (1 more lines)" in result
     assert "--- b.py ---\nthree\n... (1 more lines)" in result
+
+
+def test_read_file_supports_line_ranges(tmp_path, monkeypatch):
+    (tmp_path / "sample.py").write_text("one\ntwo\nthree\nfour\n")
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+
+    result = read_file("sample.py", start_line=2, end_line=3)
+
+    assert result == "two\nthree"
 
 
 def test_git_show_reads_file_at_ref(tmp_path, monkeypatch):

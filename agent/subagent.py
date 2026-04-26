@@ -12,8 +12,9 @@ from agent.approval import (
     approval_cache_key,
     approval_request_for_tool,
 )
-from agent.providers.base import LLMProvider
 from agent.llm_retry import chat_with_retry
+from agent.message_format import messages_to_provider_format
+from agent.providers.base import LLMProvider
 from agent.skills import SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
 from agent.tool_retry import async_run_tool_with_retry
@@ -88,31 +89,6 @@ Important constraints:
     if skill_catalog_prompt:
         prompt = f"{prompt}\n\n{skill_catalog_prompt}"
     return prompt
-
-
-def _messages_to_provider_format(messages: list[BaseMessage]) -> list[dict]:
-    """Convert LangChain messages to the provider-neutral format used by this project."""
-    provider_messages = []
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            provider_messages.append({"role": "user", "content": msg.content})
-        elif isinstance(msg, AIMessage):
-            provider_messages.append({"role": "assistant", "content": msg.content})
-        elif isinstance(msg, ToolMessage):
-            provider_messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": msg.tool_call_id,
-                            "content": msg.content,
-                        }
-                    ],
-                }
-            )
-    return provider_messages
-
 
 def format_subagent_result(
     role: str,
@@ -205,7 +181,7 @@ class SubagentRunner:
         hit_turn_limit = True
 
         for _ in range(max_turns):
-            provider_messages = _messages_to_provider_format(messages)
+            provider_messages = messages_to_provider_format(messages)
             response = await chat_with_retry(
                 self.provider,
                 messages=provider_messages,
@@ -240,6 +216,8 @@ class SubagentRunner:
             ]
             ai_msg = AIMessage(content=response.content, tool_calls=tool_calls)
             ai_msg.additional_kwargs["tool_calls_data"] = response.tool_calls
+            if response.content_blocks:
+                ai_msg.additional_kwargs["provider_blocks"] = response.content_blocks
             messages.append(ai_msg)
 
             if not response.tool_calls:

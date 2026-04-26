@@ -47,11 +47,38 @@ def _read_text(path: Path) -> str | None:
             return None
 
 
-def grep(pattern: str, path: str = ".", max_results: int = 100) -> str:
+def _format_match_with_context(
+    relative_path: Path,
+    lines: list[str],
+    line_number: int,
+    before_context: int,
+    after_context: int,
+) -> str:
+    if before_context <= 0 and after_context <= 0:
+        return f"{relative_path}:{line_number}:{lines[line_number - 1]}"
+
+    start = max(line_number - before_context, 1)
+    end = min(line_number + after_context, len(lines))
+    section = [f"{relative_path}:{line_number}:"]
+    for current in range(start, end + 1):
+        marker = ">" if current == line_number else " "
+        section.append(f"{marker} {current}: {lines[current - 1]}")
+    return "\n".join(section)
+
+
+def grep(
+    pattern: str,
+    path: str = ".",
+    max_results: int = 100,
+    before_context: int = 0,
+    after_context: int = 0,
+) -> str:
     """Search workspace files using Python regex matching."""
     try:
         search_path = read_file.safe_path(path)
         max_results = max(1, min(int(max_results), 500))
+        before_context = max(0, min(int(before_context), 20))
+        after_context = max(0, min(int(after_context), 20))
         regex = re.compile(pattern)
         matches = []
         for file_path in _iter_files(search_path):
@@ -59,14 +86,23 @@ def grep(pattern: str, path: str = ".", max_results: int = 100) -> str:
             if text is None:
                 continue
             relative_path = file_path.relative_to(read_file.WORKDIR)
-            for line_number, line in enumerate(text.splitlines(), start=1):
+            lines = text.splitlines()
+            for line_number, line in enumerate(lines, start=1):
                 if regex.search(line):
-                    matches.append(f"{relative_path}:{line_number}:{line}")
+                    matches.append(
+                        _format_match_with_context(
+                            relative_path,
+                            lines,
+                            line_number,
+                            before_context,
+                            after_context,
+                        )
+                    )
                     if len(matches) >= max_results:
-                        output = "\n".join(matches)
+                        output = "\n\n".join(matches)
                         return output[:MAX_OUTPUT_CHARS]
 
-        output = "\n".join(matches)
+        output = "\n\n".join(matches)
         return output[:MAX_OUTPUT_CHARS] if output else "No matches found."
     except re.error as exc:
         return f"Error: invalid regex pattern: {exc}"
@@ -96,6 +132,14 @@ grep_tool = {
             "max_results": {
                 "type": "integer",
                 "description": "Maximum matches per file, capped at 500. Defaults to 100.",
+            },
+            "before_context": {
+                "type": "integer",
+                "description": "Number of lines to include before each match, capped at 20.",
+            },
+            "after_context": {
+                "type": "integer",
+                "description": "Number of lines to include after each match, capped at 20.",
             },
         },
         "required": ["pattern"],

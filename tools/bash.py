@@ -50,7 +50,11 @@ def bash(command: str, approved: bool = False) -> str:
 
 bash_tool = {
     "name": "bash",
-    "description": "Run a shell command.",
+    "description": (
+        "Run a shell command when built-in tools are insufficient. "
+        "Do not use this for normal code navigation when list_files, grep, read_file, "
+        "read_many_files, git_show, or git_diff can answer the question."
+    ),
     "execution": {
         "side_effects": "process",
         "concurrency": "serial",

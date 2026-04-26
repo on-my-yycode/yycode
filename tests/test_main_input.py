@@ -16,6 +16,7 @@ from main import (
     auto_approval_callback,
     build_prompt,
     env_flag_enabled,
+    format_startup_info,
     format_context_percent,
     format_token_count,
     read_user_query,
@@ -356,3 +357,25 @@ def test_env_flag_enabled_accepts_truthy_values(monkeypatch):
     monkeypatch.setenv("YOYO_SILENT", "true")
 
     assert env_flag_enabled("YOYO_SILENT") is True
+
+
+def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_root.mkdir()
+    (skill_root / "testing.md").write_text(
+        '---\nname: testing\ndescription: "Use focused tests."\n---\nSECRET PROMPT BODY'
+    )
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        system_prompt="SECRET SYSTEM PROMPT",
+        skill_dirs=["skills"],
+    )
+
+    output = format_startup_info(session)
+
+    assert "Session ID:" in output
+    assert "Model: fake-model" in output
+    assert "Skills: testing" in output
+    assert "SECRET SYSTEM PROMPT" not in output
+    assert "SECRET PROMPT BODY" not in output

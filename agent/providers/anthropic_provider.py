@@ -1,5 +1,6 @@
 """Anthropic LLM provider implementation."""
 
+import json
 from typing import Any, Optional, Callable
 
 from anthropic import AsyncAnthropic
@@ -7,6 +8,7 @@ from anthropic import AsyncAnthropic
 from agent.logger import get_logger
 
 from .base import LLMProvider, ChatResponse, ToolCall
+from .text_tool_calls import TextToolCallStreamFilter, parse_text_tool_calls
 
 logger = get_logger(__name__)
 
@@ -68,12 +70,14 @@ class AnthropicProvider(LLMProvider):
 
         current_text = ""
         tool_calls_data = []
+        text_filter = TextToolCallStreamFilter()
 
         for block in message.content:
             if block.type == "text":
                 current_text += block.text
                 if stream_callback:
-                    await stream_callback("text_delta", block.text)
+                    for safe_text in text_filter.feed(block.text):
+                        await stream_callback("text_delta", safe_text)
             elif block.type == "tool_use":
                 tool_calls_data.append({
                     "name": block.name,
@@ -82,15 +86,24 @@ class AnthropicProvider(LLMProvider):
                 })
 
         usage = self._extract_usage(getattr(message, "usage", None))
+        content_blocks = self._normalize_content_blocks(message.content)
 
         tool_calls = [
             ToolCall(id=tc["id"], name=tc["name"], args=tc["args"])
             for tc in tool_calls_data
         ]
+        cleaned_text, text_tool_calls = parse_text_tool_calls(current_text)
+        if text_tool_calls:
+            current_text = cleaned_text
+            tool_calls.extend(text_tool_calls)
+        elif stream_callback:
+            for safe_text in text_filter.flush():
+                await stream_callback("text_delta", safe_text)
 
         return ChatResponse(
             content=current_text,
             tool_calls=tool_calls,
+            content_blocks=content_blocks,
             raw_response=message,
             usage=usage,
         )
@@ -105,6 +118,7 @@ class AnthropicProvider(LLMProvider):
         tool_calls_data = []
         current_tool_use = None
         in_thinking = False
+        text_filter = TextToolCallStreamFilter()
 
         async with self.client.messages.stream(**kwargs) as stream:
             async for event in stream:
@@ -131,7 +145,8 @@ class AnthropicProvider(LLMProvider):
                     elif delta.type == "text_delta":
                         current_text += delta.text
                         if stream_callback:
-                            await stream_callback("text_delta", delta.text)
+                            for safe_text in text_filter.feed(delta.text):
+                                await stream_callback("text_delta", safe_text)
                     elif delta.type == "input_json_delta":
                         if current_tool_use:
                             current_tool_use["args"] += delta.partial_json
@@ -141,7 +156,6 @@ class AnthropicProvider(LLMProvider):
                             await stream_callback("thinking_end", "")
                         in_thinking = False
                     elif current_tool_use:
-                        import json
                         try:
                             args = json.loads(current_tool_use["args"])
                         except json.JSONDecodeError:
@@ -155,15 +169,24 @@ class AnthropicProvider(LLMProvider):
 
             final_message = await stream.get_final_message()
             usage = self._extract_usage(getattr(final_message, "usage", None))
+            content_blocks = self._normalize_content_blocks(final_message.content)
 
         tool_calls = [
             ToolCall(id=tc["id"], name=tc["name"], args=tc["args"])
             for tc in tool_calls_data
         ]
+        cleaned_text, text_tool_calls = parse_text_tool_calls(current_text)
+        if text_tool_calls:
+            current_text = cleaned_text
+            tool_calls.extend(text_tool_calls)
+        elif stream_callback:
+            for safe_text in text_filter.flush():
+                await stream_callback("text_delta", safe_text)
 
         return ChatResponse(
             content=current_text,
             tool_calls=tool_calls,
+            content_blocks=content_blocks,
             raw_response=final_message,
             usage=usage,
         )
@@ -209,3 +232,37 @@ class AnthropicProvider(LLMProvider):
             "output_tokens": output_tokens or 0,
             "total_tokens": (input_tokens or 0) + (output_tokens or 0),
         }
+
+    def _normalize_content_blocks(self, blocks: Any) -> list[dict[str, Any]]:
+        """Convert Anthropic content blocks into provider-neutral serializable dicts."""
+        normalized: list[dict[str, Any]] = []
+        for block in blocks or []:
+            block_type = getattr(block, "type", None)
+            if block_type == "text":
+                normalized.append({"type": "text", "text": getattr(block, "text", "")})
+            elif block_type == "thinking":
+                thinking_block = {
+                    "type": "thinking",
+                    "thinking": getattr(block, "thinking", ""),
+                }
+                signature = getattr(block, "signature", None)
+                if signature:
+                    thinking_block["signature"] = signature
+                normalized.append(thinking_block)
+            elif block_type == "redacted_thinking":
+                data = {"type": "redacted_thinking"}
+                for field in ("data", "signature"):
+                    value = getattr(block, field, None)
+                    if value:
+                        data[field] = value
+                normalized.append(data)
+            elif block_type == "tool_use":
+                normalized.append(
+                    {
+                        "type": "tool_use",
+                        "id": getattr(block, "id", None),
+                        "name": getattr(block, "name", None),
+                        "input": getattr(block, "input", None) or {},
+                    }
+                )
+        return normalized

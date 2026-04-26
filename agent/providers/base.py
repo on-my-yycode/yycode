@@ -18,6 +18,7 @@ class ChatResponse:
     """Represents a chat response from LLM."""
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
+    content_blocks: Optional[list[dict[str, Any]]] = None
     raw_response: Any = None
     usage: Optional[dict[str, int]] = None
 

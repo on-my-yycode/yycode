@@ -1,35 +1,12 @@
 """LLM graph node."""
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage
 
 from agent.llm_retry import chat_with_retry
+from agent.message_format import messages_to_provider_format
 from agent.nodes.state import AgentState
 from agent.runtime.context import AgentRuntimeContext
 from agent.streaming import StreamEvent, make_provider_stream_callback
-
-
-def messages_to_provider_format(messages) -> list[dict]:
-    """Convert LangChain messages to the provider-neutral format used by providers."""
-    provider_messages = []
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            provider_messages.append({"role": "user", "content": msg.content})
-        elif isinstance(msg, AIMessage):
-            provider_messages.append({"role": "assistant", "content": msg.content})
-        elif isinstance(msg, ToolMessage):
-            provider_messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": msg.tool_call_id,
-                            "content": msg.content,
-                        }
-                    ],
-                }
-            )
-    return provider_messages
 
 
 def create_llm_node(runtime: AgentRuntimeContext):
@@ -72,6 +49,8 @@ def create_llm_node(runtime: AgentRuntimeContext):
 
         ai_msg = AIMessage(content=response.content, tool_calls=tool_calls)
         ai_msg.additional_kwargs["tool_calls_data"] = response.tool_calls
+        if response.content_blocks:
+            ai_msg.additional_kwargs["provider_blocks"] = response.content_blocks
         ai_msg.additional_kwargs["raw_response"] = response.raw_response
         ai_msg.additional_kwargs["usage"] = response.usage
         return {"messages": [ai_msg]}
