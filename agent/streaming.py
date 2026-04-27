@@ -1,7 +1,7 @@
 """Structured streaming events and renderers."""
 
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 
 StreamEventCallback = Callable[["StreamEvent"], Awaitable[None]]
@@ -29,6 +29,14 @@ class StreamEvent:
     role: Optional[str] = None
     parent_session_id: Optional[str] = None
     usage: Optional[dict[str, int]] = None
+    title: Optional[str] = None
+    detail: Optional[str] = None
+    phase: Optional[str] = None
+    status: Optional[str] = None
+    tool_name: Optional[str] = None
+    file_paths: Optional[list[str]] = None
+    elapsed_ms: Optional[int] = None
+    metadata: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict:
         """Return a JSON-serializable representation."""
@@ -40,6 +48,14 @@ class StreamEvent:
             "event_type": self.event_type,
             "content": self.content,
             "usage": self.usage,
+            "title": self.title,
+            "detail": self.detail,
+            "phase": self.phase,
+            "status": self.status,
+            "tool_name": self.tool_name,
+            "file_paths": self.file_paths,
+            "elapsed_ms": self.elapsed_ms,
+            "metadata": self.metadata,
         }
 
 
@@ -137,7 +153,10 @@ class ConsoleStreamRenderer:
     def _print_tool_start(self, event: StreamEvent) -> None:
         if not self.first_line:
             print()
-        print(f"\033[90m{self._label(event)}▶ Starting {event.content}...\033[0m", end="", flush=True)
+        description = event.title or event.content
+        if event.detail and event.detail != description:
+            description = f"{description}: {event.detail}"
+        print(f"\033[90m{self._label(event)}▶ Starting {description}...\033[0m", end="", flush=True)
         self.first_line = False
 
     def _print_tool_end(self, event: StreamEvent) -> None:

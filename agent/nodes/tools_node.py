@@ -15,7 +15,12 @@ def create_tools_node(runtime: AgentRuntimeContext):
     """Create tools node with runtime-bound handlers."""
     registry = RuntimeToolRegistry(runtime)
     workflow_guard = WorkflowGuard(runtime, registry)
-    approval_service = ApprovalService(runtime.approval_callback, runtime.workflow_state)
+    approval_service = ApprovalService(
+        runtime.approval_callback,
+        runtime.workflow_state,
+        runtime.stream_callback,
+        runtime.session_id,
+    )
     executor = ToolExecutor(runtime, registry, workflow_guard, approval_service)
 
     async def tools_node(state: AgentState) -> AgentState:

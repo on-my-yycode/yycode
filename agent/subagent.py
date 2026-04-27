@@ -1,5 +1,6 @@
 """Subagent runner for synchronous task delegation."""
 
+import time
 import uuid
 from pathlib import Path
 from typing import Callable, Optional
@@ -137,6 +138,8 @@ class SubagentRunner:
         self.approval_callback = approval_callback
         self.last_usage: Optional[dict[str, int]] = None
         self.approved_write_keys: set[tuple[str, str, str]] = set()
+        self._active_session_id: Optional[str] = None
+        self._active_role: Optional[str] = None
         self.tool_handlers = {
             name: handler
             for name, handler in tool_handlers.items()
@@ -163,6 +166,8 @@ class SubagentRunner:
         }
         self.approved_write_keys = set()
         session_id = str(uuid.uuid4())
+        self._active_session_id = session_id
+        self._active_role = role
         provider_stream_callback = make_provider_stream_callback(
             self.stream_callback,
             source="subagent",
@@ -179,65 +184,90 @@ class SubagentRunner:
         prompt = self._build_user_prompt(task, context)
         messages: list[BaseMessage] = [HumanMessage(content=prompt)]
         hit_turn_limit = True
+        start_time = time.perf_counter()
+        await self._emit_subagent_started(session_id, role, task)
 
-        for _ in range(max_turns):
-            provider_messages = messages_to_provider_format(messages)
-            response = await chat_with_retry(
-                self.provider,
-                messages=provider_messages,
-                tools=self.tools,
-                system_prompt=system_prompt,
-                stream_callback=provider_stream_callback,
-                event_callback=self.stream_callback,
-                source="subagent",
-                session_id=session_id,
-                role=role,
-                parent_session_id=self.parent_session_id,
-            )
-            self._accumulate_usage(response.usage)
-            if self.stream_callback and response.usage:
-                await self.stream_callback(
-                    StreamEvent(
-                        source="subagent",
-                        session_id=session_id,
-                        role=role,
-                        parent_session_id=self.parent_session_id,
-                        event_type="usage",
-                        usage=response.usage,
+        try:
+            for _ in range(max_turns):
+                provider_messages = messages_to_provider_format(messages)
+                response = await chat_with_retry(
+                    self.provider,
+                    messages=provider_messages,
+                    tools=self.tools,
+                    system_prompt=system_prompt,
+                    stream_callback=provider_stream_callback,
+                    event_callback=self.stream_callback,
+                    source="subagent",
+                    session_id=session_id,
+                    role=role,
+                    parent_session_id=self.parent_session_id,
+                )
+                self._accumulate_usage(response.usage)
+                if self.stream_callback and response.usage:
+                    await self.stream_callback(
+                        StreamEvent(
+                            source="subagent",
+                            session_id=session_id,
+                            role=role,
+                            parent_session_id=self.parent_session_id,
+                            event_type="usage",
+                            usage=response.usage,
+                        )
                     )
-                )
-            tool_calls = [
-                {
-                    "name": tc.name,
-                    "args": dict(tc.args or {}),
-                    "id": tc.id,
-                }
-                for tc in response.tool_calls
-            ]
-            ai_msg = AIMessage(content=response.content, tool_calls=tool_calls)
-            ai_msg.additional_kwargs["tool_calls_data"] = response.tool_calls
-            if response.content_blocks:
-                ai_msg.additional_kwargs["provider_blocks"] = response.content_blocks
-            messages.append(ai_msg)
+                tool_calls = [
+                    {
+                        "name": tc.name,
+                        "args": dict(tc.args or {}),
+                        "id": tc.id,
+                    }
+                    for tc in response.tool_calls
+                ]
+                ai_msg = AIMessage(content=response.content, tool_calls=tool_calls)
+                ai_msg.additional_kwargs["tool_calls_data"] = response.tool_calls
+                if response.content_blocks:
+                    ai_msg.additional_kwargs["provider_blocks"] = response.content_blocks
+                messages.append(ai_msg)
 
-            if not response.tool_calls:
-                hit_turn_limit = False
-                break
+                if not response.tool_calls:
+                    hit_turn_limit = False
+                    break
 
-            for tc in response.tool_calls:
-                if tc.name == "list_skills":
-                    handler = self.list_skills_handler
-                elif tc.name == "load_skill":
-                    handler = self.load_skill_handler
-                else:
-                    handler = self.tool_handlers.get(tc.name)
-                output = await self._run_tool(handler, tc.name, **tc.args)
-                messages.append(
-                    ToolMessage(content=output, tool_call_id=tc.id, name=tc.name)
-                )
+                for tc in response.tool_calls:
+                    if tc.name == "list_skills":
+                        handler = self.list_skills_handler
+                    elif tc.name == "load_skill":
+                        handler = self.load_skill_handler
+                    else:
+                        handler = self.tool_handlers.get(tc.name)
+                    output = await self._run_tool(handler, tc.name, **tc.args)
+                    messages.append(
+                        ToolMessage(content=output, tool_call_id=tc.id, name=tc.name)
+                    )
+        except Exception:
+            await self._emit_subagent_finished(
+                session_id,
+                role,
+                task,
+                "failed",
+                int((time.perf_counter() - start_time) * 1000),
+            )
+            self._active_session_id = None
+            self._active_role = None
+            raise
 
         final_content = self._last_ai_content(messages)
-        return format_subagent_result(role, session_id, hit_turn_limit, final_content)
+        status = "hit_turn_limit" if hit_turn_limit else "completed"
+        await self._emit_subagent_finished(
+            session_id,
+            role,
+            task,
+            status,
+            int((time.perf_counter() - start_time) * 1000),
+        )
+        result = format_subagent_result(role, session_id, hit_turn_limit, final_content)
+        self._active_session_id = None
+        self._active_role = None
+        return result
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
         request = approval_request_for_tool(tool_name, kwargs)
@@ -252,12 +282,17 @@ class SubagentRunner:
                     **{**kwargs, "approved": True},
                 )
             if self.approval_callback is None:
+                await self._emit_approval_required(request)
+                await self._emit_approval_resolved(request, "denied")
                 raise ApprovalDenied(request)
+            await self._emit_approval_required(request)
             approved = await self.approval_callback(request)
             if not approved:
+                await self._emit_approval_resolved(request, "denied")
                 raise ApprovalDenied(request)
             self.approved_write_keys.add(cache_key)
             kwargs = {**kwargs, "approved": True}
+            await self._emit_approval_resolved(request, "approved")
         return await async_run_tool_with_retry(
             handler,
             tool_name,
@@ -291,3 +326,96 @@ class SubagentRunner:
         self.last_usage["input_tokens"] += usage.get("input_tokens", 0)
         self.last_usage["output_tokens"] += usage.get("output_tokens", 0)
         self.last_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+    async def _emit_subagent_started(self, session_id: str, role: str, task: str) -> None:
+        if self.stream_callback is None:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source="subagent",
+                session_id=session_id,
+                role=role,
+                parent_session_id=self.parent_session_id,
+                event_type="subagent_started",
+                content=task,
+                title=f"{role} subagent started",
+                detail=task,
+                phase="implementing" if role == "worker" else "exploring",
+                status="running",
+                metadata={"task": task},
+            )
+        )
+
+    async def _emit_subagent_finished(
+        self,
+        session_id: str,
+        role: str,
+        task: str,
+        status: str,
+        elapsed_ms: int,
+    ) -> None:
+        if self.stream_callback is None:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source="subagent",
+                session_id=session_id,
+                role=role,
+                parent_session_id=self.parent_session_id,
+                event_type="subagent_finished",
+                content=status,
+                title=f"{role} subagent finished",
+                detail=task,
+                phase="implementing" if role == "worker" else "exploring",
+                status=status,
+                elapsed_ms=elapsed_ms,
+                metadata={"task": task},
+            )
+        )
+
+    async def _emit_approval_required(self, request) -> None:
+        if self.stream_callback is None:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source="subagent",
+                session_id=self._active_session_id or self.parent_session_id or "",
+                role=self._active_role,
+                parent_session_id=self.parent_session_id,
+                event_type="approval_required",
+                content=request.format(include_diff=False),
+                title="Approve subagent action",
+                detail=request.path or request.command or request.reason,
+                phase="blocked",
+                status="waiting_for_user",
+                tool_name=request.tool_name,
+                file_paths=[request.path] if request.path else None,
+                metadata={
+                    "action": request.action,
+                    "reason": request.reason,
+                    "risk": request.risk,
+                    "diff_preview": request.diff_preview,
+                },
+            )
+        )
+
+    async def _emit_approval_resolved(self, request, status: str) -> None:
+        if self.stream_callback is None:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source="subagent",
+                session_id=self._active_session_id or self.parent_session_id or "",
+                role=self._active_role,
+                parent_session_id=self.parent_session_id,
+                event_type="approval_resolved",
+                content=status,
+                title="Subagent approval resolved",
+                detail=request.path or request.command or request.reason,
+                phase="blocked" if status == "denied" else "implementing",
+                status=status,
+                tool_name=request.tool_name,
+                file_paths=[request.path] if request.path else None,
+                metadata={"action": request.action},
+            )
+        )

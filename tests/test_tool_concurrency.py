@@ -353,11 +353,20 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
     tool_result_events = [event for event in events if event.event_type == "tool_result"]
     assert len(tool_result_events) == 1
     assert tool_result_events[0].content == "@@ -1 +1 @@\n-old\n+new"
+    tool_start_events = [event for event in events if event.event_type == "tool_start"]
+    apply_patch_start = next(event for event in tool_start_events if event.tool_name == "apply_patch")
+    assert apply_patch_start.title == "Apply patch"
+    assert apply_patch_start.phase == "implementing"
+    assert apply_patch_start.status == "running"
+    file_changed_events = [event for event in events if event.event_type == "file_changed"]
+    assert len(file_changed_events) == 1
+    assert file_changed_events[0].title == "File changed"
 
 
 def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypatch):
     approvals = []
     captured = []
+    events = []
 
     async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
         captured.append((tool_name, kwargs))
@@ -368,6 +377,9 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
     async def approve(request):
         approvals.append(request)
         return True
+
+    async def collect_event(event):
+        events.append(event)
 
     monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
     monkeypatch.setattr(
@@ -392,6 +404,7 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
         todo_manager=TodoManager(),
         workdir=tmp_path,
         session_id="session",
+        stream_callback=collect_event,
         approval_callback=approve,
     )
     ai_msg = AIMessage(content="")
@@ -425,6 +438,16 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
 
     assert len(approvals) == 1
     assert approvals[0].path == "example.py"
+    approval_events = [event for event in events if event.event_type.startswith("approval_")]
+    assert [event.event_type for event in approval_events] == [
+        "approval_required",
+        "approval_resolved",
+        "approval_resolved",
+    ]
+    assert approval_events[0].status == "waiting_for_user"
+    assert approval_events[0].metadata["action"] == "edit_file"
+    assert approval_events[1].status == "approved"
+    assert approval_events[2].status == "cached_approved"
     apply_patch_calls = [kwargs for tool_name, kwargs in captured if tool_name == "apply_patch"]
     assert len(apply_patch_calls) == 2
     assert all(kwargs["approved"] is True for kwargs in apply_patch_calls)

@@ -1,12 +1,19 @@
 """Single tool call execution pipeline."""
 
+import time
+
 from langchain_core.messages import ToolMessage
 
 from agent.approval import ApprovalDenied
 from agent.logger import get_logger
 from agent.runtime.approval_service import ApprovalService
 from agent.runtime.context import AgentRuntimeContext
-from agent.runtime.tool_events import diff_preview_from_output, format_tool_description
+from agent.runtime.tool_events import (
+    diff_preview_from_output,
+    file_paths_for_tool_call,
+    format_tool_description,
+    format_tool_event_metadata,
+)
 from agent.runtime.tool_registry import RuntimeToolRegistry
 from agent.runtime.workflow_guard import WorkflowGuard
 from agent.streaming import StreamEvent
@@ -31,6 +38,8 @@ class ToolExecutor:
 
     async def execute(self, tc) -> ToolMessage:
         """Execute a tool call and return a ToolMessage."""
+        start_time = time.perf_counter()
+        status = "completed"
         await self._emit_tool_start(tc)
         try:
             logger.debug(f"Calling tool: {getattr(tc, 'name', 'unknown')}")
@@ -70,9 +79,14 @@ class ToolExecutor:
             should_emit_diff = self.workflow_guard.update_after_tool(tc.name, output)
             if should_emit_diff:
                 await self._emit_tool_result(diff_preview_from_output(output))
+                await self._emit_file_changed(tc)
             return tool_message
+        except Exception:
+            status = "failed"
+            raise
         finally:
-            await self._emit_tool_end(tc)
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            await self._emit_tool_end(tc, status, elapsed_ms)
 
     def _tool_message(self, tc, output: str) -> ToolMessage:
         return ToolMessage(
@@ -90,10 +104,12 @@ class ToolExecutor:
                 session_id=self.runtime.session_id,
                 event_type="tool_start",
                 content=format_tool_description(tc),
+                status="running",
+                **format_tool_event_metadata(tc),
             )
         )
 
-    async def _emit_tool_end(self, tc) -> None:
+    async def _emit_tool_end(self, tc, status: str, elapsed_ms: int) -> None:
         if not self.runtime.stream_callback:
             return
         await self.runtime.stream_callback(
@@ -102,6 +118,9 @@ class ToolExecutor:
                 session_id=self.runtime.session_id,
                 event_type="tool_end",
                 content=tc.name,
+                status=status,
+                elapsed_ms=elapsed_ms,
+                **format_tool_event_metadata(tc),
             )
         )
 
@@ -114,5 +133,28 @@ class ToolExecutor:
                 session_id=self.runtime.session_id,
                 event_type="tool_result",
                 content=content,
+                title="Review diff",
+                detail="Workspace changes produced a diff preview",
+                phase="reviewing",
+            )
+        )
+
+    async def _emit_file_changed(self, tc) -> None:
+        if not self.runtime.stream_callback:
+            return
+        file_paths = file_paths_for_tool_call(tc)
+        await self.runtime.stream_callback(
+            StreamEvent(
+                source="main",
+                session_id=self.runtime.session_id,
+                event_type="file_changed",
+                content=", ".join(file_paths),
+                title="File changed",
+                detail=", ".join(file_paths),
+                phase="implementing",
+                status="completed",
+                tool_name=tc.name,
+                file_paths=file_paths,
+                metadata={"tool_call_id": tc.id},
             )
         )

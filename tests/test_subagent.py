@@ -303,14 +303,19 @@ def test_subagent_runner_emits_structured_stream_events(tmp_path):
 
     asyncio.run(runner.run(role="worker", task="stream progress"))
 
-    assert len(events) == 2
+    assert len(events) == 4
     assert events[0].source == "subagent"
     assert events[0].role == "worker"
     assert events[0].parent_session_id == "parent-1"
-    assert events[0].event_type == "text_delta"
-    assert events[0].content == "streamed"
-    assert events[1].event_type == "usage"
-    assert events[1].usage == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+    assert events[0].event_type == "subagent_started"
+    assert events[0].title == "worker subagent started"
+    assert events[0].phase == "implementing"
+    assert events[1].event_type == "text_delta"
+    assert events[1].content == "streamed"
+    assert events[2].event_type == "usage"
+    assert events[2].usage == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+    assert events[3].event_type == "subagent_finished"
+    assert events[3].status == "completed"
 
 
 def test_main_llm_node_emits_structured_stream_events():
