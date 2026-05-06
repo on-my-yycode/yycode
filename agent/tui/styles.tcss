@@ -15,7 +15,7 @@ Screen {
 #approval-wrapper {
     display: none;
     width: 1fr;
-    height: 9;
+    height: 14;
     dock: bottom;
     overlay: screen;
     layer: overlay;
@@ -103,7 +103,7 @@ Screen {
     width: 1fr;
 }
 
-#history-dialog {
+#task-plan-dialog {
     width: 1fr;
     height: 1fr;
     margin: 1 2;
@@ -112,7 +112,7 @@ Screen {
     background: #101216;
 }
 
-#history-body {
+#task-plan-body {
     width: 1fr;
     height: 1fr;
     color: #d7dae0;
@@ -122,6 +122,7 @@ Screen {
 #approval-panel {
     width: 54;
     height: auto;
+    min-height: 10;
     padding: 1 2;
     border: round #c9a6ff;
     background: #1a1d23;

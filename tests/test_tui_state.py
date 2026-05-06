@@ -4,7 +4,7 @@ from textual.markup import to_content
 
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
-from agent.tui.renderers import render_status_text, render_timeline_lines
+from agent.tui.renderers import render_status_text, render_task_plan_panel, render_timeline_lines
 from agent.tui.state import TuiState
 
 
@@ -156,6 +156,63 @@ def test_tui_main_timeline_hides_task_plan_before_todo_starts():
     assert "Ready" in transcript
     assert "Task Plan" not in transcript
     assert "No task plan yet" not in transcript
+
+
+def test_tui_main_timeline_omits_full_task_plan_after_todo_starts():
+    manager = TodoManager()
+    manager.set_items(
+        [
+            {"id": "1", "text": "Inspect timeline rendering", "status": "completed"},
+            {"id": "2", "text": "Move task plan into panel", "status": "in_progress"},
+        ]
+    )
+    state = TuiState()
+    state.set_startup_info(
+        session_id="sess-1",
+        model_name="gpt-test",
+        skills_text="drawio",
+        todo_manager=manager,
+    )
+    state.add_user_input("sess-1", "Clean up task plan display")
+
+    transcript = render_timeline_lines(state, header_mode="main")
+
+    assert "You" in transcript
+    assert "Clean up task plan display" in transcript
+    assert "Task Plan" not in transcript
+    assert "Move task plan into panel" not in transcript
+
+
+def test_tui_task_plan_panel_renders_full_todo_state():
+    manager = TodoManager()
+    manager.set_items(
+        [
+            {"id": "1", "text": "Inspect timeline rendering", "status": "completed"},
+            {"id": "2", "text": "Move task plan into panel", "status": "in_progress"},
+            {"id": "3", "text": "Run focused tests", "status": "pending"},
+        ]
+    )
+    manager.set_memory(
+        {
+            "user_goal": "Keep timeline focused on events",
+            "next_steps": ["Verify the TUI renderers"],
+        }
+    )
+    state = TuiState()
+    state.set_startup_info(
+        session_id="sess-1",
+        model_name="gpt-test",
+        skills_text="drawio",
+        todo_manager=manager,
+    )
+
+    panel = render_task_plan_panel(state)
+
+    assert "Task Plan" in panel
+    assert "Total: 3" in panel
+    assert "Move task plan into panel" in panel
+    assert "Keep timeline focused on events" in panel
+    assert "Verify the TUI renderers" in panel
 
 
 def test_tui_state_merges_waiting_updates_into_thinking_item():
@@ -640,7 +697,8 @@ def test_tui_main_timeline_shows_compact_tool_and_model_updates():
 
     transcript = render_timeline_lines(state, limit=8, header_mode="main")
 
-    assert "Ctrl+H full history" in transcript
+    assert "Ctrl+T task plan" in transcript
+    assert "Ctrl+H full history" not in transcript
     assert "Read file" in transcript
     assert "Tool call" not in transcript
     assert "Tool returned" not in transcript

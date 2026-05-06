@@ -369,7 +369,7 @@ def render_timeline_lines(
         "[#8fd6a3]Ready[/]\n"
         "\n"
         "[#7f8794]Ask yoyoagent to inspect code, make a change, run verification, or explain a result.[/]\n"
-        "[#7f8794]Ctrl+H opens full history. Ctrl+Enter sends. Ctrl+Q quits.[/]"
+        "[#7f8794]Ctrl+T opens task plan. Ctrl+Enter sends. Ctrl+Q quits.[/]"
     )
 
 
@@ -383,17 +383,12 @@ def render_main_timeline_lines(
 
     sections = []
 
-    # Add todo display if available
-    if state.todo_manager and state.todo_manager.task_state_started:
-        todo_section = _render_todo_section(state.todo_manager)
-        sections.append(todo_section)
-
     if not rendered_items:
         sections.append(
             "[#8fd6a3]Ready[/]\n"
             "\n"
             "[#7f8794]Ask yoyoagent to inspect code, make a change, run verification, or explain a result.[/]\n"
-            "[#7f8794]PageUp/PageDown scroll | Ctrl+Enter send | Ctrl+Q quit[/]"
+            "[#7f8794]PageUp/PageDown scroll | Ctrl+T task plan | Ctrl+Enter send | Ctrl+Q quit[/]"
         )
     else:
         total = len(rendered_items)
@@ -419,6 +414,13 @@ def render_main_timeline_lines(
         sections.append("\n\n".join([header, *visible_items]))
 
     return "\n\n".join(sections)
+
+
+def render_task_plan_panel(state: TuiState) -> str:
+    """Render the full task plan for the dedicated task plan screen."""
+    if not state.todo_manager:
+        return "[#7f8794]No task plan is available for this session yet.[/]"
+    return _render_todo_section(state.todo_manager)
 
 
 def _render_timeline_blocks(state: TuiState) -> list[str]:
@@ -597,7 +599,7 @@ def _timeline_window_header(start: int, end: int, total: int, *, mode: str) -> s
         return ""
     position = "latest" if end >= total else "history"
     if mode == "main":
-        extra = "Ctrl+H full history | PageUp/PageDown scroll | Home/End jump | Ctrl+Enter send | Ctrl+Q quit"
+        extra = "Ctrl+T task plan | PageUp/PageDown scroll | Home/End jump | Ctrl+Enter send | Ctrl+Q quit"
     else:
         extra = "Up older | Down newer | PageUp/PageDown jump | Home first | End latest | Esc back"
     return (

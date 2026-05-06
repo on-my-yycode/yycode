@@ -46,95 +46,46 @@ def run_tui(args: Namespace) -> None:
     from .renderers import (
         render_brand_text,
         render_status_bar_text,
+        render_task_plan_panel,
         render_timeline_lines,
     )
     from .runner import AgentTuiRunner
     from .state import MAX_TIMELINE_ITEMS, PendingApproval, TuiState
 
 
-    class HistoryScreen(ModalScreen[None]):
-        """Full history viewer with keyboard paging."""
+    class TaskPlanScreen(ModalScreen[None]):
+        """Full task plan viewer."""
 
         BINDINGS = [
-            ("escape", "close_history", "Back"),
-            ("ctrl+h", "close_history", "Back"),
-            ("up", "older", "Older"),
-            ("down", "newer", "Newer"),
-            ("pageup", "page_up", "Older"),
-            ("pagedown", "page_down", "Newer"),
-            ("home", "home", "First"),
-            ("end", "end", "Latest"),
+            ("escape", "close_task_plan", "Back"),
+            ("ctrl+t", "close_task_plan", "Back"),
         ]
 
         def __init__(self, state: TuiState) -> None:
             super().__init__()
             self.state = state
-            self._history_offset = 0
 
         def compose(self) -> ComposeResult:
             yield Container(
-                Static("", id="history-body"),
-                id="history-dialog",
+                Static("", id="task-plan-body"),
+                id="task-plan-dialog",
             )
 
         def on_mount(self) -> None:
-            self.set_interval(0.5, self.refresh_history)
-            self.refresh_history()
+            self.set_interval(0.5, self.refresh_task_plan)
+            self.refresh_task_plan()
 
-        def action_close_history(self) -> None:
+        def action_close_task_plan(self) -> None:
             self.dismiss(None)
 
-        def action_older(self) -> None:
-            self._history_offset = min(self._max_offset(), self._history_offset + 1)
-            self.refresh_history()
-
-        def action_newer(self) -> None:
-            self._history_offset = max(0, self._history_offset - 1)
-            self.refresh_history()
-
-        def action_page_up(self) -> None:
-            self._history_offset = min(self._max_offset(), self._history_offset + self._page_size())
-            self.refresh_history()
-
-        def action_page_down(self) -> None:
-            self._history_offset = max(0, self._history_offset - self._page_size())
-            self.refresh_history()
-
-        def action_home(self) -> None:
-            self._history_offset = self._max_offset()
-            self.refresh_history()
-
-        def action_end(self) -> None:
-            self._history_offset = 0
-            self.refresh_history()
-
-        def refresh_history(self) -> None:
-            body = self.query_one("#history-body", Static)
+        def refresh_task_plan(self) -> None:
+            body = self.query_one("#task-plan-body", Static)
             lines = [
-                "[bold #c9a6ff]History[/] [#7f8794]Esc/Ctrl+H back | Up older | Down newer | PageUp/PageDown jump | Home first | End latest[/]",
+                "[bold #c9a6ff]Task Plan[/] [#7f8794]Esc/Ctrl+T back[/]",
                 "",
-                render_timeline_lines(
-                    self.state,
-                    offset_from_end=self._history_offset,
-                    max_lines=self._history_lines(),
-                    header_mode="history",
-                ),
+                render_task_plan_panel(self.state),
             ]
             body.update("\n".join(lines))
-
-        def _history_lines(self) -> int:
-            return max(10, self.app.size.height - 6)
-
-        def _page_size(self) -> int:
-            return max(5, self._history_lines() // 2)
-
-        def _max_offset(self) -> int:
-            rendered_count = sum(
-                1
-                for item in self.state.timeline
-                if item.event_type not in {"agent_thinking", "thinking_delta"}
-            )
-            return max(0, rendered_count - 1)
 
     class YoyoTuiApp(App[None]):
         """Main terminal UI."""
@@ -149,7 +100,7 @@ def run_tui(args: Namespace) -> None:
             ("escape", "deny_current", "Deny"),
             ("ctrl+shift+c", "copy_timeline", "Copy timeline"),
             ("ctrl+c", "cancel_task", "Cancel task"),
-            ("ctrl+h", "open_history", "History"),
+            ("ctrl+t", "open_task_plan", "Task plan"),
             ("ctrl+enter", "submit_prompt", "Submit"),
             ("ctrl+j", "submit_prompt", "Submit"),
             ("ctrl+q", "quit", "Quit"),
@@ -208,7 +159,7 @@ def run_tui(args: Namespace) -> None:
                     Container(
                         Static("", id="approval-title"),
                         Static("", id="approval-detail"),
-                        Static("[#7f8794]Y/Enter approve | N/Esc deny | Ctrl+H history[/]", id="approval-hint"),
+                        Static("[#7f8794]Y/Enter approve | N/Esc deny | Ctrl+T task plan[/]", id="approval-hint"),
                         Horizontal(
                             Button("[Y] Approve", id="approve", variant="success"),
                             Button("[N] Deny", id="deny", variant="error"),
@@ -328,8 +279,8 @@ def run_tui(args: Namespace) -> None:
         def action_deny_current(self) -> None:
             self._resolve_current_approval(False)
 
-        def action_open_history(self) -> None:
-            self.push_screen(HistoryScreen(self.runner.state))
+        def action_open_task_plan(self) -> None:
+            self.push_screen(TaskPlanScreen(self.runner.state))
 
         def action_timeline_line_up(self) -> None:
             if self._skill_completion_open:
@@ -364,7 +315,7 @@ def run_tui(args: Namespace) -> None:
             self._session_ready = True
             input_widget = self.query_one("#prompt-input", TextArea)
             input_widget.disabled = False
-            input_widget.placeholder = "Ask yoyoagent... Ctrl+Enter send | Ctrl+H history"
+            input_widget.placeholder = "Ask yoyoagent... Ctrl+Enter send | Ctrl+T task plan"
             input_widget.focus()
             self._refresh_all()
 
