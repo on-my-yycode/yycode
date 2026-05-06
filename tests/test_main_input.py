@@ -1,6 +1,7 @@
-"""Tests for CLI input handling."""
+"""Tests for startup helpers and async input handling."""
 
 import asyncio
+import types
 
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
@@ -19,6 +20,7 @@ from main import (
     format_startup_info,
     format_context_percent,
     format_token_count,
+    main,
     read_user_query,
     read_user_query_with_session,
     run_agent_task,
@@ -379,3 +381,28 @@ def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
     assert "Skills: testing" in output
     assert "SECRET SYSTEM PROMPT" not in output
     assert "SECRET PROMPT BODY" not in output
+
+
+def test_main_launches_tui_on_main_thread(monkeypatch):
+    captured = {}
+
+    def fake_setup_logging(*, debug, log_to_file):
+        captured["logging"] = (debug, log_to_file)
+
+    def fake_load_dotenv(*, override):
+        captured["dotenv_override"] = override
+
+    def fake_run_tui(args):
+        captured["args"] = args
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("sys.argv", ["main.py", "--debug", "--silent"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
+
+    main()
+
+    assert captured["logging"] == (True, False)
+    assert captured["dotenv_override"] is True
+    assert captured["args"].debug is True
+    assert captured["args"].silent is True

@@ -27,7 +27,7 @@ class SnakeGame:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption('贪吃蛇游戏')
+        pygame.display.set_caption('🐍 开心贪吃蛇')
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 36)
         self.reset_game()

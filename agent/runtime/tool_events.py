@@ -135,7 +135,7 @@ def format_tool_event_metadata(tc) -> dict:
         return {
             "title": _title_for_bash(command),
             "detail": command,
-            "phase": "verifying" if command.startswith(("pytest", "ruff", "mypy")) else "exploring",
+            "phase": _phase_for_bash(command),
             "tool_name": tool_name,
             "metadata": {"command": command, "args": args},
         }
@@ -219,6 +219,12 @@ def _file_paths_from_args(args: dict) -> list[str]:
 
 
 def _title_for_bash(command: str) -> str:
+    if _is_drawio_command(command):
+        if "--version" in command:
+            return "Check draw.io CLI"
+        if " -x " in f" {command} " or " --export " in f" {command} ":
+            return "Export draw.io diagram"
+        return "Run draw.io command"
     if command.startswith(("pytest", "ruff", "mypy")):
         return "Run verification"
     if command.startswith("git status"):
@@ -228,6 +234,18 @@ def _title_for_bash(command: str) -> str:
     if command.startswith(("sed ", "grep ", "rg ")):
         return "Inspect workspace"
     return "Run command"
+
+
+def _phase_for_bash(command: str) -> str:
+    if _is_drawio_command(command):
+        return "verifying" if "--version" in command else "implementing"
+    if command.startswith(("pytest", "ruff", "mypy")):
+        return "verifying"
+    return "exploring"
+
+
+def _is_drawio_command(command: str) -> bool:
+    return any(token in command for token in ("draw.io", "drawio"))
 
 
 def _paths_from_unified_diff(patch: str) -> list[str]:

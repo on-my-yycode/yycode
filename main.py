@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Main entry point with multi-provider support."""
+"""Main entry point with TUI default startup."""
 
 import os
-import sys
 import argparse
-from pathlib import Path
 import asyncio
 import contextlib
 
@@ -13,7 +11,7 @@ from dotenv import load_dotenv
 
 from agent import Session
 from agent.approval import ApprovalRequest
-from agent.logger import setup_logging, debug_print
+from agent.logger import setup_logging
 from agent.streaming import colorize_diff
 
 # Try to enable readline for better input experience
@@ -186,7 +184,8 @@ async def run_agent_task(session: Session, query: str) -> bool:
         return False
 
 
-async def main():
+def main() -> None:
+    """Parse startup args and launch the TUI on the main thread."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Yoyo Agent")
     parser.add_argument(
@@ -210,49 +209,19 @@ async def main():
     setup_logging(debug=args.debug, log_to_file=args.log_file)
 
     print("\033[33m" + LOGO + "\033[0m")
-    print("Yoyo Agent - Ready!\n")
+    print("Yoyo Agent - Starting TUI...\n")
     if args.debug:
         print("\033[90m[DEBUG] Debug mode enabled. Logs written to agent_debug.log\033[0m\n")
 
     load_dotenv(override=True)
-
-    # Create session from config/environment
-    silent_mode = args.silent or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
-    approval_callback = auto_approval_callback if silent_mode else console_approval_callback
-    if silent_mode:
+    if args.silent or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):
+        args.silent = True
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
-    session = Session.from_config(approval_callback=approval_callback)
-    print(format_startup_info(session))
-    print()
 
-    try:
-        while True:
-            try:
-                query = await read_user_query_with_session(session)
-            except (EOFError, KeyboardInterrupt):
-                print("\nExiting...")
-                break
-            if query.strip().lower() in ("q", "exit"):
-                break
-            if not query.strip():
-                continue
-            if query.strip().lower() == "clear":
-                session.clear()
-                print("History cleared.")
-                continue
+    from agent.tui.app import run_tui
 
-            if readline:
-                readline.add_history(query)
-
-            await run_agent_task(session, query)
-    finally:
-        if readline:
-            try:
-                readline.write_history_file(histfile)
-            except Exception:
-                pass
-        await session.close()
+    run_tui(args)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -1,0 +1,152 @@
+Screen {
+    layout: vertical;
+    background: #101216;
+    color: #d7dae0;
+}
+
+#root-layout {
+    height: 1fr;
+    width: 1fr;
+    margin: 0 0;
+    padding: 1 2;
+    background: #101216;
+}
+
+#approval-wrapper {
+    display: none;
+    width: 1fr;
+    height: 9;
+    dock: bottom;
+    overlay: screen;
+    layer: overlay;
+    align: right bottom;
+    padding: 0 2 1 0;
+    background: transparent;
+}
+
+#top-panel {
+    height: 3;
+    padding: 0 0;
+    color: #e6e8ee;
+    background: #101216;
+    margin-bottom: 1;
+}
+
+#timeline-panel {
+    height: 1fr;
+    padding: 0 0;
+    background: #101216;
+    color: #d7dae0;
+    margin-bottom: 1;
+    border: none;
+}
+
+#timeline-panel.selectable {
+    background: #101216;
+}
+
+#timeline-panel.selectable:focus {
+    background: #121419;
+}
+
+#skill-completion {
+    display: none;
+    height: auto;
+    max-height: 10;
+    margin-bottom: 1;
+    padding: 1 2;
+    border: round #3f4652;
+    background: #14171d;
+    color: #d7dae0;
+}
+
+#input-shell {
+    height: 8;
+    background: #101216;
+    margin-top: 1;
+}
+
+#input-top-rule,
+#input-bottom-rule {
+    height: 1;
+    color: #3f4652;
+    background: #101216;
+}
+
+#input-status-bar {
+    height: 1;
+    color: #d7dae0;
+    background: #101216;
+    padding: 0 0;
+}
+
+#input-row {
+    height: 5;
+    background: #101216;
+}
+
+#input-prompt {
+    height: 5;
+    color: #c9a6ff;
+    padding: 0 0;
+    width: 3;
+    background: #101216;
+    content-align: left top;
+}
+
+#prompt-input {
+    height: 5;
+    border: none;
+    background: #101216;
+    color: #e6e8ee;
+    padding: 0 0;
+    width: 1fr;
+}
+
+#history-dialog {
+    width: 1fr;
+    height: 1fr;
+    margin: 1 2;
+    padding: 1 2;
+    border: round #3f4652;
+    background: #101216;
+}
+
+#history-body {
+    width: 1fr;
+    height: 1fr;
+    color: #d7dae0;
+    background: #101216;
+}
+
+#approval-panel {
+    width: 54;
+    height: auto;
+    padding: 1 2;
+    border: round #c9a6ff;
+    background: #1a1d23;
+}
+
+#approval-title {
+    width: 1fr;
+    height: 1;
+    color: #e6e8ee;
+}
+
+#approval-detail {
+    width: 1fr;
+    height: 2;
+    color: #d7dae0;
+}
+
+#approval-hint {
+    width: 1fr;
+    height: 1;
+    color: #7f8794;
+    margin-bottom: 1;
+}
+
+#approval-actions {
+    align: center middle;
+    height: auto;
+}

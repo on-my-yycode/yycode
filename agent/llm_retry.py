@@ -124,6 +124,11 @@ async def chat_with_retry(
                 parent_session_id=parent_session_id,
                 event_type="llm_timeout",
                 content=f"{last_error} (attempt {attempt}/{attempts})",
+                title="Model request timed out",
+                detail=f"Attempt {attempt}/{attempts}",
+                phase="waiting",
+                status="timeout",
+                metadata={"attempt": attempt, "attempts": attempts},
             )
         except Exception as exc:
             last_error = str(exc) or exc.__class__.__name__
@@ -135,6 +140,11 @@ async def chat_with_retry(
                 parent_session_id=parent_session_id,
                 event_type="llm_error",
                 content=f"{last_error} (attempt {attempt}/{attempts})",
+                title="Model request failed",
+                detail=f"Attempt {attempt}/{attempts}",
+                phase="waiting",
+                status="failed",
+                metadata={"attempt": attempt, "attempts": attempts},
             )
 
         if attempt < attempts:
@@ -146,6 +156,11 @@ async def chat_with_retry(
                 parent_session_id=parent_session_id,
                 event_type="llm_retry",
                 content=f"retrying model request ({attempt + 1}/{attempts})",
+                title="Retrying model request",
+                detail=f"Attempt {attempt + 1}/{attempts}",
+                phase="waiting",
+                status="retrying",
+                metadata={"attempt": attempt + 1, "attempts": attempts},
             )
             await asyncio.sleep(min(2.0, 0.5 * attempt))
 
@@ -222,6 +237,21 @@ async def _chat_once_with_heartbeat(
                     f"{elapsed_seconds}s elapsed, {idle_seconds}s since last token "
                     f"(attempt {attempt}/{attempts})"
                 ),
+                title="Waiting for model response",
+                detail=f"Attempt {attempt}/{attempts}, {idle_seconds}s since last token",
+                phase="waiting",
+                status="running",
+                elapsed_ms=elapsed_seconds * 1000,
+                metadata={
+                    "attempt": attempt,
+                    "attempts": attempts,
+                    "idle_seconds": idle_seconds,
+                    "since_last_token_ms": idle_seconds * 1000,
+                    "elapsed_seconds": elapsed_seconds,
+                    "elapsed_ms": elapsed_seconds * 1000,
+                    "source": source,
+                    "role": role,
+                },
             )
     finally:
         if not task.done():
@@ -239,6 +269,12 @@ async def _emit_llm_event(
     parent_session_id: Optional[str],
     event_type: str,
     content: str,
+    title: Optional[str] = None,
+    detail: Optional[str] = None,
+    phase: Optional[str] = None,
+    status: Optional[str] = None,
+    elapsed_ms: Optional[int] = None,
+    metadata: Optional[dict] = None,
 ) -> None:
     if event_callback is None:
         return
@@ -250,6 +286,12 @@ async def _emit_llm_event(
             parent_session_id=parent_session_id,
             event_type=event_type,
             content=content,
+            title=title,
+            detail=detail,
+            phase=phase,
+            status=status,
+            elapsed_ms=elapsed_ms,
+            metadata=metadata,
         )
     )
 

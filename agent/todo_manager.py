@@ -246,23 +246,26 @@ class TodoManager:
         """Create a todo handler bound to this manager."""
         def todo(items, memory=None):
             """Update task state and display current progress."""
+            submitted_items = list(items or [])
             self.set_items(items)
             self.set_memory(memory)
 
-            if not self.todo_items:  # Cleared on completion
-                return "All tasks completed! Todo list has been cleared."
+            display_items = self.todo_items or submitted_items
 
             result = []
             result.append("Task State:")
             result.append("-" * 40)
 
-            for item in self.todo_items:
+            for item in display_items:
                 status_icon = {
                     "pending": "[ ]",
                     "in_progress": "[~]",
                     "completed": "[X]",
                 }.get(item["status"], "[ ]")
                 result.append(f"{status_icon} [{item['id']}] {item['text']}")
+
+            if not self.todo_items and submitted_items:
+                result.append("All tasks completed! Todo list has been cleared.")
 
             result.append("-" * 40)
             memory_text = self._format_memory()

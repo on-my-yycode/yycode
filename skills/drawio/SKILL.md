@@ -89,6 +89,38 @@ When a preset loads successfully, mention it in the first line of the reply: *"U
 6. **Review loop** — show image to user, collect feedback, apply targeted XML edits, re-export, repeat until approved
 7. **Final export** — export approved version to all requested formats, report file paths
 
+### Progress reporting
+
+Keep the user informed during diagram generation:
+
+- Before each long phase, emit a short progress update in natural language.
+- At minimum, report: dependency check, planning/layout, XML generation, draft export, self-check, and final export.
+- For draw.io CLI export commands, describe the intent first, e.g. "Exporting draft PNG from the draw.io source."
+- If export or self-check takes more than one attempt, explain the current retry reason briefly.
+- Do not wait until the final answer to reveal that the agent has been planning, exporting, or diagnosing.
+
+Example progress updates:
+
+```text
+Checking draw.io CLI availability.
+Planning the flowchart layout and node groups.
+Writing the draw.io XML source.
+Exporting draft PNG for preview.
+Running visual self-check on the exported diagram.
+```
+
+### Diagnostic budget
+
+Keep export diagnostics focused and bounded:
+
+- Do not run broad ad-hoc XML matrix tests by default.
+- If export fails, first check the generated file against the documented skeleton and Common Mistakes table.
+- Run at most one focused export retry after applying an obvious fix.
+- Only run minimal XML isolation tests after two failed exports with no clear cause.
+- If isolation tests are needed, cap them at 3 cases and explain the reason before running them.
+- Do not generate many variants such as `title_alone`, `dummy_title`, `dummy_alone`, etc. unless those exact cases directly test the suspected failing element.
+- Prefer delivering the `.drawio` XML plus a clear manual-export note over spending many tool calls on speculative diagnostics.
+
 ### Step 5: Self-Check
 
 After exporting the draft PNG, use the agent's vision capability (e.g., Claude's image input) to read the image and check for these issues before showing the user. If the agent does not support vision, skip self-check and show the PNG directly:
@@ -488,6 +520,7 @@ When tools are unavailable, degrade gracefully:
 | draw.io CLI missing, Python missing | Generate `.drawio` XML only; instruct user to open in draw.io desktop or diagrams.net manually |
 | Vision unavailable for self-check | Skip self-check (step 5); proceed directly to showing user the exported PNG |
 | Export fails (Chromium/display issues) | On Linux, retry with `xvfb-run -a`; if still failing, deliver `.drawio` XML and suggest manual export |
+| Export fails for unknown XML reason | Apply Diagnostic budget: skeleton check, one focused retry, then at most 3 explained isolation cases |
 
 ### Checking if draw.io is in PATH
 
@@ -520,6 +553,7 @@ fi
 | `--` inside XML comments | Illegal per XML spec — use single hyphens or rephrase |
 | Arrowhead overlaps bend | Final edge segment before target must be ≥20px — increase spacing or add waypoints |
 | Literal `\n` in label text | Use `&#xa;` for line breaks in `value` attributes |
+| Excessive temporary XML tests | Stop after the Diagnostic budget; report the remaining uncertainty and deliver the `.drawio` source |
 
 ## Diagram Type Presets
 

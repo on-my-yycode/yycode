@@ -158,6 +158,45 @@ def test_tools_node_warns_when_todo_repeats_same_incomplete_state(tmp_path):
     )
 
 
+def test_todo_tool_emits_task_state_result_event(tmp_path):
+    events = []
+
+    async def collect_event(event):
+        events.append(event)
+
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        stream_callback=collect_event,
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(
+            id="todo-1",
+            name="todo",
+            args={
+                "items": [
+                    {"id": "1", "text": "Inspect", "status": "completed"},
+                    {"id": "2", "text": "Patch", "status": "in_progress"},
+                ],
+                "memory": {"user_goal": "Restore task display"},
+            },
+        )
+    ]
+
+    asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    result_events = [event for event in events if event.event_type == "tool_result"]
+    assert len(result_events) == 1
+    assert result_events[0].title == "Task State"
+    assert "[X] [1] Inspect" in result_events[0].content
+    assert "[~] [2] Patch" in result_events[0].content
+    assert "Goal: Restore task display" in result_events[0].content
+
+
 def test_tools_node_passes_default_tool_timeouts(tmp_path, monkeypatch):
     captured = []
 
@@ -444,6 +483,16 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
         "approval_resolved",
         "approval_resolved",
     ]
+    preview_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.event_type == "tool_result" and event.metadata and event.metadata.get("approval_preview")
+    )
+    approval_index = next(index for index, event in enumerate(events) if event.event_type == "approval_required")
+    assert preview_index < approval_index
+    assert events[preview_index].title == "Review diff before approval"
+    assert "-old" in events[preview_index].content
+    assert "+new" in events[preview_index].content
     assert approval_events[0].status == "waiting_for_user"
     assert approval_events[0].metadata["action"] == "edit_file"
     assert approval_events[1].status == "approved"

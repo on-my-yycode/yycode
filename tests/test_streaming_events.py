@@ -1,7 +1,7 @@
 """Tests for structured stream event serialization."""
 
 from agent.streaming import StreamEvent
-from agent.runtime.tool_events import file_paths_for_tool_call
+from agent.runtime.tool_events import file_paths_for_tool_call, format_tool_event_metadata
 
 
 class _ToolCall:
@@ -63,3 +63,43 @@ def test_file_paths_for_tool_call_extracts_unified_diff_paths():
     )
 
     assert file_paths_for_tool_call(tool_call) == ["agent/a.py"]
+
+
+def test_format_tool_event_metadata_identifies_drawio_export_commands():
+    tool_call = _ToolCall(
+        "bash",
+        {
+            "command": (
+                "draw.io -x -f png -e -s 2 "
+                "-o docs/diagram.drawio.png docs/diagram.drawio"
+            )
+        },
+    )
+
+    metadata = format_tool_event_metadata(tool_call)
+
+    assert metadata["title"] == "Export draw.io diagram"
+    assert metadata["phase"] == "implementing"
+    assert metadata["tool_name"] == "bash"
+
+
+def test_stream_event_serializes_waiting_metadata():
+    event = StreamEvent(
+        source="main",
+        session_id="session-1",
+        event_type="llm_waiting",
+        content="waiting for model response... 15s elapsed",
+        title="Waiting for model response",
+        detail="Attempt 1/11, 15s since last token",
+        phase="waiting",
+        status="running",
+        elapsed_ms=15000,
+        metadata={"attempt": 1, "attempts": 11},
+    )
+
+    payload = event.to_dict()
+
+    assert payload["title"] == "Waiting for model response"
+    assert payload["phase"] == "waiting"
+    assert payload["elapsed_ms"] == 15000
+    assert payload["metadata"] == {"attempt": 1, "attempts": 11}

@@ -1,0 +1,235 @@
+<mxfile host="app.diagrams.net" modified="2025-01-01T00:00:00.000Z" agent="yoyoagent" version="21.0.0">
+  <diagram id="structured-event-timeline" name="Structured Event Timeline Design">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- TITLE -->
+        <mxCell id="title" value="Structured Event Timeline Design -- Event Flow &amp; Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1A1A2E;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="800" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SECTION HEADERS ===== -->
+        <!-- Event Producers Header -->
+        <mxCell id="sec-producers" value="Event Producers" style="text;html=1;strokeColor=none;fillColor=#E8F5E9;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=14;fontStyle=1;fontColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- StreamEvent Pipeline Header -->
+        <mxCell id="sec-pipeline" value="StreamEvent Pipeline" style="text;html=1;strokeColor=none;fillColor=#E3F2FD;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=14;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="80" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Consumers Header -->
+        <mxCell id="sec-consumers" value="Consumers / UI Rendering" style="text;html=1;strokeColor=none;fillColor=#FFF3E0;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=14;fontStyle=1;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="800" y="80" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== EVENT PRODUCERS ===== -->
+        <!-- ToolExecutor -->
+        <mxCell id="producer-tool" value="&lt;b&gt;ToolExecutor&lt;/b&gt;&lt;br&gt;tool_start&lt;br&gt;tool_end&lt;br&gt;file_changed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="130" width="150" height="80" as="geometry" />
+        </mxCell>
+        <!-- ApprovalService -->
+        <mxCell id="producer-approval" value="&lt;b&gt;ApprovalService&lt;/b&gt;&lt;br&gt;approval_required&lt;br&gt;approval_resolved" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="230" width="150" height="80" as="geometry" />
+        </mxCell>
+        <!-- SubagentRunner -->
+        <mxCell id="producer-subagent" value="&lt;b&gt;SubagentRunner&lt;/b&gt;&lt;br&gt;subagent_started&lt;br&gt;subagent_finished" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="150" height="80" as="geometry" />
+        </mxCell>
+        <!-- Verify/Test -->
+        <mxCell id="producer-verify" value="&lt;b&gt;Verify&lt;/b&gt;&lt;br&gt;test_started&lt;br&gt;test_finished" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="430" width="150" height="70" as="geometry" />
+        </mxCell>
+        <!-- Todo/Phase -->
+        <mxCell id="producer-phase" value="&lt;b&gt;Todo / Phase Manager&lt;/b&gt;&lt;br&gt;phase_changed&lt;br&gt;step_started&lt;br&gt;step_finished" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="520" width="150" height="80" as="geometry" />
+        </mxCell>
+        <!-- LLM Retry -->
+        <mxCell id="producer-llm" value="&lt;b&gt;LLM Retry&lt;/b&gt;&lt;br&gt;llm_waiting&lt;br&gt;llm_error&lt;br&gt;llm_retry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=12;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="620" width="150" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== STREAMEVENT (CENTER) ===== -->
+        <!-- StreamEvent Core -->
+        <mxCell id="core-stream" value="&lt;b style=&quot;font-size:14px&quot;&gt;StreamEvent&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;b&gt;Core Fields&lt;/b&gt;&lt;br&gt;source - session_id&lt;br&gt;event_type - content&lt;br&gt;role - parent_session_id&lt;br&gt;usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=12;shadow=1;align=center;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="440" y="130" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Extended Fields -->
+        <mxCell id="ext-fields" value="&lt;b style=&quot;font-size:14px&quot;&gt;Extended Fields&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;title - detail&lt;br&gt;phase - status&lt;br&gt;tool_name - file_paths&lt;br&gt;elapsed_ms - metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#90CAF9;strokeColor=#1565C0;fontSize=12;shadow=1;align=center;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="440" y="290" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Tool Display Mapping Sub-box -->
+        <mxCell id="mapping" value="&lt;b&gt;Tool Display Mapping&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;read_file -&gt; Read file range&lt;br&gt;grep -&gt; Search code&lt;br&gt;apply_patch -&gt; Apply patch&lt;br&gt;verify -&gt; Run tests&lt;br&gt;bash -&gt; Command (best-effort)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#64B5F6;strokeColor=#1565C0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="450" width="200" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ===== CONSUMERS / UI ===== -->
+        <!-- Console Renderer -->
+        <mxCell id="consumer-console" value="&lt;b&gt;ConsoleStreamRenderer&lt;/b&gt;&lt;br&gt;Backward-compatible&lt;br&gt;Uses title/detail for&lt;br&gt;friendlier tool_start output" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=12;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="820" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Web Timeline Renderer -->
+        <mxCell id="consumer-web" value="&lt;b&gt;Web Timeline Renderer&lt;/b&gt;&lt;br&gt;Rich UI consumption&lt;br&gt;of structured events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=12;shadow=1;align=center;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="245" width="180" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- UI Panels -->
+        <mxCell id="ui-panels" value="&lt;b&gt;Three UI Regions&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;(1) Active Status&lt;br&gt;(2) Timeline (expandable)&lt;br&gt;(3) Subagent Panel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCC80;strokeColor=#E65100;fontSize=12;shadow=1;align=left;verticalAlign=top;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="820" y="350" width="180" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- PHASES BOX -->
+        <mxCell id="phases" value="&lt;b&gt;Phases&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;planning -&gt; exploring -&gt;&lt;br&gt;designing -&gt; implementing -&gt;&lt;br&gt;verifying -&gt; reviewing -&gt;&lt;br&gt;summarizing&lt;br&gt;&lt;br&gt;&lt;i&gt;Side: waiting - blocked&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="820" y="480" width="180" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ARROWS: Producers -&gt; StreamEvent ===== -->
+        <mxCell id="arr1" value="&lt;font style=&quot;font-size:10px&quot;&gt;enriched events&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=2;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-tool" target="core-stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=2;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-approval" target="core-stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=2;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-subagent" target="core-stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=1.5;dashed=1;dashPattern=3 3;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-verify" target="ext-fields">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=1.5;dashed=1;dashPattern=3 3;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-phase" target="ext-fields">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565C0;strokeWidth=2;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-llm" target="ext-fields">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ARROWS: StreamEvent -&gt; Consumers ===== -->
+        <mxCell id="arr7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="core-stream" target="consumer-console">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=1.5;dashed=1;dashPattern=3 3;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ext-fields" target="consumer-web">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arr9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E65100;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ext-fields" target="ui-panels">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LEGEND ===== -->
+        <mxCell id="legend-box" value="&lt;b&gt;Legend&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;-- Solid: implemented&lt;br&gt;- - Dashed: planned / future&lt;br&gt;Green: Producers&lt;br&gt;Blue: Pipeline&lt;br&gt;Orange: Consumers&lt;br&gt;Yellow: Phase model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#90A4AE;fontSize=10;shadow=1;align=left;verticalAlign=top;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="720" width="180" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ===== APPROVAL FLOW DETAIL (BOTTOM) ===== -->
+        <mxCell id="approval-title" value="&lt;b&gt;Approval Flow Detail&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#FCE4EC;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=14;fontStyle=1;fontColor=#C62828;" vertex="1" parent="1">
+          <mxGeometry x="300" y="720" width="480" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Approval Flow Steps -->
+        <mxCell id="af1" value="&lt;b&gt;1. ToolExecutor&lt;/b&gt;&lt;br&gt;Needs approval&lt;br&gt;before writing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="770" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="af2" value="&lt;b&gt;2. ApprovalService&lt;/b&gt;&lt;br&gt;.approve(action)&lt;br&gt;Checks cache/rules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#C62828;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="470" y="770" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="af3" value="&lt;b&gt;3. approval_callback&lt;/b&gt;&lt;br&gt;Adapter boundary&lt;br&gt;Console / Web / Silent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#C62828;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="640" y="770" width="140" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Adapter variants -->
+        <mxCell id="af3a" value="&lt;b&gt;Console&lt;/b&gt;&lt;br&gt;y/N prompt" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="640" y="860" width="70" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="af3b" value="&lt;b&gt;Web&lt;/b&gt;&lt;br&gt;Store + wait&lt;br&gt;WebSocket" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=10;align=center;dashed=1;dashPattern=3 3;" vertex="1" parent="1">
+          <mxGeometry x="715" y="860" width="65" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="af3c" value="&lt;b&gt;Silent&lt;/b&gt;&lt;br&gt;Auto Y" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="640" y="905" width="70" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Events emitted -->
+        <mxCell id="af4" value="&lt;b&gt;4. Events Emitted&lt;/b&gt;&lt;br&gt;approval_required&lt;br&gt;(before wait)&lt;br&gt;approval_resolved&lt;br&gt;(after decision)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="870" width="130" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- approval arrows -->
+        <mxCell id="afarr1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="af1" target="af2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="afarr2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="af2" target="af3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="afarr3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=1.5;dashed=1;dashPattern=3 3;" edge="1" parent="1" source="af3" target="af4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710" y="850" />
+              <mxPoint x="710" y="850" />
+              <mxPoint x="365" y="850" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="afarr4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=1.5;" edge="1" parent="1" source="af3" target="af3a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="afarr5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62828;strokeWidth=1.5;dashed=1;" edge="1" parent="1" source="af3" target="af3b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="afarr6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2E7D32;strokeWidth=1.5;" edge="1" parent="1" source="af3" target="af3c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SUBAGENT LIFECYCLE (BOTTOM RIGHT) ===== -->
+        <mxCell id="sub-title" value="&lt;b&gt;Subagent Lifecycle&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#E8EAF6;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=14;fontStyle=1;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="720" width="480" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sub1" value="&lt;b&gt;SubagentRunner.run()&lt;/b&gt;&lt;br&gt;role, task, session_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5CAE9;strokeColor=#283593;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="770" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sub2" value="&lt;b&gt;Emit&lt;/b&gt;&lt;br&gt;subagent_started&lt;br&gt;phase=exploring&lt;br&gt;status=running" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#9FA8DA;strokeColor=#283593;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="770" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sub3" value="&lt;b&gt;Execute Task&lt;/b&gt;&lt;br&gt;Tool calls, LLM&lt;br&gt;events, approvals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7986CB;strokeColor=#283593;fontSize=11;shadow=1;align=center;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="860" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sub4" value="&lt;b&gt;Emit&lt;/b&gt;&lt;br&gt;subagent_finished&lt;br&gt;status=done/error&lt;br&gt;elapsed_ms~..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#9FA8DA;strokeColor=#283593;fontSize=11;shadow=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="860" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="subarr1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#283593;strokeWidth=2;" edge="1" parent="1" source="sub1" target="sub2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="subarr2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#283593;strokeWidth=2;" edge="1" parent="1" source="sub2" target="sub3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="subarr3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#283593;strokeWidth=2;" edge="1" parent="1" source="sub3" target="sub4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Subagent roles mapping ==== -->
+        <mxCell id="sub-roles" value="&lt;b&gt;Subagent Roles&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;explorer - architect&lt;br&gt;worker - tester - security" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#283593;fontSize=10;shadow=1;align=center;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="860" width="140" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===== COMPATIBILITY NOTE ===== -->
+        <mxCell id="compat" value="&lt;b&gt;! Backward Compatibility&lt;/b&gt;&lt;br&gt;Old renderers read only &lt;i&gt;event_type&lt;/i&gt; + &lt;i&gt;content&lt;/i&gt; and ignore new optional fields.&lt;br&gt;Console mode output stays unchanged unless new fields are present.&lt;br&gt;Existing stream consumers continue to work." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FF8F00;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="880" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== CONNECTION: StreamEvent to approval flow ===== -->
+        <mxCell id="conn-approval-stream" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9E9E9E;strokeWidth=1;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="producer-approval" target="af1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="135" y="340" as="sourcePoint" />
+            <mxPoint x="365" y="720" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

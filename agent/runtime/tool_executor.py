@@ -76,6 +76,14 @@ class ToolExecutor:
             if runner and runner.last_usage:
                 tool_message.additional_kwargs["usage"] = dict(runner.last_usage)
 
+            if tc.name == "todo":
+                await self._emit_tool_result(
+                    output,
+                    title="Task State",
+                    detail="Updated todo items and task memory",
+                    phase="planning",
+                )
+
             should_emit_diff = self.workflow_guard.update_after_tool(tc.name, output)
             if should_emit_diff:
                 await self._emit_tool_result(diff_preview_from_output(output))
@@ -124,7 +132,14 @@ class ToolExecutor:
             )
         )
 
-    async def _emit_tool_result(self, content: str) -> None:
+    async def _emit_tool_result(
+        self,
+        content: str,
+        *,
+        title: str = "Review diff",
+        detail: str = "Workspace changes produced a diff preview",
+        phase: str = "reviewing",
+    ) -> None:
         if not self.runtime.stream_callback:
             return
         await self.runtime.stream_callback(
@@ -133,9 +148,9 @@ class ToolExecutor:
                 session_id=self.runtime.session_id,
                 event_type="tool_result",
                 content=content,
-                title="Review diff",
-                detail="Workspace changes produced a diff preview",
-                phase="reviewing",
+                title=title,
+                detail=detail,
+                phase=phase,
             )
         )
 

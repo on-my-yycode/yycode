@@ -46,6 +46,24 @@ def test_todo_handler_updates_items_and_memory():
     assert manager.get_memory()["files_modified"] == ["agent/todo_manager.py"]
 
 
+def test_todo_handler_outputs_completed_item_details_before_clearing():
+    manager = TodoManager()
+    handler = manager.create_todo_handler()
+
+    output = handler(
+        items=[
+            {"id": "1", "text": "Inspect", "status": "completed"},
+            {"id": "2", "text": "Patch", "status": "completed"},
+        ],
+        memory={"user_goal": "Finish task"},
+    )
+
+    assert "[X] [1] Inspect" in output
+    assert "[X] [2] Patch" in output
+    assert "All tasks completed! Todo list has been cleared." in output
+    assert manager.get_items() == []
+
+
 def test_task_memory_merges_lists_without_duplicates():
     manager = TodoManager()
     manager.set_memory(

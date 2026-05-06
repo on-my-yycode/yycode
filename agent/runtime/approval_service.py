@@ -41,6 +41,7 @@ class ApprovalService:
             await self._emit_approval_resolved(request, "cached_approved")
             return args
 
+        await self._emit_approval_diff_preview(request)
         if self.approval_callback is None:
             await self._emit_approval_required(request)
             await self._emit_approval_resolved(request, "denied")
@@ -64,7 +65,7 @@ class ApprovalService:
                 source=self.source,
                 session_id=self.session_id,
                 event_type="approval_required",
-                content=request.format(include_diff=False),
+                content=request.format(include_diff=True),
                 title=_approval_title(request, "Approve"),
                 detail=_approval_detail(request),
                 phase="blocked",
@@ -72,6 +73,28 @@ class ApprovalService:
                 tool_name=request.tool_name,
                 file_paths=_approval_paths(request),
                 metadata=_approval_metadata(request),
+            )
+        )
+
+    async def _emit_approval_diff_preview(self, request: ApprovalRequest) -> None:
+        if self.stream_callback is None or not request.diff_preview:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source=self.source,
+                session_id=self.session_id,
+                event_type="tool_result",
+                content=request.diff_preview,
+                title="Review diff before approval",
+                detail=_approval_detail(request),
+                phase="reviewing",
+                status="waiting_for_user",
+                tool_name=request.tool_name,
+                file_paths=_approval_paths(request),
+                metadata={
+                    **_approval_metadata(request),
+                    "approval_preview": True,
+                },
             )
         )
 
