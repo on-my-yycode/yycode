@@ -362,10 +362,11 @@ def test_tui_timeline_shows_tool_call_and_return_details():
     assert item.status == "completed"
     assert item.elapsed_ms == 42
     assert "⏺" in transcript
-    assert "Tool call" in transcript
-    assert "Tool returned" in transcript
-    assert "read_file" in transcript
+    assert "Read file" in transcript
+    assert "Tool call" not in transcript
+    assert "Tool returned" not in transcript
     assert "completed" in transcript
+    assert "42ms" in transcript
 
 
 def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present():
@@ -416,11 +417,71 @@ def test_tui_timeline_shows_tool_result_content():
 
     transcript = render_timeline_lines(state)
 
-    assert "Tool result" in transcript
+    assert "Review full diff" in transcript
     assert "diff --git" in transcript
     assert "+new line" in transcript
     parsed = to_content(transcript)
     assert any(str(span.style) == "bold green" for span in parsed.spans)
+
+
+def test_tui_timeline_groups_tool_activity_and_keeps_full_diff():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    diff = "\n".join(
+        [
+            "diff --git a/a.py b/a.py",
+            "--- a/a.py",
+            "+++ b/a.py",
+            "@@ -1,2 +1,3 @@",
+            " old line",
+            "-removed line",
+            "+added line",
+            "+another added line",
+        ]
+    )
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_start",
+            title="Apply patch",
+            detail="agent/tui/renderers.py",
+            status="running",
+            tool_name="apply_patch",
+        )
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_end",
+            title="Apply patch",
+            detail="agent/tui/renderers.py",
+            status="completed",
+            tool_name="apply_patch",
+            elapsed_ms=87,
+        )
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_result",
+            title="Review diff",
+            content=diff,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Edit file" in transcript
+    assert "87ms" in transcript
+    assert transcript.count("Apply patch") == 1
+    assert "Review full diff" in transcript
+    assert "-removed line" in transcript
+    assert "+added line" in transcript
+    assert "+another added line" in transcript
 
 
 def test_tui_status_header_uses_compact_two_column_layout():
@@ -580,9 +641,10 @@ def test_tui_main_timeline_shows_compact_tool_and_model_updates():
     transcript = render_timeline_lines(state, limit=8, header_mode="main")
 
     assert "Ctrl+H full history" in transcript
-    assert "Tool call" in transcript
-    assert "Tool returned" in transcript
-    assert "Tool result" in transcript
+    assert "Read file" in transcript
+    assert "Tool call" not in transcript
+    assert "Tool returned" not in transcript
+    assert "Review full diff" in transcript
     assert "Yoyo" in transcript
     assert "Done reviewing" in transcript
 
@@ -607,10 +669,10 @@ def test_tui_main_timeline_keeps_latest_detailed_event_block_intact_when_height_
 
     transcript = render_timeline_lines(state, limit=20, max_lines=8, header_mode="main")
 
-    assert "Tool call" in transcript
+    assert "Read file" in transcript
     assert "Read file 5" in transcript
     assert "agent/tui/file_5.py" in transcript
-    assert "args" in transcript
+    assert "Input" in transcript
     assert "agent/tui/file_4.py" not in transcript
 
 

@@ -327,13 +327,7 @@ def render_timeline_lines(
     if header_mode == "main":
         return render_main_timeline_lines(state, limit=limit, max_lines=max_lines)
 
-    rendered_items: list[str] = []
-
-    items = state.latest_timeline_items(MAX_TIMELINE_ITEMS)
-    for item in items:
-        rendered = _render_timeline_item(item, state)
-        if rendered:
-            rendered_items.append(rendered)
+    rendered_items = _render_timeline_blocks(state)
 
     if rendered_items:
         total = len(rendered_items)
@@ -385,11 +379,7 @@ def render_main_timeline_lines(
     max_lines: int | None = None,
 ) -> str:
     """Render ALL activity for the main UI (unlimited, scrollable)."""
-    rendered_items = []
-    for item in state.latest_timeline_items(MAX_TIMELINE_ITEMS):
-        rendered = _render_timeline_item(item, state)
-        if rendered:
-            rendered_items.append(rendered)
+    rendered_items = _render_timeline_blocks(state)
 
     sections = []
 
@@ -429,6 +419,56 @@ def render_main_timeline_lines(
         sections.append("\n\n".join([header, *visible_items]))
 
     return "\n\n".join(sections)
+
+
+def _render_timeline_blocks(state: TuiState) -> list[str]:
+    """Render timeline items as human-readable activity blocks."""
+    blocks: list[str] = []
+    items = state.latest_timeline_items(MAX_TIMELINE_ITEMS)
+    index = 0
+    while index < len(items):
+        item = items[index]
+        role_prefix = _role_prefix(item)
+
+        if item.event_type == "tool_start":
+            matching_end_index = _find_matching_tool_end(items, index)
+            end_item = items[matching_end_index] if matching_end_index is not None else None
+            rendered = _render_tool_activity(item, end_item, role_prefix)
+            if rendered:
+                blocks.append(rendered)
+            if matching_end_index is not None:
+                index = matching_end_index + 1
+                continue
+        elif item.event_type == "tool_end":
+            if item.tool_name != "todo":
+                rendered = _render_tool_activity(None, item, role_prefix)
+                if rendered:
+                    blocks.append(rendered)
+        else:
+            rendered = _render_timeline_item(item, state)
+            if rendered:
+                blocks.append(rendered)
+        index += 1
+    return blocks
+
+
+def _find_matching_tool_end(items: list[TimelineItem], start_index: int) -> int | None:
+    """Return the next matching tool_end index before another tool_start appears."""
+    start = items[start_index]
+    for index in range(start_index + 1, len(items)):
+        candidate = items[index]
+        if candidate.event_type == "tool_start":
+            return None
+        if candidate.event_type != "tool_end":
+            continue
+        if candidate.tool_name == "todo":
+            continue
+        if start.tool_name and candidate.tool_name and start.tool_name != candidate.tool_name:
+            continue
+        if start.detail and candidate.detail and start.detail != candidate.detail:
+            continue
+        return index
+    return None
 
 
 def _render_todo_section(todo_manager) -> str:
@@ -623,8 +663,12 @@ def _render_subagent(subagent: SubagentStatus) -> str:
     )
 
 
+def _role_prefix(item: TimelineItem) -> str:
+    return f"[#7f8794]@{_safe_text(item.role)}[/] " if item.role and item.source == "subagent" else ""
+
+
 def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> str:
-    role_prefix = f"[#7f8794]@{_safe_text(item.role)}[/] " if item.role and item.source == "subagent" else ""
+    role_prefix = _role_prefix(item)
 
     if item.event_type == "user_message":
         content = _safe_text(item.content.strip() or item.detail.strip())
@@ -646,9 +690,13 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
         return _render_tool_return(item, role_prefix)
     if item.event_type == "tool_result":
         if item.content and item.content.strip():
-            title = _safe_text(item.title or "Tool result")
-            suffix = "" if title == "Tool result" else f" [#7f8794]{title}[/]"
-            return f"{role_prefix}[#8fd6a3]⏺[/] [bold #8fd6a3]Tool result[/]{suffix}\n{_indent_block(colorize_diff_for_tui(item.content))}"
+            title = _safe_text(_human_tool_result_title(item))
+            lines = [f"{role_prefix}[bold #8fd6a3]{title}[/]"]
+            detail = item.detail or ""
+            if detail and detail != item.title and detail != item.content:
+                lines.append(f"  [#8b949e]{_safe_text(detail)}[/]")
+            lines.append(_indent_block(colorize_diff_for_tui(item.content)))
+            return "\n".join(lines)
         return None
     if item.event_type == "usage":
         usage = item.usage or {}
@@ -670,20 +718,23 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
         files = ", ".join(_safe_text(fp) for fp in item.file_paths) if item.file_paths else _safe_text(item.content or "file")
         return f"{role_prefix}[#8fd6a3]+[/] [#cfd3dc]modified[/] {files}"
     if item.event_type == "approval_required":
-        marker, color = _marker_for_event(item)
         status = _status_badge(item.status)
         lines = [
-            f"{role_prefix}[{color}]{marker}[/] [bold {color}]{_safe_text(item.title)}[/] {status}",
+            f"{role_prefix}[bold #d7ba7d]Needs your approval[/] {status}",
         ]
+        if item.detail:
+            lines.append(f"  [#cfd3dc]{_safe_text(item.detail)}[/]")
         # 显示完整的内容（含 diff），并高亮显示
         if item.content:
             lines.append(_indent_block(colorize_diff_for_tui(item.content)))
         return "\n".join(lines)
     if item.event_type == "approval_resolved":
-        marker, color = _marker_for_event(item)
         status = _status_badge(item.status)
-        detail = _detail_line(item.detail)
-        return _activity_line(marker, color, role_prefix, item, status, detail)
+        title = _approval_resolved_title(item.status)
+        lines = [f"{role_prefix}[bold #8fd6a3]{title}[/] {status}"]
+        if item.detail:
+            lines.append(f"  [#8b949e]{_safe_text(item.detail)}[/]")
+        return "\n".join(lines)
     if item.event_type in {"subagent_started", "subagent_finished"}:
         status = _status_badge(item.status)
         detail = _detail_line(item.detail)
@@ -748,6 +799,100 @@ def _render_llm_waiting_item(
         f"{role_prefix}[{color}]{marker}[/] [bold {color}]{title}[/]\n"
         f"  [#8b949e]{' · '.join(details)}[/]"
     )
+
+
+def _render_tool_activity(
+    start: TimelineItem | None,
+    end: TimelineItem | None,
+    role_prefix: str,
+) -> str | None:
+    """Render a tool start/end pair as one readable activity block."""
+    item = start or end
+    if item is None or item.tool_name == "todo":
+        return None
+
+    status = (end.status if end is not None else item.status) or "running"
+    title = _tool_activity_title(item, status)
+    color = "#ff8f8f" if status == "failed" else "#8fd6a3" if status == "completed" else "#9cdcfe"
+    lines = [f"{role_prefix}[bold {color}]{title}[/] {_status_badge(status)}"]
+
+    target = _tool_target_line(start, end)
+    if target:
+        lines.append(f"  [#cfd3dc]{target}[/]")
+
+    purpose = _safe_text((start.title if start else end.title) or "")
+    if purpose and purpose != target:
+        lines.append(f"  [#8b949e]{purpose}[/]")
+
+    args = start.metadata.get("args") if start and isinstance(start.metadata, dict) else None
+    if args:
+        lines.append(f"  [#7f8794]Input[/] {_format_args(args)}")
+
+    if end and end.elapsed_ms is not None:
+        lines.append(f"  [#7f8794]Time[/] [#cfd3dc]{_format_duration(end.elapsed_ms)}[/]")
+    elif status == "running":
+        lines.append("  [#7f8794]Status[/] [#cfd3dc]in progress[/]")
+    return "\n".join(lines)
+
+
+def _tool_activity_title(item: TimelineItem, status: str) -> str:
+    tool_name = item.tool_name or item.metadata.get("tool_name", "") if isinstance(item.metadata, dict) else item.tool_name
+    title = item.title or ""
+    if status == "failed":
+        return "Tool failed"
+    if tool_name in {"read_file", "read_many_files"} or "read file" in title.lower():
+        return "Read file"
+    if tool_name in {"grep"} or "search" in title.lower() or "grep" in title.lower():
+        return "Search code"
+    if tool_name == "bash":
+        return "Run command"
+    if tool_name in {"apply_patch", "edit_file", "write_file"}:
+        return "Edit file"
+    if tool_name in {"git_diff", "git_show"}:
+        return "Inspect git"
+    if tool_name == "list_files":
+        return "List files"
+    if tool_name == "subagent":
+        return "Delegate work"
+    if tool_name in {"list_skills", "load_skill"}:
+        return "Use skill"
+    if title:
+        return title
+    return "Run tool"
+
+
+def _tool_target_line(start: TimelineItem | None, end: TimelineItem | None) -> str:
+    item = start or end
+    if item is None:
+        return ""
+    if item.file_paths:
+        return "Files: " + ", ".join(_safe_text(path) for path in item.file_paths)
+    detail = (start.detail if start and start.detail else end.detail if end and end.detail else "") or ""
+    if detail:
+        return _safe_text(detail)
+    content = (start.content if start and start.content else end.content if end and end.content else "") or ""
+    if content and content != item.tool_name:
+        return _safe_text(content)
+    return ""
+
+
+def _human_tool_result_title(item: TimelineItem) -> str:
+    title = (item.title or "").lower()
+    if item.metadata.get("approval_preview") if isinstance(item.metadata, dict) else False:
+        return "Review full diff before approval"
+    if "diff" in title or item.content.startswith(("diff --git", "--- ", "@@")):
+        return "Review full diff"
+    if "task state" in title:
+        return "Task state"
+    return item.title or "Tool result"
+
+
+def _approval_resolved_title(status: str | None) -> str:
+    if status in {"approved", "cached_approved"}:
+        return "Approved"
+    if status == "denied":
+        return "Denied"
+    return "Approval resolved"
 
 
 def _render_tool_call(item: TimelineItem, role_prefix: str) -> str:
