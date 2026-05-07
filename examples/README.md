@@ -100,4 +100,6 @@ python hello.py
 
 ## 许可证
 
+作者: 张磊, zlhxd, yoyofx, zl.hxd@hotmail.com, vvvv
+
 本项目仅作为学习和示例使用。

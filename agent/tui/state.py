@@ -62,6 +62,17 @@ class SubagentStatus:
     elapsed_ms: int | None = None
 
 
+@dataclass
+class ChangedFileDiff:
+    """A changed file and its diff from the latest task."""
+
+    path: str
+    added: int
+    removed: int
+    diff: str
+    collapsed: bool = False
+
+
 class TuiState:
     """Mutable state used by the TUI renderer."""
 
@@ -70,6 +81,7 @@ class TuiState:
         self.pending_approvals: dict[str, PendingApproval] = {}
         self.subagents: dict[str, SubagentStatus] = {}
         self.changed_files: list[str] = []
+        self.latest_changed_file_diffs: list[ChangedFileDiff] = []
         self.active_phase: str = "planning"
         self.status_line: str = "Initializing session"
         self.model_name: str = "(unknown)"
@@ -205,7 +217,7 @@ class TuiState:
 
         # 只有 text_delta 和 thinking_delta 能合并，其他都新建条目
         # 确保所有信息都显示在时间线上
-        always_new = {"usage", "context_compressed", "llm_timeout", "llm_retry", "llm_error", "file_changed", "llm_waiting", "tool_start", "tool_end", "tool_result", "thinking_start", "thinking_end", "user_message", "agent_thinking"}
+        always_new = {"usage", "context_compressed", "llm_timeout", "llm_retry", "llm_error", "file_changed", "files_changed_summary", "llm_waiting", "tool_start", "tool_end", "tool_result", "thinking_start", "thinking_end", "user_message", "agent_thinking"}
         existing = None
         if event.event_type == "text_delta" and self.timeline and self.timeline[-1].event_type == "text_delta":
             existing = self.timeline[-1] if self.timeline[-1].session_id == event.session_id else None
@@ -365,6 +377,19 @@ class TuiState:
                 return approval
         return None
 
+    def set_changed_file_diffs(self, files: list[dict]) -> None:
+        """Store changed file diffs for the dedicated diff viewer."""
+        self.latest_changed_file_diffs = [
+            ChangedFileDiff(
+                path=str(item.get("path", "")),
+                added=int(item.get("added", 0) or 0),
+                removed=int(item.get("removed", 0) or 0),
+                diff=str(item.get("diff", "") or ""),
+            )
+            for item in files
+            if item.get("path")
+        ]
+
     def _default_title(self, event: StreamEvent) -> str:
         mapping = {
             "thinking_start": "Thinking",
@@ -383,6 +408,7 @@ class TuiState:
             "approval_required": "Approval required",
             "approval_resolved": "Approval resolved",
             "file_changed": "File changed",
+            "files_changed_summary": "Files changed",
             "subagent_started": "Subagent started",
             "subagent_finished": "Subagent finished",
         }

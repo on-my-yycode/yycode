@@ -96,6 +96,28 @@ def test_tui_state_tracks_pending_approval_and_subagent_status():
     assert state.next_pending_approval() is None
 
 
+def test_tui_timeline_shows_denied_approval_as_task_stopped():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="approval_resolved",
+            title="Denied file edit",
+            detail="README.md",
+            status="denied",
+            metadata={"approval_id": "edit_file|apply_patch|README.md"},
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Denied" in transcript
+    assert "Task stopped because this approval was denied." in transcript
+    assert "#ff8f8f" in transcript
+
+
 def test_tui_renderers_show_initializing_state_before_session_ready():
     state = TuiState()
 
@@ -123,7 +145,9 @@ def test_tui_renderers_show_compact_transcript_style_lines():
 
     transcript = render_timeline_lines(state)
 
-    assert "Read file" in transcript
+    assert "◇ Exploration" in transcript
+    assert "explored 1 file" in transcript
+    assert "Inspect file" in transcript
     assert "running" in transcript
     assert "agent/tui/app.py" in transcript
 
@@ -195,7 +219,15 @@ def test_tui_task_plan_panel_renders_full_todo_state():
     manager.set_memory(
         {
             "user_goal": "Keep timeline focused on events",
-            "next_steps": ["Verify the TUI renderers"],
+            "constraints": ["Avoid duplicate task plan text", "Avoid duplicate task plan text"],
+            "next_steps": [
+                "Verify the TUI renderers",
+                "Verify the TUI renderers",
+                "Check the panel layout",
+                "Run focused tests",
+                "Review visual density",
+                "Prepare summary",
+            ],
         }
     )
     state = TuiState()
@@ -208,11 +240,17 @@ def test_tui_task_plan_panel_renders_full_todo_state():
 
     panel = render_task_plan_panel(state)
 
-    assert "Task Plan" in panel
-    assert "Total: 3" in panel
+    assert "Task Plan" not in panel
+    assert "Goal" in panel
+    assert "Checklist" in panel
+    assert "1/3 done" in panel
     assert "Move task plan into panel" in panel
+    assert "current" in panel
     assert "Keep timeline focused on events" in panel
+    assert panel.count("Avoid duplicate task plan text") == 1
     assert "Verify the TUI renderers" in panel
+    assert panel.count("Verify the TUI renderers") == 1
+    assert "+1 more" in panel
 
 
 def test_tui_state_merges_waiting_updates_into_thinking_item():
@@ -323,6 +361,73 @@ def test_tui_state_completes_waiting_item_when_model_starts_responding():
     assert waiting.title == "Model response started"
 
 
+def test_tui_timeline_renders_common_markdown_in_assistant_text():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content=(
+                "## Summary\n"
+                "- Updated `agent/tui/renderers.py`\n"
+                "- **Tests** passed\n"
+                "\n"
+                "```bash\n"
+                "pytest tests/test_tui_state.py -q\n"
+                "```"
+            ),
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Summary" in transcript
+    assert "•" in transcript
+    assert "[#9cdcfe]`agent/tui/renderers.py`[/]" in transcript
+    assert "[bold #f0f2f5]Tests[/]" in transcript
+    assert "code bash" in transcript
+    assert "[bold #dcdcaa]pytest[/]" in transcript
+    assert "tests/test_tui_state.py" in transcript
+    assert "[#9cdcfe]-q[/]" in transcript
+    to_content(transcript)
+
+
+def test_tui_timeline_highlights_common_code_fence_languages():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content=(
+                "```java\n"
+                "public class Demo { return; }\n"
+                "```\n"
+                "```csharp\n"
+                "public class Demo { return true; }\n"
+                "```\n"
+                "```go\n"
+                "func main() { return }\n"
+                "```"
+            ),
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "code java" in transcript
+    assert "code csharp" in transcript
+    assert "code go" in transcript
+    assert "[bold #c586c0]public[/]" in transcript
+    assert "[bold #c586c0]class[/]" in transcript
+    assert "[bold #c586c0]func[/]" in transcript
+    assert "[bold #c586c0]return[/]" in transcript
+    to_content(transcript)
+
+
 def test_tui_status_panel_shows_prominent_task_running_state():
     state = TuiState()
     state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
@@ -418,11 +523,11 @@ def test_tui_timeline_shows_tool_call_and_return_details():
     assert item.event_type == "tool_end"
     assert item.status == "completed"
     assert item.elapsed_ms == 42
-    assert "⏺" in transcript
-    assert "Read file" in transcript
+    assert "◇ Exploration" in transcript
+    assert "explored 1 file" in transcript
+    assert "Inspect file" in transcript
     assert "Tool call" not in transcript
     assert "Tool returned" not in transcript
-    assert "completed" in transcript
     assert "42ms" in transcript
 
 
@@ -446,15 +551,27 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
             session_id="sess-1",
             event_type="tool_result",
             title="Task State",
-            content="Task State:\n----------------------------------------\n[~] [1] Patch",
+            content=(
+                "Task State:\n"
+                "----------------------------------------\n"
+                "[X] [1] Inspect\n"
+                "[~] [2] Patch\n"
+                "Goal: keep timeline concise\n"
+                "Constraints: avoid duplicate task plan output"
+            ),
         )
     )
 
     transcript = render_timeline_lines(state)
 
     assert "Tool returned" not in transcript
-    assert "Task State" in transcript
+    assert "● Task State" in transcript
+    assert "1/2 done" in transcript
+    assert "current" in transcript
     assert "Patch" in transcript
+    assert "Ctrl+T full plan" in transcript
+    assert "Goal: keep timeline concise" not in transcript
+    assert "Constraints:" not in transcript
 
 
 def test_tui_timeline_shows_tool_result_content():
@@ -532,13 +649,218 @@ def test_tui_timeline_groups_tool_activity_and_keeps_full_diff():
 
     transcript = render_timeline_lines(state)
 
+    assert "◇ Edit" in transcript
+    assert "Edited 1 file" in transcript
     assert "Edit file" in transcript
+    assert "agent/tui/renderers.py" in transcript
     assert "87ms" in transcript
-    assert transcript.count("Apply patch") == 1
+    assert "Apply patch" not in transcript
     assert "Review full diff" in transcript
     assert "-removed line" in transcript
     assert "+added line" in transcript
     assert "+another added line" in transcript
+
+
+def test_tui_timeline_shows_changed_files_summary_after_full_diff():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    diff = "\n".join(
+        [
+            "diff --git a/agent/tui/app.py b/agent/tui/app.py",
+            "--- a/agent/tui/app.py",
+            "+++ b/agent/tui/app.py",
+            "@@ -1,3 +1,4 @@",
+            " keep",
+            "+new app line",
+            "+another app line",
+            "-old app line",
+            "diff --git a/agent/tui/styles.tcss b/agent/tui/styles.tcss",
+            "--- a/agent/tui/styles.tcss",
+            "+++ b/agent/tui/styles.tcss",
+            "@@ -4,3 +4,4 @@",
+            "+new style line",
+            "-old style line",
+            "-another old style line",
+        ]
+    )
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_result",
+            title="Review diff",
+            content=diff,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Review full diff" in transcript
+    assert "+new app line" in transcript
+    assert "-another old style line" in transcript
+    assert "2 files changed" in transcript
+    assert "+3" in transcript
+    assert "-3" in transcript
+    assert "agent/tui/app.py" in transcript
+    assert "agent/tui/styles.tcss" in transcript
+    assert "+2" in transcript
+    assert "-1" in transcript
+    assert "+1" in transcript
+    assert "-2" in transcript
+
+
+def test_tui_timeline_renders_end_of_task_changed_files_table():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    diff = "\n".join(
+        [
+            "diff --git a/agent/tui/app.py b/agent/tui/app.py",
+            "--- a/agent/tui/app.py",
+            "+++ b/agent/tui/app.py",
+            "@@ -1,2 +1,3 @@",
+            " keep",
+            "+new app line",
+            "-old app line",
+            "diff --git a/tests/test_tui_state.py b/tests/test_tui_state.py",
+            "--- a/tests/test_tui_state.py",
+            "+++ b/tests/test_tui_state.py",
+            "@@ -1 +1,2 @@",
+            "+new test line",
+        ]
+    )
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="files_changed_summary",
+            title="Files changed",
+            content=diff,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "2 files changed" in transcript
+    assert "+2" in transcript
+    assert "-1" in transcript
+    assert "Ctrl+D open changed files and diffs" in transcript
+    assert "agent/tui/app.py" in transcript
+    assert "tests/test_tui_state.py" in transcript
+
+
+def test_tui_timeline_renders_changed_files_table_from_metadata():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="files_changed_summary",
+            title="Files changed",
+            content="",
+            metadata={
+                "files": [
+                    {"path": "agent/tui/app.py", "added": 30, "removed": 4, "diff": ""},
+                    {"path": "tests/test_tui_state.py", "added": 3, "removed": 1, "diff": ""},
+                ]
+            },
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "2 files changed" in transcript
+    assert "+33" in transcript
+    assert "-5" in transcript
+    assert "Ctrl+D open changed files and diffs" in transcript
+    assert "agent/tui/app.py" in transcript
+    assert "tests/test_tui_state.py" in transcript
+
+
+def test_tui_timeline_splits_consecutive_diff_file_headers():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    diff = "\n".join(
+        [
+            "--- a/examples/README.md",
+            "+++ b/examples/README.md",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+            "--- a/examples/math_game/README.md",
+            "+++ b/examples/math_game/README.md",
+            "@@ -1 +1 @@",
+            "-old math",
+            "+new math",
+            "--- a/examples/snake_game/README.md",
+            "+++ b/examples/snake_game/README.md",
+            "@@ -1 +1 @@",
+            "-old snake",
+            "+new snake",
+        ]
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="files_changed_summary",
+            title="Files changed",
+            content=diff,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "3 files changed" in transcript
+    assert "+3" in transcript
+    assert "-3" in transcript
+    assert "examples/README.md" in transcript
+    assert "examples/math_game/README.md" in transcript
+    assert "examples/snake_game/README.md" in transcript
+
+
+def test_tui_timeline_shows_diff_preview_before_approval_request():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    diff = "diff --git a/docs/usage.md b/docs/usage.md\n--- a/docs/usage.md\n+++ b/docs/usage.md\n@@ -1 +1 @@\n-old\n+new"
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_result",
+            title="Review diff before approval",
+            content=diff,
+            detail="docs/usage.md",
+            status="waiting_for_user",
+            tool_name="apply_patch",
+            file_paths=["docs/usage.md"],
+            metadata={"approval_preview": True, "diff_preview": diff},
+        )
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="approval_required",
+            content="approval_required:\naction: edit_file\npath: docs/usage.md",
+            title="Approve file edit",
+            detail="docs/usage.md",
+            status="waiting_for_user",
+            tool_name="apply_patch",
+            file_paths=["docs/usage.md"],
+            metadata={"approval_id": "edit_file|apply_patch|docs/usage.md", "diff_preview": diff},
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Review full diff before approval" in transcript
+    assert "Needs your approval" not in transcript
+    assert "-old" in transcript
+    assert "+new" in transcript
+    assert "docs/usage.md" in transcript
 
 
 def test_tui_status_header_uses_compact_two_column_layout():
@@ -699,11 +1021,13 @@ def test_tui_main_timeline_shows_compact_tool_and_model_updates():
 
     assert "Ctrl+T task plan" in transcript
     assert "Ctrl+H full history" not in transcript
-    assert "Read file" in transcript
+    assert "◇ Exploration" in transcript
+    assert "explored 1 file" in transcript
+    assert "Inspect file" in transcript
     assert "Tool call" not in transcript
     assert "Tool returned" not in transcript
     assert "Review full diff" in transcript
-    assert "Yoyo" in transcript
+    assert "Yoyo" not in transcript
     assert "Done reviewing" in transcript
 
 
@@ -727,11 +1051,11 @@ def test_tui_main_timeline_keeps_latest_detailed_event_block_intact_when_height_
 
     transcript = render_timeline_lines(state, limit=20, max_lines=8, header_mode="main")
 
-    assert "Read file" in transcript
-    assert "Read file 5" in transcript
+    assert "explored 6 files" not in transcript
+    assert "Inspect file" in transcript
     assert "agent/tui/file_5.py" in transcript
-    assert "Input" in transcript
-    assert "agent/tui/file_4.py" not in transcript
+    assert "agent/tui/file_4.py" in transcript
+    assert "agent/tui/file_3.py" not in transcript
 
 
 def test_tui_timeline_escapes_nested_tool_args_for_textual_markup():

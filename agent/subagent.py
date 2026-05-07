@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from agent.approval import (
     ApprovalCallback,
     ApprovalDenied,
+    ApprovalTargetMissing,
     approval_cache_key,
     approval_request_for_tool,
 )
@@ -270,7 +271,11 @@ class SubagentRunner:
         return result
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
-        request = approval_request_for_tool(tool_name, kwargs)
+        try:
+            request = approval_request_for_tool(tool_name, kwargs)
+        except ApprovalTargetMissing as exc:
+            await self._emit_tool_blocked(tool_name, str(exc))
+            return str(exc)
         if request is not None:
             cache_key = approval_cache_key(request)
             if cache_key in self.approved_write_keys:
@@ -299,6 +304,25 @@ class SubagentRunner:
             max_retries=2,
             timeout_seconds=SUBAGENT_TOOL_TIMEOUT_SECONDS,
             **kwargs,
+        )
+
+    async def _emit_tool_blocked(self, tool_name: str, content: str) -> None:
+        if self.stream_callback is None:
+            return
+        await self.stream_callback(
+            StreamEvent(
+                source="subagent",
+                session_id=self._active_session_id or "",
+                role=self._active_role,
+                parent_session_id=self.parent_session_id,
+                event_type="tool_result",
+                content=content,
+                title="File edit blocked",
+                detail="No target file detected",
+                phase="blocked",
+                status="failed",
+                tool_name=tool_name,
+            )
         )
 
     def _build_user_prompt(self, task: str, context: str) -> str:

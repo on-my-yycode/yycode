@@ -2,8 +2,10 @@
 
 import subprocess
 
+import pytest
+
 from tools.bash import bash
-from agent.approval import approval_request_for_tool
+from agent.approval import ApprovalTargetMissing, approval_request_for_tool
 from tools.safety import unsafe_command_response
 
 
@@ -93,6 +95,21 @@ def test_approval_request_extracts_path_from_unified_diff():
     )
 
     assert request.path == "example.py"
+
+
+def test_approval_request_blocks_apply_patch_without_target_file():
+    with pytest.raises(ApprovalTargetMissing) as exc:
+        approval_request_for_tool("apply_patch", {"patch": "diff"})
+
+    assert "no target file was detected" in str(exc.value)
+    assert "Retry with an explicit target file" in str(exc.value)
+
+
+def test_approval_request_blocks_write_file_without_target_file():
+    with pytest.raises(ApprovalTargetMissing) as exc:
+        approval_request_for_tool("write_file", {"content": "hello\n"})
+
+    assert "File edit blocked for write_file" in str(exc.value)
 
 
 def test_approval_request_includes_apply_patch_diff_preview(tmp_path, monkeypatch):

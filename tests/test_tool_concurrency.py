@@ -6,7 +6,8 @@ import time
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from agent.approval import ApprovalDenied
+from agent.approval import ApprovalDenied, approval_request_for_tool
+from agent.runtime.tool_events import file_paths_for_tool_call
 from agent.graph import create_tools_node, execute_tool_calls
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.todo_manager import TodoManager
@@ -29,6 +30,28 @@ class FakeProvider(LLMProvider):
 
     async def close(self):
         return None
+
+
+def test_apply_patch_approval_extracts_paths_from_begin_patch_format():
+    patch = "\n".join(
+        [
+            "*** Begin Patch",
+            "*** Update File: agent/tui/app.py",
+            "@@",
+            "-old",
+            "+new",
+            "*** Add File: docs/new_design.md",
+            "+content",
+            "*** End Patch",
+        ]
+    )
+
+    request = approval_request_for_tool("apply_patch", {"patch": patch})
+    paths = file_paths_for_tool_call(FakeToolCall("apply_patch", "call-1", {"patch": patch}))
+
+    assert request is not None
+    assert request.path == "agent/tui/app.py, docs/new_design.md"
+    assert paths == ["agent/tui/app.py", "docs/new_design.md"]
 
 
 def test_execute_tool_calls_runs_concurrent_batches_and_preserves_order():
@@ -376,7 +399,22 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
     ai_msg.additional_kwargs["tool_calls_data"] = [
         ToolCall(id="1", name="workspace_state", args={}),
         ToolCall(id="2", name="git_diff", args={}),
-        ToolCall(id="3", name="apply_patch", args={"patch": "diff"}),
+        ToolCall(
+            id="3",
+            name="apply_patch",
+            args={
+                "patch": "\n".join(
+                    [
+                        "diff --git a/example.py b/example.py",
+                        "--- a/example.py",
+                        "+++ b/example.py",
+                        "@@ -1 +1 @@",
+                        "-old",
+                        "+new",
+                    ]
+                )
+            },
+        ),
     ]
 
     result = asyncio.run(tools_node({"messages": [ai_msg]}))
@@ -389,7 +427,12 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
     ]
     assert isinstance(result["messages"][3], HumanMessage)
     assert "Run verify" in result["messages"][3].content
-    tool_result_events = [event for event in events if event.event_type == "tool_result"]
+    tool_result_events = [
+        event
+        for event in events
+        if event.event_type == "tool_result"
+        and not (event.metadata and event.metadata.get("approval_preview"))
+    ]
     assert len(tool_result_events) == 1
     assert tool_result_events[0].content == "@@ -1 +1 @@\n-old\n+new"
     tool_start_events = [event for event in events if event.event_type == "tool_start"]
@@ -493,6 +536,9 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
     assert events[preview_index].title == "Review diff before approval"
     assert "-old" in events[preview_index].content
     assert "+new" in events[preview_index].content
+    assert "diff_preview:" not in approval_events[0].content
+    assert "-old" not in approval_events[0].content
+    assert "+new" not in approval_events[0].content
     assert approval_events[0].status == "waiting_for_user"
     assert approval_events[0].metadata["action"] == "edit_file"
     assert approval_events[1].status == "approved"
@@ -500,6 +546,83 @@ def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypat
     apply_patch_calls = [kwargs for tool_name, kwargs in captured if tool_name == "apply_patch"]
     assert len(apply_patch_calls) == 2
     assert all(kwargs["approved"] is True for kwargs in apply_patch_calls)
+
+
+def test_tools_node_blocks_file_write_without_target_and_continues(tmp_path, monkeypatch):
+    approvals = []
+    captured = []
+    events = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append(tool_name)
+        return f"{tool_name}:ok"
+
+    async def approve(request):
+        approvals.append(request)
+        return True
+
+    async def collect_event(event):
+        events.append(event)
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "apply_patch": lambda **kwargs: "patched",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("apply_patch", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        stream_callback=collect_event,
+        approval_callback=approve,
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+        ToolCall(id="3", name="apply_patch", args={"patch": "diff"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert captured == ["workspace_state", "git_diff"]
+    assert approvals == []
+    assert [msg.name for msg in result["messages"][:3]] == [
+        "workspace_state",
+        "git_diff",
+        "apply_patch",
+    ]
+    assert "File edit blocked for apply_patch" in result["messages"][2].content
+    assert "Retry with an explicit target file" in result["messages"][2].content
+    approval_events = [event for event in events if event.event_type.startswith("approval_")]
+    assert approval_events == []
+    blocked_events = [
+        event
+        for event in events
+        if event.event_type == "tool_result" and event.title == "File edit blocked"
+    ]
+    assert len(blocked_events) == 1
+    assert "no target file was detected" in blocked_events[0].content
+    apply_patch_end = [
+        event
+        for event in events
+        if event.event_type == "tool_end" and event.tool_name == "apply_patch"
+    ][0]
+    assert apply_patch_end.status == "failed"
 
 
 def test_tools_node_raises_approval_denied_for_rejected_write(tmp_path, monkeypatch):
@@ -539,7 +662,22 @@ def test_tools_node_raises_approval_denied_for_rejected_write(tmp_path, monkeypa
     ai_msg.additional_kwargs["tool_calls_data"] = [
         ToolCall(id="1", name="workspace_state", args={}),
         ToolCall(id="2", name="git_diff", args={}),
-        ToolCall(id="3", name="apply_patch", args={"patch": "diff"}),
+        ToolCall(
+            id="3",
+            name="apply_patch",
+            args={
+                "patch": "\n".join(
+                    [
+                        "diff --git a/example.py b/example.py",
+                        "--- a/example.py",
+                        "+++ b/example.py",
+                        "@@ -1 +1 @@",
+                        "-old",
+                        "+new",
+                    ]
+                )
+            },
+        ),
     ]
 
     with pytest.raises(ApprovalDenied) as exc:

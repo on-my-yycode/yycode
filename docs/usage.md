@@ -1,0 +1,85 @@
+# 使用说明
+
+本文档整理 Yoyo Agent 的日常使用入口、TUI 交互和内置工具清单。README 保留项目概览，本页作为更完整的使用参考。
+
+## 启动
+
+```bash
+python main.py                 # 默认启动 TUI 界面
+python main.py --silent        # 静默模式，自动批准高风险操作
+python main.py --debug         # 调试模式，输出详细日志
+python main.py --log-file      # 将日志写入 agent_debug.log
+```
+
+也可以通过环境变量启用静默审批：
+
+```bash
+YOYO_SILENT=true python main.py
+# 或
+YOYO_AUTO_APPROVE=true python main.py
+```
+
+当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
+
+## TUI 快捷键
+
+TUI 主界面默认展示紧凑 Transcript 风格时间线：
+
+- 连续工具调用会先显示摘要，例如 `explored 1 file`、`Edited 1 file`、`ran 1 command`。
+- 每个工具活动仍会保留关键目标和耗时，例如 `Read agent/tui/state.py`、`Edited README.md`、`42ms`。
+- 完整 diff 结果下方会追加文件变更摘要，例如 `2 files changed +3 -3`，便于先浏览整体影响再展开细节。
+- 模型文本以对话式内容直接展示，不重复显示固定助手名称，便于快速阅读。
+- `todo` 工具调用不会作为普通工具活动刷屏，任务计划可通过任务面板查看。
+- 需要审批时，审批提示会以内联方式显示在输入区域上方；输入框暂时隐藏，审批完成后自动恢复。
+
+| 快捷键 | 功能 |
+|--------|------|
+| `Ctrl+Enter` / `Ctrl+J` | 提交输入 |
+| `Ctrl+C` | 取消当前任务 |
+| `Ctrl+T` | 打开任务计划面板；在任务计划/审批提示中也可返回或查看计划 |
+| `Ctrl+H` | 打开历史记录浏览器 |
+| `Ctrl+Shift+C` | 复制时间线内容 |
+| `Ctrl+Q` | 退出 |
+| `Up` / `Down` | 按行滚动时间线；技能补全打开时切换候选项 |
+| `PageUp` / `PageDown` | 滚动时间线 |
+| `Home` / `End` | 跳转到时间线顶部/底部 |
+| `Esc` | 聚焦输入框 |
+
+## 审批交互
+
+高风险操作（例如编辑文件、创建文件或执行命令）会触发运行时审批，除非已启用 `--silent`、`YOYO_SILENT=true` 或 `YOYO_AUTO_APPROVE=true`。
+
+| 按键 | 功能 |
+|------|------|
+| `Y` / `Enter` | 批准当前操作 |
+| `N` / `Esc` | 拒绝当前操作 |
+| `Ctrl+T` | 查看任务计划 |
+
+## 技能补全
+
+输入技能引用时，TUI 会显示最多 8 个候选项。补全列表打开时可使用以下按键：
+
+| 按键 | 功能 |
+|------|------|
+| `Up` / `Ctrl+P` | 选择上一个技能 |
+| `Down` / `Ctrl+N` | 选择下一个技能 |
+| `Enter` / `Tab` | 插入当前技能 |
+| `Esc` | 关闭补全列表 |
+
+## 可用工具
+
+| 工具 | 功能 |
+|------|------|
+| `read_file` / `read_many_files` | 读取文件内容 |
+| `write_file` | 创建新文件 |
+| `apply_patch` | 精确编辑已有文件 (推荐) |
+| `edit_file` | 文本替换编辑；已有文件编辑优先使用 `apply_patch` |
+| `bash` | 执行 Shell 命令 |
+| `grep` | 正则搜索文件 |
+| `list_files` | 列出工作区文件 |
+| `git_diff` / `git_show` | 查看 Git 变更 |
+| `workspace_state` | 查看工作区状态 |
+| `verify` | 运行测试/检查 |
+| `todo` | 任务状态管理 |
+| `subagent` | 委派子代理 |
+| `list_skills` / `load_skill` | 技能管理 |

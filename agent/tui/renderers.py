@@ -124,6 +124,239 @@ def colorize_diff_for_tui(diff: str) -> str:
     return "\n".join(lines)
 
 
+def render_markdown_for_tui(markdown: str) -> str:
+    """Render a small, safe Markdown subset as Rich markup for timeline text."""
+    lines: list[str] = []
+    in_fence = False
+    fence_lang = ""
+
+    for raw_line in markdown.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("```"):
+            if not in_fence:
+                in_fence = True
+                fence_lang = stripped[3:].strip()
+                label = f" {fence_lang}" if fence_lang else ""
+                lines.append(f"[#7f8794]code{_safe_text(label)}[/]")
+            else:
+                in_fence = False
+                fence_lang = ""
+            continue
+
+        if in_fence:
+            lines.append(f"  {_highlight_code_line_for_tui(raw_line, fence_lang)}")
+            continue
+
+        if not stripped:
+            lines.append("")
+            continue
+
+        heading = re.match(r"^(#{1,4})\s+(.+)$", stripped)
+        if heading:
+            level = len(heading.group(1))
+            color = "#c9a6ff" if level <= 2 else "#d7ba7d"
+            lines.append(f"[bold {color}]{_render_inline_markdown(heading.group(2))}[/]")
+            continue
+
+        quote = re.match(r"^>\s?(.*)$", stripped)
+        if quote:
+            lines.append(f"[#7f8794]│[/] [#aeb6c2]{_render_inline_markdown(quote.group(1))}[/]")
+            continue
+
+        task = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", stripped)
+        if task:
+            checked = task.group(1).lower() == "x"
+            marker = "[#8fd6a3]✓[/]" if checked else "[#7f8794]○[/]"
+            lines.append(f"  {marker} {_render_inline_markdown(task.group(2))}")
+            continue
+
+        bullet = re.match(r"^([-*])\s+(.+)$", stripped)
+        if bullet:
+            lines.append(f"  [#7f8794]•[/] {_render_inline_markdown(bullet.group(2))}")
+            continue
+
+        numbered = re.match(r"^(\d+)[.)]\s+(.+)$", stripped)
+        if numbered:
+            lines.append(f"  [#7f8794]{numbered.group(1)}.[/] {_render_inline_markdown(numbered.group(2))}")
+            continue
+
+        lines.append(f"[#d7dae0]{_render_inline_markdown(raw_line)}[/]")
+
+    if markdown.endswith("\n"):
+        return "\n".join(lines) + "\n"
+    return "\n".join(lines)
+
+
+def _render_inline_markdown(text: str) -> str:
+    """Render safe inline Markdown markers after escaping Rich markup."""
+    escaped = _safe_text(text)
+
+    code_spans: list[str] = []
+
+    def replace_code(match: re.Match) -> str:
+        code_spans.append(f"[#9cdcfe]`{_safe_text(match.group(1))}`[/]")
+        return f"\0CODE{len(code_spans) - 1}\0"
+
+    escaped = re.sub(r"`([^`]+)`", replace_code, escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"[bold #f0f2f5]\1[/]", escaped)
+    escaped = re.sub(r"__([^_]+)__", r"[bold #f0f2f5]\1[/]", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"[italic]\1[/]", escaped)
+    escaped = re.sub(r"(?<!_)_([^_\n]+)_(?!_)", r"[italic]\1[/]", escaped)
+
+    for index, rendered in enumerate(code_spans):
+        escaped = escaped.replace(f"\0CODE{index}\0", rendered)
+    return escaped
+
+
+def _highlight_code_line_for_tui(line: str, lang: str) -> str:
+    """Apply lightweight syntax coloring to one fenced code line."""
+    normalized = _normalize_code_lang(lang)
+    if normalized == "diff":
+        return colorize_diff_for_tui(line)
+
+    text = _safe_text(line)
+    if normalized in {"python", "py"}:
+        return _highlight_keyword_line(
+            text,
+            {
+                "and", "as", "assert", "async", "await", "break", "class", "continue",
+                "def", "elif", "else", "except", "False", "finally", "for", "from",
+                "if", "import", "in", "is", "lambda", "None", "not", "or", "pass",
+                "raise", "return", "True", "try", "while", "with", "yield",
+            },
+            comment_prefix="#",
+        )
+    if normalized in {"bash", "sh", "shell", "zsh"}:
+        return _highlight_bash_line(text)
+    if normalized == "json":
+        return _highlight_json_line(text)
+    if normalized in {"javascript", "js", "typescript", "ts", "tsx", "jsx"}:
+        return _highlight_keyword_line(
+            text,
+            {
+                "async", "await", "break", "case", "catch", "class", "const", "continue",
+                "default", "else", "export", "false", "finally", "for", "from", "function",
+                "if", "import", "let", "new", "null", "return", "switch", "this", "throw",
+                "true", "try", "type", "undefined", "var", "while",
+            },
+            comment_prefix="//",
+        )
+    if normalized in {"java"}:
+        return _highlight_keyword_line(
+            text,
+            {
+                "abstract", "boolean", "break", "case", "catch", "class", "continue",
+                "else", "extends", "false", "final", "finally", "for", "if", "implements",
+                "import", "interface", "new", "null", "private", "protected", "public",
+                "return", "static", "super", "switch", "this", "throw", "true", "try",
+                "void", "while",
+            },
+            comment_prefix="//",
+        )
+    if normalized in {"csharp", "cs", "c#"}:
+        return _highlight_keyword_line(
+            text,
+            {
+                "abstract", "async", "await", "bool", "break", "case", "catch", "class",
+                "const", "continue", "else", "false", "finally", "for", "foreach", "if",
+                "interface", "namespace", "new", "null", "private", "protected", "public",
+                "return", "static", "string", "switch", "this", "throw", "true", "try",
+                "using", "var", "void", "while",
+            },
+            comment_prefix="//",
+        )
+    if normalized in {"go", "golang"}:
+        return _highlight_keyword_line(
+            text,
+            {
+                "break", "case", "chan", "const", "continue", "default", "defer", "else",
+                "fallthrough", "false", "for", "func", "go", "goto", "if", "import",
+                "interface", "map", "nil", "package", "range", "return", "select",
+                "struct", "switch", "true", "type", "var",
+            },
+            comment_prefix="//",
+        )
+    if normalized in {"css"}:
+        return _highlight_css_line(text)
+    if normalized in {"html", "xml"}:
+        return _highlight_html_line(text)
+    return f"[#cfd3dc]{text}[/]"
+
+
+def _normalize_code_lang(lang: str) -> str:
+    return (lang or "").strip().lower().split(None, 1)[0]
+
+
+def _highlight_keyword_line(
+    text: str,
+    keywords: set[str],
+    *,
+    comment_prefix: str | None = None,
+) -> str:
+    code, comment = _split_comment(text, comment_prefix)
+    placeholders: list[str] = []
+
+    def stash(style: str, value: str) -> str:
+        placeholders.append(f"[{style}]{value}[/]")
+        return f"\0TOK{len(placeholders) - 1}\0"
+
+    code = re.sub(r"(&quot;.*?&quot;|'.*?')", lambda m: stash("#ce9178", m.group(0)), code)
+    code = re.sub(r"\b\d+(?:\.\d+)?\b", lambda m: stash("#b5cea8", m.group(0)), code)
+
+    pattern = r"\b(" + "|".join(re.escape(word) for word in sorted(keywords, key=len, reverse=True)) + r")\b"
+    code = re.sub(pattern, lambda m: stash("bold #c586c0", m.group(0)), code)
+
+    for index, rendered in enumerate(placeholders):
+        code = code.replace(f"\0TOK{index}\0", rendered)
+    if comment:
+        code += f"[#6a9955]{comment}[/]"
+    return f"[#cfd3dc]{code}[/]"
+
+
+def _split_comment(text: str, comment_prefix: str | None) -> tuple[str, str]:
+    if not comment_prefix:
+        return text, ""
+    index = text.find(comment_prefix)
+    if index < 0:
+        return text, ""
+    return text[:index], text[index:]
+
+
+def _highlight_bash_line(text: str) -> str:
+    stripped = text.lstrip()
+    indent = text[: len(text) - len(stripped)]
+    if stripped.startswith("#"):
+        return f"[#6a9955]{text}[/]"
+    parts = stripped.split(" ", 1)
+    command = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+    rest = re.sub(r"(--?[A-Za-z0-9][A-Za-z0-9_-]*)", r"[#9cdcfe]\1[/]", rest)
+    rest = re.sub(r"(&quot;.*?&quot;|'.*?')", r"[#ce9178]\1[/]", rest)
+    return f"[#cfd3dc]{indent}[bold #dcdcaa]{command}[/] {rest}[/]" if rest else f"[#cfd3dc]{indent}[bold #dcdcaa]{command}[/][/]"
+
+
+def _highlight_json_line(text: str) -> str:
+    text = re.sub(r"(&quot;[^&]*?&quot;)(\s*:)", r"[#9cdcfe]\1[/]\2", text)
+    text = re.sub(r":\s*(&quot;[^&]*?&quot;)", r": [#ce9178]\1[/]", text)
+    text = re.sub(r"\b(true|false|null)\b", r"[bold #569cd6]\1[/]", text)
+    text = re.sub(r"\b\d+(?:\.\d+)?\b", r"[#b5cea8]\g<0>[/]", text)
+    return f"[#cfd3dc]{text}[/]"
+
+
+def _highlight_css_line(text: str) -> str:
+    text = re.sub(r"([.#]?[A-Za-z_][A-Za-z0-9_-]*)(\s*\{)", r"[#d7ba7d]\1[/]\2", text)
+    text = re.sub(r"([A-Za-z-]+)(\s*:)", r"[#9cdcfe]\1[/]\2", text)
+    text = re.sub(r"(#[0-9A-Fa-f]{3,8})", r"[#ce9178]\1[/]", text)
+    return f"[#cfd3dc]{text}[/]"
+
+
+def _highlight_html_line(text: str) -> str:
+    text = re.sub(r"(&lt;/?)([A-Za-z][A-Za-z0-9-]*)", r"\1[bold #569cd6]\2[/]", text)
+    text = re.sub(r"\s([A-Za-z_:][-A-Za-z0-9_:.]*)(=)", r" [#9cdcfe]\1[/]\2", text)
+    text = re.sub(r"=(&quot;.*?&quot;|'.*?')", r"=[#ce9178]\1[/]", text)
+    return f"[#cfd3dc]{text}[/]"
+
+
 def _visible_len(text: str) -> int:
     """Return visible character count, stripping Rich markup tags."""
     return len(re.sub(r"(?<!\\)\[/?[^]]*\]", "", text))
@@ -433,14 +666,10 @@ def _render_timeline_blocks(state: TuiState) -> list[str]:
         role_prefix = _role_prefix(item)
 
         if item.event_type == "tool_start":
-            matching_end_index = _find_matching_tool_end(items, index)
-            end_item = items[matching_end_index] if matching_end_index is not None else None
-            rendered = _render_tool_activity(item, end_item, role_prefix)
-            if rendered:
-                blocks.append(rendered)
-            if matching_end_index is not None:
-                index = matching_end_index + 1
-                continue
+            rendered, next_index = _render_tool_run(items, index)
+            blocks.extend(rendered)
+            index = next_index
+            continue
         elif item.event_type == "tool_end":
             if item.tool_name != "todo":
                 rendered = _render_tool_activity(None, item, role_prefix)
@@ -452,6 +681,222 @@ def _render_timeline_blocks(state: TuiState) -> list[str]:
                 blocks.append(rendered)
         index += 1
     return blocks
+
+
+def _render_tool_run(items: list[TimelineItem], start_index: int) -> tuple[list[str], int]:
+    """Render one contiguous run of tool activity as lightweight phase blocks."""
+    blocks: list[str] = []
+    activities: list[tuple[TimelineItem, TimelineItem | None, str]] = []
+    index = start_index
+    while index < len(items):
+        item = items[index]
+        if item.event_type != "tool_start":
+            break
+        role_prefix = _role_prefix(item)
+        matching_end_index = _find_matching_tool_end(items, index)
+        end_item = items[matching_end_index] if matching_end_index is not None else None
+        if item.tool_name != "todo":
+            activities.append((item, end_item, role_prefix))
+        if matching_end_index is None:
+            index += 1
+        else:
+            index = matching_end_index + 1
+
+    for phase, phase_activities in _group_tool_activities_by_phase(activities):
+        rendered = _render_phase_activity_block(phase, phase_activities)
+        if rendered:
+            blocks.append(rendered)
+    return blocks, index
+
+
+def _group_tool_activities_by_phase(
+    activities: list[tuple[TimelineItem, TimelineItem | None, str]],
+) -> list[tuple[str, list[tuple[TimelineItem, TimelineItem | None, str]]]]:
+    """Group adjacent tool activities by display phase."""
+    max_group_size = 2
+    groups: list[tuple[str, list[tuple[TimelineItem, TimelineItem | None, str]]]] = []
+    for activity in activities:
+        phase = _tool_activity_phase(activity[0])
+        if groups and groups[-1][0] == phase and len(groups[-1][1]) < max_group_size:
+            groups[-1][1].append(activity)
+        else:
+            groups.append((phase, [activity]))
+    return groups
+
+
+def _render_phase_activity_block(
+    phase: str,
+    activities: list[tuple[TimelineItem, TimelineItem | None, str]],
+) -> str | None:
+    if not activities:
+        return None
+
+    role_prefix = activities[0][2]
+    summary = _activity_summary(activities)
+    lines = [f"{role_prefix}[bold #c9a6ff]◇ {_safe_text(phase)}[/]"]
+    if summary:
+        lines.append(f"  [#7f8794]{_safe_text(summary)}[/]")
+    usage = _usage_for_activities(activities)
+    if usage:
+        lines.append(f"  [#7f8794]{_format_usage_inline(usage)}[/]")
+    lines.append("")
+
+    for activity_index, (start, end, _role_prefix) in enumerate(activities):
+        lines.extend(
+            _render_tool_activity_tree_lines(
+                start,
+                end,
+                is_last=activity_index == len(activities) - 1,
+            )
+        )
+    return "\n".join(lines).rstrip()
+
+
+def _render_tool_activity_tree_lines(
+    start: TimelineItem | None,
+    end: TimelineItem | None,
+    *,
+    is_last: bool,
+) -> list[str]:
+    item = start or end
+    if item is None or item.tool_name == "todo":
+        return []
+
+    status = (end.status if end is not None else item.status) or "running"
+    title = _tool_activity_tree_title(start, end, status)
+    branch = "└─" if is_last else "├─"
+    detail_prefix = "   " if is_last else "│  "
+    color = "#ff8f8f" if status == "failed" else "#d7dae0"
+    lines = [f"  [#7f8794]{branch}[/] [{color}]{title}[/]"]
+
+    for detail in _tool_activity_tree_details(start, end, status):
+        lines.append(f"  [#7f8794]{detail_prefix}[/] [#7f8794]{_safe_text(detail)}[/]")
+    return lines
+
+
+def _tool_activity_tree_title(
+    start: TimelineItem | None,
+    end: TimelineItem | None,
+    status: str,
+) -> str:
+    item = start or end
+    if item is None:
+        return "Use tool"
+    tool_name = item.tool_name or ""
+    title_text = (item.title or "").lower()
+    if status == "failed":
+        return _safe_text(f"Failed {item.title or tool_name or 'tool'}")
+    if tool_name in {"read_file", "read_many_files"} or "read file" in title_text:
+        return "Inspect file"
+    if tool_name == "list_files":
+        return "List files"
+    if tool_name == "grep" or "search" in title_text:
+        return "Search code"
+    if tool_name in {"git_diff", "git_show", "workspace_state"}:
+        return "Inspect workspace"
+    if tool_name in {"apply_patch", "edit_file", "write_file"}:
+        return "Edit file"
+    if tool_name in {"bash", "verify"}:
+        command = _command_for_tool(item)
+        lowered = command.lower()
+        if any(name in lowered for name in ("pytest", "ruff", "mypy", "compileall")):
+            return "Run verification"
+        return "Run command"
+    if tool_name == "subagent":
+        return "Delegate work"
+    return _safe_text(item.title or tool_name or "Use tool")
+
+
+def _tool_activity_tree_details(
+    start: TimelineItem | None,
+    end: TimelineItem | None,
+    status: str,
+) -> list[str]:
+    item = start or end
+    if item is None:
+        return []
+
+    details: list[str] = []
+    args = item.metadata.get("args") if isinstance(item.metadata, dict) else {}
+    tool_name = item.tool_name or ""
+
+    if tool_name == "grep" or "search" in (item.title or "").lower():
+        if isinstance(args, dict):
+            pattern = args.get("pattern")
+            path = args.get("path")
+            if pattern:
+                details.append(str(pattern))
+            if path:
+                details.append(str(path))
+        if not details:
+            target = _tool_target_plain(item)
+            if target:
+                details.append(target)
+    elif tool_name in {"bash", "verify"}:
+        command = _command_for_tool(item)
+        if command:
+            details.append(command)
+    else:
+        target = _tool_target_plain(item)
+        if target:
+            details.append(target)
+        elif item.title:
+            details.append(item.title)
+
+    if start and _should_show_tool_input(start):
+        details.append(f"Input {_format_args(args)}")
+    if end and end.elapsed_ms is not None:
+        details.append(_format_duration(end.elapsed_ms))
+    elif status in {"running", "in_progress"}:
+        details.append(f"running {_task_spinner()}")
+    elif status:
+        details.append(status.replace("_", " "))
+    return details
+
+
+def _tool_activity_phase(item: TimelineItem) -> str:
+    tool = item.tool_name or ""
+    title = (item.title or "").lower()
+    command = _command_for_tool(item).lower() if tool in {"bash", "verify"} else ""
+    phase = (item.phase or "").lower()
+
+    if tool in {"grep"} or "search" in title:
+        return "Search"
+    if tool in {"apply_patch", "edit_file", "write_file"}:
+        return "Edit"
+    if tool in {"verify"} or any(name in command for name in ("pytest", "ruff", "mypy", "compileall")):
+        return "Verification"
+    if tool in {"read_file", "read_many_files", "list_files", "workspace_state", "git_diff", "git_show"}:
+        return "Exploration"
+    if tool == "bash":
+        return "Verification" if any(name in command for name in ("pytest", "ruff", "mypy", "compileall")) else "Exploration"
+    if "implement" in phase or "edit" in phase:
+        return "Edit"
+    if "verify" in phase or "test" in phase:
+        return "Verification"
+    if "search" in phase:
+        return "Search"
+    return "Exploration"
+
+
+def _usage_for_activities(
+    activities: list[tuple[TimelineItem, TimelineItem | None, str]],
+) -> dict[str, int] | None:
+    for start, end, _role_prefix in reversed(activities):
+        for item in (end, start):
+            if item and item.usage:
+                return item.usage
+    return None
+
+
+def _format_usage_inline(usage: dict[str, int]) -> str:
+    input_tok = int(usage.get("input_tokens", 0) or 0)
+    output_tok = int(usage.get("output_tokens", 0) or 0)
+    total_tok = int(usage.get("total_tokens", input_tok + output_tok) or 0)
+    return (
+        f"tokens {_format_tokens(total_tok)} · "
+        f"input {_format_tokens(input_tok)} · output {_format_tokens(output_tok)}"
+    )
 
 
 def _find_matching_tool_end(items: list[TimelineItem], start_index: int) -> int | None:
@@ -474,124 +919,113 @@ def _find_matching_tool_end(items: list[TimelineItem], start_index: int) -> int 
 
 
 def _render_todo_section(todo_manager) -> str:
-    """Render todo items in a minimal style."""
-    items = todo_manager.todo_items
-    memory = todo_manager.memory
+    """Render the full task plan panel in a scannable dashboard style."""
+    items = list(todo_manager.todo_items or [])
+    memory = todo_manager.memory or {}
+    lines: list[str] = []
 
-    lines = []
-    lines.append("[bold #c9a6ff]📋 Task Plan[/]")
-    lines.append("")
+    goal = str(memory.get("user_goal") or "").strip()
+    if goal:
+        lines.extend(["[bold #c9a6ff]Goal[/]", f"  [#d7dae0]{_safe_text(goal)}[/]", ""])
 
+    lines.extend(_render_checklist_panel(items))
+
+    context_lines = _render_task_memory_context(memory)
+    if context_lines:
+        if lines and lines[-1] != "":
+            lines.append("")
+        lines.extend(["[bold #c9a6ff]Context[/]", *context_lines])
+
+    if not lines:
+        return "[#7f8794]No task context is available yet.[/]"
+    return "\n".join(lines).rstrip()
+
+
+def _render_checklist_panel(items: list[dict]) -> list[str]:
     if not items:
-        # No todo items yet - show a placeholder
-        lines.append("  [#7f8794]No task plan yet. The agent will create one shortly...[/]")
+        return [
+            "[bold #c9a6ff]Status[/]",
+            "  [#7f8794]No active checklist yet.[/]",
+            "  [#7f8794]Task memory below is from the current context.[/]",
+        ]
+
+    total = len(items)
+    completed = len([item for item in items if item.get("status") == "completed"])
+    remaining = total - completed
+    active_index = next(
+        (index for index, item in enumerate(items) if item.get("status") == "in_progress"),
+        None,
+    )
+    summary = f"{completed}/{total} done"
+    if remaining:
+        summary += f" · {remaining} remaining"
     else:
-        # 计算总数和剩余
-        total_count = len(items)
-        pending_count = len([item for item in items if item.get("status") != "completed"])
-        completed_count = total_count - pending_count
+        summary += " · complete"
 
-        # 显示总结
-        if pending_count > 0:
-            lines.append(f"  [#7f8794]Total: {total_count} | Remaining: {pending_count} | Completed: {completed_count}[/]")
+    lines = ["[bold #c9a6ff]Checklist[/]", f"  [#7f8794]{summary}[/]", ""]
+    for index, item in enumerate(items):
+        status = item.get("status", "pending")
+        item_id = str(item.get("id") or index + 1)
+        text = _safe_text(item.get("text", ""))
+        if status == "completed":
+            marker = "[#8fd6a3]✓[/]"
+            style = "#8fd6a3"
+        elif status == "in_progress":
+            marker = f"[#d7ba7d]{_task_spinner()}[/]"
+            style = "bold #d7ba7d"
         else:
-            lines.append(f"  [#8fd6a3]Total: {total_count} | All {completed_count} tasks completed![/]")
-        lines.append("")
+            marker = "[#7f8794]○[/]"
+            style = "#d7dae0"
+        current = " [#7f8794]current[/]" if active_index == index else ""
+        lines.append(f"  {marker} [#7f8794]{_safe_text(item_id)}[/] [{style}]{text}[/]{current}")
+    return lines
 
-        for i, item in enumerate(items):
-            status = item.get("status", "pending")
-            status_icon = {
-                "pending": "[#7f8794]○[/]",
-                "in_progress": "[#d7ba7d]●[/]",
-                "completed": "[#8fd6a3]✓[/]",
-            }.get(status, "[#7f8794]○[/]")
-            status_color = {
-                "pending": "#7f8794",
-                "in_progress": "#d7ba7d",
-                "completed": "#8fd6a3",
-            }.get(status, "#7f8794")
 
-            item_text = _safe_text(item.get("text", ""))
-            item_id = _safe_text(item.get("id", ""))
+def _task_spinner() -> str:
+    frames = ("◐", "◓", "◑", "◒")
+    return frames[int(time.time() * 2) % len(frames)]
 
-            # Main todo line
-            lines.append(f"  {status_icon} [{status_color}]{item_id}[/{status_color}] {item_text}")
 
-            # Add ALL item fields
-            extra_details = []
+def _render_task_memory_context(memory: dict) -> list[str]:
+    sections = [
+        ("constraints", "Constraints", 4),
+        ("files_inspected", "Files", 5),
+        ("files_modified", "Modified", 5),
+        ("decisions", "Decisions", 4),
+        ("test_results", "Tests", 3),
+        ("open_risks", "Risks", 3),
+        ("next_steps", "Next", 4),
+    ]
+    lines: list[str] = []
+    for field, label, limit in sections:
+        values = _dedupe_text_list(memory.get(field))
+        if not values:
+            continue
+        if lines:
+            lines.append("")
+        lines.append(f"  [#7f8794]{label}[/]")
+        visible = values[:limit]
+        for value in visible:
+            lines.append(f"    [#d7dae0]{_safe_text(value)}[/]")
+        hidden = len(values) - len(visible)
+        if hidden > 0:
+            lines.append(f"    [#7f8794]+{hidden} more[/]")
+    return lines
 
-            # List all available fields in the item
-            for key, value in item.items():
-                if key in ["id", "text", "status"]:
-                    continue  # already displayed
-                if value is None or (isinstance(value, str) and not value.strip()):
-                    continue
 
-                # Format the key for display
-                display_key = key.replace("_", " ").title()
-                value_str = _safe_text(str(value))
-
-                if key == "priority":
-                    extra_details.append(f"    [#c9a6ff]{display_key}: {value_str}[/]")
-                else:
-                    extra_details.append(f"    [#7f8794]{display_key}: {value_str}[/]")
-
-            if extra_details:
-                lines.extend(extra_details)
-            if i < len(items) - 1:
-                lines.append("")
-
-    # Add memory info if available
-    if memory:
-        has_memory_content = False
-        memory_lines = []
-
-        user_goal = memory.get("user_goal", "")
-        if user_goal:
-            has_memory_content = True
-            memory_lines.append(f"[#d7ba7d]🎯[/] {_safe_text(user_goal)}")
-
-        labels = {
-            "constraints": "📌",
-            "files_inspected": "📂",
-            "files_modified": "✏️",
-            "decisions": "💡",
-            "test_results": "🧪",
-            "open_risks": "⚠️",
-            "next_steps": "⏭️",
-        }
-
-        for field, icon in labels.items():
-            values = memory.get(field, [])
-            if values:
-                has_memory_content = True
-                label = {
-                    "constraints": "Constraints",
-                    "files_inspected": "Files",
-                    "files_modified": "Modified",
-                    "decisions": "Decisions",
-                    "test_results": "Tests",
-                    "open_risks": "Risks",
-                    "next_steps": "Next",
-                }.get(field, field)
-                if len(values) == 1:
-                    # Single value - show inline
-                    value_str = _safe_text(values[0])
-                    memory_lines.append(f"[#7f8794]{icon} {label}:[/] {value_str}")
-                else:
-                    # Multiple values - show as list
-                    memory_lines.append(f"[#7f8794]{icon} {label}:[/]")
-                    for v in values[:5]:  # Show up to 5
-                        memory_lines.append(f"  {_safe_text(v)}")
-                    if len(values) > 5:
-                        memory_lines.append(f"  ... and {len(values)-5} more")
-
-        if has_memory_content:
-            if items:
-                lines.append("")
-            lines.extend(memory_lines)
-
-    return "\n".join(lines)
+def _dedupe_text_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def _timeline_window_header(start: int, end: int, total: int, *, mode: str) -> str:
@@ -676,8 +1110,8 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
         content = _safe_text(item.content.strip() or item.detail.strip())
         return f"[bold #f0f2f5]You[/]\n  [#d7dae0]{content}[/]"
     if item.event_type in {"text_delta"}:
-        content = _safe_text(item.content)
-        return f"{role_prefix}[bold #c9a6ff]Yoyo[/]\n  [#d7dae0]{content}[/]"
+        content = render_markdown_for_tui(item.content)
+        return f"{role_prefix}{content}"
     if item.event_type == "thinking_start":
         return f"{role_prefix}[#7f8794]Thinking...[/]"
     if item.event_type == "thinking_end":
@@ -692,14 +1126,22 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
         return _render_tool_return(item, role_prefix)
     if item.event_type == "tool_result":
         if item.content and item.content.strip():
+            if _is_task_state_result(item):
+                return _render_task_state_summary(role_prefix, item)
             title = _safe_text(_human_tool_result_title(item))
             lines = [f"{role_prefix}[bold #8fd6a3]{title}[/]"]
             detail = item.detail or ""
             if detail and detail != item.title and detail != item.content:
                 lines.append(f"  [#8b949e]{_safe_text(detail)}[/]")
             lines.append(_indent_block(colorize_diff_for_tui(item.content)))
+            files_changed = _render_changed_files_summary(item.content)
+            if files_changed:
+                lines.extend(["", files_changed])
             return "\n".join(lines)
         return None
+    if item.event_type == "files_changed_summary":
+        files = item.metadata.get("files") if isinstance(item.metadata, dict) else None
+        return _render_files_changed_table(item.content, files if isinstance(files, list) else None)
     if item.event_type == "usage":
         usage = item.usage or {}
         input_tok = usage.get('input_tokens', 0)
@@ -720,22 +1162,26 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
         files = ", ".join(_safe_text(fp) for fp in item.file_paths) if item.file_paths else _safe_text(item.content or "file")
         return f"{role_prefix}[#8fd6a3]+[/] [#cfd3dc]modified[/] {files}"
     if item.event_type == "approval_required":
+        if isinstance(item.metadata, dict) and item.metadata.get("diff_preview"):
+            return None
         status = _status_badge(item.status)
         lines = [
             f"{role_prefix}[bold #d7ba7d]Needs your approval[/] {status}",
         ]
         if item.detail:
             lines.append(f"  [#cfd3dc]{_safe_text(item.detail)}[/]")
-        # 显示完整的内容（含 diff），并高亮显示
         if item.content:
             lines.append(_indent_block(colorize_diff_for_tui(item.content)))
         return "\n".join(lines)
     if item.event_type == "approval_resolved":
         status = _status_badge(item.status)
         title = _approval_resolved_title(item.status)
-        lines = [f"{role_prefix}[bold #8fd6a3]{title}[/] {status}"]
+        color = "#ff8f8f" if item.status == "denied" else "#8fd6a3"
+        lines = [f"{role_prefix}[bold {color}]{title}[/] {status}"]
         if item.detail:
             lines.append(f"  [#8b949e]{_safe_text(item.detail)}[/]")
+        if item.status == "denied":
+            lines.append("  [#ff8f8f]Task stopped because this approval was denied.[/]")
         return "\n".join(lines)
     if item.event_type in {"subagent_started", "subagent_finished"}:
         status = _status_badge(item.status)
@@ -803,6 +1249,55 @@ def _render_llm_waiting_item(
     )
 
 
+def _activity_summary(
+    activities: list[tuple[TimelineItem, TimelineItem | None, str]],
+) -> str:
+    """Return a Codex-like summary for a contiguous run of tool activity."""
+    explored_files: set[str] = set()
+    edited_files: set[str] = set()
+    searches = 0
+    commands = 0
+    git_checks = 0
+    other = 0
+
+    for start, _end, _role_prefix in activities:
+        tool = start.tool_name or ""
+        title = (start.title or "").lower()
+        files = [path for path in start.file_paths if path]
+        if tool in {"read_file", "read_many_files", "list_files"} or "read file" in title:
+            explored_files.update(files or [_tool_target_plain(start)])
+        elif tool == "grep" or "search" in title:
+            searches += 1
+        elif tool in {"apply_patch", "edit_file", "write_file"}:
+            edited_files.update(files or [_tool_target_plain(start)])
+        elif tool in {"bash", "verify"}:
+            commands += 1
+        elif tool in {"git_diff", "git_show", "workspace_state"}:
+            git_checks += 1
+        elif tool != "todo":
+            other += 1
+
+    parts: list[str] = []
+    if edited_files:
+        parts.append(_plural(len([path for path in edited_files if path]), "Edited {n} file", "Edited {n} files"))
+    if explored_files:
+        parts.append(_plural(len([path for path in explored_files if path]), "explored {n} file", "explored {n} files"))
+    if searches:
+        parts.append(_plural(searches, "{n} search", "{n} searches"))
+    if commands:
+        parts.append(_plural(commands, "ran {n} command", "ran {n} commands"))
+    if git_checks:
+        parts.append(_plural(git_checks, "inspected git", "inspected git {n} times"))
+    if other:
+        parts.append(_plural(other, "used {n} tool", "used {n} tools"))
+    return ", ".join(parts)
+
+
+def _plural(count: int, singular: str, plural: str) -> str:
+    template = singular if count == 1 else plural
+    return template.format(n=count)
+
+
 def _render_tool_activity(
     start: TimelineItem | None,
     end: TimelineItem | None,
@@ -814,67 +1309,97 @@ def _render_tool_activity(
         return None
 
     status = (end.status if end is not None else item.status) or "running"
-    title = _tool_activity_title(item, status)
-    color = "#ff8f8f" if status == "failed" else "#8fd6a3" if status == "completed" else "#9cdcfe"
-    lines = [f"{role_prefix}[bold {color}]{title}[/] {_status_badge(status)}"]
-
-    target = _tool_target_line(start, end)
-    if target:
-        lines.append(f"  [#cfd3dc]{target}[/]")
-
-    purpose = _safe_text((start.title if start else end.title) or "")
-    if purpose and purpose != target:
-        lines.append(f"  [#8b949e]{purpose}[/]")
-
-    args = start.metadata.get("args") if start and isinstance(start.metadata, dict) else None
-    if args:
+    title = _tool_activity_line(start, end, status)
+    color = "#ff8f8f" if status == "failed" else "#cfd3dc"
+    lines = [f"{role_prefix}[{color}]{title}[/]"]
+    if start and _should_show_tool_input(start):
+        args = start.metadata.get("args") if isinstance(start.metadata, dict) else None
         lines.append(f"  [#7f8794]Input[/] {_format_args(args)}")
-
     if end and end.elapsed_ms is not None:
-        lines.append(f"  [#7f8794]Time[/] [#cfd3dc]{_format_duration(end.elapsed_ms)}[/]")
+        lines.append(f"  [#7f8794]{_format_duration(end.elapsed_ms)}[/]")
     elif status == "running":
-        lines.append("  [#7f8794]Status[/] [#cfd3dc]in progress[/]")
+        lines.append("  [#7f8794]in progress[/]")
     return "\n".join(lines)
 
 
-def _tool_activity_title(item: TimelineItem, status: str) -> str:
-    tool_name = item.tool_name or item.metadata.get("tool_name", "") if isinstance(item.metadata, dict) else item.tool_name
-    title = item.title or ""
-    if status == "failed":
-        return "Tool failed"
-    if tool_name in {"read_file", "read_many_files"} or "read file" in title.lower():
-        return "Read file"
-    if tool_name in {"grep"} or "search" in title.lower() or "grep" in title.lower():
-        return "Search code"
-    if tool_name == "bash":
-        return "Run command"
-    if tool_name in {"apply_patch", "edit_file", "write_file"}:
-        return "Edit file"
-    if tool_name in {"git_diff", "git_show"}:
-        return "Inspect git"
-    if tool_name == "list_files":
-        return "List files"
-    if tool_name == "subagent":
-        return "Delegate work"
-    if tool_name in {"list_skills", "load_skill"}:
-        return "Use skill"
-    if title:
-        return title
-    return "Run tool"
-
-
-def _tool_target_line(start: TimelineItem | None, end: TimelineItem | None) -> str:
+def _tool_activity_line(
+    start: TimelineItem | None,
+    end: TimelineItem | None,
+    status: str,
+) -> str:
     item = start or end
     if item is None:
-        return ""
+        return "Used tool"
+    tool_name = item.tool_name or ""
+    title_text = (item.title or "").lower()
+    target = _tool_target_plain(item)
+    args = item.metadata.get("args") if isinstance(item.metadata, dict) else {}
+    if status == "failed":
+        prefix = "Failed"
+    elif tool_name in {"apply_patch", "edit_file", "write_file"}:
+        prefix = "Edited"
+    elif tool_name in {"read_file", "read_many_files"} or "read file" in title_text:
+        prefix = "Read"
+    elif tool_name == "grep" or "search" in title_text:
+        pattern = args.get("pattern") if isinstance(args, dict) else None
+        path = args.get("path") if isinstance(args, dict) else None
+        scope = f" in {path}" if path else ""
+        return _safe_text(f"Searched for {pattern or target}{scope}")
+    elif tool_name in {"bash", "verify"}:
+        command = _command_for_tool(item)
+        return _safe_text(f"Ran {command or target or item.title or tool_name}")
+    elif tool_name in {"git_diff", "git_show", "workspace_state"}:
+        prefix = "Inspected"
+    elif tool_name == "list_files":
+        prefix = "Listed"
+    elif tool_name == "subagent":
+        prefix = "Delegated"
+    else:
+        prefix = "Used"
+    return _safe_text(" ".join(part for part in [prefix, target or item.title or tool_name] if part))
+
+
+def _should_show_tool_input(item: TimelineItem) -> bool:
+    """Return whether args are useful enough to show in the compact activity line."""
+    if not isinstance(item.metadata, dict):
+        return False
+    args = item.metadata.get("args")
+    if not isinstance(args, dict) or not args:
+        return False
+    return (item.tool_name or "") not in {
+        "read_file",
+        "read_many_files",
+        "grep",
+        "apply_patch",
+        "edit_file",
+        "write_file",
+        "bash",
+        "verify",
+        "git_diff",
+        "git_show",
+        "workspace_state",
+        "list_files",
+    }
+
+
+def _command_for_tool(item: TimelineItem) -> str:
+    if isinstance(item.metadata, dict):
+        command = item.metadata.get("command")
+        if command:
+            return str(command)
+        args = item.metadata.get("args")
+        if isinstance(args, dict):
+            return str(args.get("command") or args.get("target") or args.get("kind") or "")
+    return item.detail or item.content
+
+
+def _tool_target_plain(item: TimelineItem) -> str:
     if item.file_paths:
-        return "Files: " + ", ".join(_safe_text(path) for path in item.file_paths)
-    detail = (start.detail if start and start.detail else end.detail if end and end.detail else "") or ""
-    if detail:
-        return _safe_text(detail)
-    content = (start.content if start and start.content else end.content if end and end.content else "") or ""
-    if content and content != item.tool_name:
-        return _safe_text(content)
+        return ", ".join(path for path in item.file_paths if path)
+    if item.detail and item.detail != item.tool_name:
+        return item.detail
+    if item.content and item.content != item.tool_name:
+        return item.content
     return ""
 
 
@@ -887,6 +1412,163 @@ def _human_tool_result_title(item: TimelineItem) -> str:
     if "task state" in title:
         return "Task state"
     return item.title or "Tool result"
+
+
+def _is_task_state_result(item: TimelineItem) -> bool:
+    title = (item.title or "").strip().lower()
+    return title == "task state" or item.content.startswith("Task State:")
+
+
+def _render_task_state_summary(role_prefix: str, item: TimelineItem) -> str:
+    counts = _task_state_counts(item.content)
+    summary = "Task state"
+    if counts["total"]:
+        summary = f"{counts['completed']}/{counts['total']} done"
+        if counts["active"]:
+            summary += " · current"
+    lines = [
+        f"{role_prefix}[bold #8fd6a3]● Task State[/]",
+        f"  [#7f8794]{_safe_text(summary)}[/]",
+    ]
+    if counts["active"]:
+        lines.append(f"  [#d7dae0]{_safe_text(counts['active'])}[/]")
+    lines.append("  [#7f8794]Ctrl+T full plan[/]")
+    return "\n".join(lines)
+
+
+def _task_state_counts(content: str) -> dict[str, int | str]:
+    total = 0
+    completed = 0
+    active = ""
+    for line in content.splitlines():
+        match = re.match(r"\[(?P<status>[Xx~ ])\]\s+\[(?P<id>[^\]]+)\]\s+(?P<text>.+)", line.strip())
+        if not match:
+            continue
+        total += 1
+        status = match.group("status")
+        if status.lower() == "x":
+            completed += 1
+        elif status == "~" and not active:
+            active = match.group("text").strip()
+    return {"total": total, "completed": completed, "active": active}
+
+
+def _render_changed_files_summary(diff: str) -> str:
+    stats = _diff_file_stats(diff)
+    if not stats:
+        return ""
+    total_added = sum(item["added"] for item in stats)
+    total_removed = sum(item["removed"] for item in stats)
+    file_label = "file" if len(stats) == 1 else "files"
+    lines = [
+        (
+            f"[bold #f0f2f5]{len(stats)} {file_label} changed[/] "
+            f"[#8fd6a3]+{total_added}[/] [#ff8f8f]-{total_removed}[/] "
+            f"[#7f8794]Review[/]"
+        )
+    ]
+    path_width = min(max(len(item["path"]) for item in stats), 48)
+    for item in stats:
+        path = _safe_text(_plain_truncate_middle(item["path"], path_width), path_width + 3)
+        padding = " " * max(2, path_width - len(_strip_markup(path)) + 2)
+        lines.append(
+            f"[#d7dae0]{path}[/]{padding}"
+            f"[#8fd6a3]+{item['added']}[/] [#ff8f8f]-{item['removed']}[/]"
+        )
+    return "\n".join(lines)
+
+
+def _render_files_changed_table(diff: str, files: list[dict] | None = None) -> str:
+    stats = files or _diff_file_stats(diff)
+    if not stats:
+        return ""
+    total_added = sum(int(item.get("added", 0) or 0) for item in stats)
+    total_removed = sum(int(item.get("removed", 0) or 0) for item in stats)
+    file_label = "file" if len(stats) == 1 else "files"
+    lines = [
+        (
+            f"[bold #f0f2f5]{len(stats)} {file_label} changed[/] "
+            f"[#8fd6a3]+{total_added}[/] [#ff8f8f]-{total_removed}[/]"
+        ),
+        "[#7f8794]Ctrl+D open changed files and diffs[/]",
+        "",
+    ]
+    path_width = min(max(len(str(item.get("path", ""))) for item in stats), 56)
+    for item in stats:
+        path = _safe_text(_plain_truncate_middle(str(item.get("path", "")), path_width), path_width + 3)
+        padding = " " * max(2, path_width - len(_strip_markup(path)) + 2)
+        lines.append(
+            f"[#d7dae0]{path}[/]{padding}"
+            f"[#8fd6a3]+{int(item.get('added', 0) or 0)}[/] [#ff8f8f]-{int(item.get('removed', 0) or 0)}[/]"
+        )
+    return "\n".join(lines)
+
+
+def _diff_file_stats(diff: str) -> list[dict[str, int | str]]:
+    """Return per-file added/removed counts from a unified diff."""
+    stats: list[dict[str, int | str]] = []
+    current: dict[str, int | str] | None = None
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            if current is not None:
+                stats.append(current)
+            current = {"path": _path_from_diff_header(line), "added": 0, "removed": 0}
+            continue
+        if line.startswith("--- "):
+            if current is not None and (int(current["added"]) or int(current["removed"])):
+                stats.append(current)
+                current = {"path": _strip_diff_prefix(line[4:].split("\t", 1)[0].strip()), "added": 0, "removed": 0}
+            elif current is None:
+                current = {"path": _strip_diff_prefix(line[4:].split("\t", 1)[0].strip()), "added": 0, "removed": 0}
+            continue
+        if current is None:
+            continue
+        if line.startswith("+++ "):
+            path = _path_from_file_marker(line, "+++ ")
+            if path != "/dev/null":
+                current["path"] = path
+            continue
+        if line.startswith("--- ") or line.startswith("@@") or line.startswith("index "):
+            continue
+        if line.startswith("+"):
+            current["added"] = int(current["added"]) + 1
+        elif line.startswith("-"):
+            current["removed"] = int(current["removed"]) + 1
+    if current is not None:
+        stats.append(current)
+    return [item for item in stats if int(item["added"]) or int(item["removed"])]
+
+
+def _path_from_diff_header(line: str) -> str:
+    parts = line.split()
+    if len(parts) >= 4:
+        return _strip_diff_prefix(parts[3])
+    return "file"
+
+
+def _path_from_file_marker(line: str, prefix: str) -> str:
+    raw = line[len(prefix):].split("\t", 1)[0].strip()
+    return _strip_diff_prefix(raw)
+
+
+def _strip_diff_prefix(path: str) -> str:
+    if path.startswith("a/") or path.startswith("b/"):
+        return path[2:]
+    return path
+
+
+def _plain_truncate_middle(text: str, limit: int) -> str:
+    if limit <= 0 or len(text) <= limit:
+        return text
+    if limit <= 3:
+        return "." * limit
+    head = max(1, (limit - 3) // 2)
+    tail = max(1, limit - 3 - head)
+    return f"{text[:head]}...{text[-tail:]}"
+
+
+def _strip_markup(text: str) -> str:
+    return re.sub(r"(?<!\\)\[/?[^]]*\]", "", text)
 
 
 def _approval_resolved_title(status: str | None) -> str:

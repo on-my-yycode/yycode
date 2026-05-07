@@ -65,7 +65,7 @@ class ApprovalService:
                 source=self.source,
                 session_id=self.session_id,
                 event_type="approval_required",
-                content=request.format(include_diff=True),
+                content=request.format(include_diff=False),
                 title=_approval_title(request, "Approve"),
                 detail=_approval_detail(request),
                 phase="blocked",

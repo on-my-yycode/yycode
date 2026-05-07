@@ -3,7 +3,7 @@
 import subprocess
 
 from tools import TOOL_HANDLERS, TOOLS
-from tools.apply_patch import apply_patch
+from tools.apply_patch import apply_patch, preview_apply_patch_diff
 
 
 def _git(repo, *args):
@@ -144,6 +144,33 @@ def test_apply_patch_rejects_whole_file_replacement(tmp_path, monkeypatch):
         approved=True,
     )
 
+    assert "Refusing whole-file replacement" in result
+
+
+def test_apply_patch_preview_shows_whole_file_replacement_diff(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    content = "\n".join(f"line {index}" for index in range(100)) + "\n"
+    (tmp_path / "sample.txt").write_text(content)
+
+    preview = preview_apply_patch_diff(
+        path="sample.txt",
+        old_text=content,
+        new_text=content.replace("line 99", "changed"),
+    )
+    result = apply_patch(
+        path="sample.txt",
+        old_text=content,
+        new_text=content.replace("line 99", "changed"),
+        approved=True,
+    )
+
+    assert "Error:" not in preview
+    assert "--- a/sample.txt" in preview
+    assert "+++ b/sample.txt" in preview
+    assert "-line 99" in preview
+    assert "+changed" in preview
     assert "Refusing whole-file replacement" in result
 
 

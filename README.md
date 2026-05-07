@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- 🖥️ **TUI 终端界面** - 基于 Textual 的现代终端 UI，支持流式事件时间线、审批弹窗和历史浏览
+- 🖥️ **TUI 终端界面** - 基于 Textual 的现代终端 UI，支持紧凑 Transcript 风格时间线、工具活动摘要、审批弹窗和历史浏览
 - 🤖 **多提供商支持** - Anthropic Claude、OpenAI GPT，兼容自定义 API Base
 - 🛠️ **丰富的内置工具** - 代码导航 (grep/list_files/read_file/git_diff)、文件编辑 (apply_patch/write_file)、命令执行 (bash)、验证 (verify) 等 16 个自动注册工具
 - 📚 **技能系统** - 可扩展的专业知识模块 (code_review、code_workflow、drawio 图表生成)
@@ -14,6 +14,12 @@
 - 🔒 **运行时安全审批** - 高风险操作 (文件编辑、命令执行) 需用户确认，静默模式可自动批准
 - 🗜️ **上下文压缩** - 长会话自动压缩旧工具输出，避免超出上下文窗口
 - 🔁 **智能重试** - LLM 调用和工具执行均支持自动重试
+
+### 最新功能更新
+
+- **更紧凑的 TUI 时间线**：连续工具调用会聚合为活动摘要，例如 `explored 1 file`、`Edited 1 file`，同时保留每个工具调用的关键目标和耗时。
+- **更清晰的模型输出**：主时间线中的模型文本采用对话式 Transcript 风格展示，不再重复显示固定助手名称，阅读更接近常见代码代理体验。
+- **独立使用说明**：常用启动命令、TUI 快捷键和内置工具清单已整理到 [使用说明](docs/usage.md)，README 保留概览与入口信息。
 
 ## 快速开始
 
@@ -79,7 +85,7 @@ python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
 ```
 
-在命令行输入中，可使用 `/p` 或 `/paste` 进入多行粘贴模式，并用单独一行 `/end` 提交。
+当前默认入口会启动 TUI 界面；上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 
 ## 项目结构
 
@@ -235,7 +241,7 @@ MIT License
 
 Copyright (c) 2025 Yoyo Agent
 
-作者: 张磊, zlhxd, yoyofx, zl.hxd@hotmail.com
+作者: 张磊, zlhxd, yoyofx, zl.hxd@hotmail.com, vvvv
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

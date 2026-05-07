@@ -61,3 +61,7 @@ python3 -m http.server 8080
 默认使用端口 8080，如果端口被占用，可以：
 1. 停止占用该端口的程序
 2. 或者修改 `server.py` 中的 `PORT` 变量使用其他端口
+
+## 署名
+
+作者: 张磊, zlhxd, yoyofx, zl.hxd@hotmail.com, vvvv

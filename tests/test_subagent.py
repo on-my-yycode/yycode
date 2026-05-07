@@ -279,6 +279,49 @@ def test_subagent_runner_allows_write_after_runtime_approval(tmp_path):
     assert called == [{"path": "new.py", "content": "x", "approved": True}]
 
 
+def test_subagent_runner_returns_tool_message_for_write_without_target(tmp_path):
+    called = []
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="write-1",
+                        name="write_file",
+                        args={"content": "x"},
+                    )
+                ],
+            ),
+            ChatResponse(content="fixed"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"write_file": lambda **kwargs: called.append(kwargs) or "wrote"},
+        tools=[
+            {
+                "name": "write_file",
+                "description": "write",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    result = asyncio.run(runner.run(role="worker", task="write"))
+
+    assert "fixed" in result
+    assert called == []
+    tool_message = next(
+        message
+        for message in provider.calls[1]["messages"]
+        if message["role"] == "user" and isinstance(message["content"], list)
+    )
+    assert "no target file was detected" in tool_message["content"][0]["content"]
+
+
 def test_subagent_runner_emits_structured_stream_events(tmp_path):
     events: list[StreamEvent] = []
 

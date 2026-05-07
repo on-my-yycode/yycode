@@ -111,16 +111,6 @@ def _preview_replacement(path: str, old_text: str, new_text: str) -> str:
         return f"Error: {exc}"
     if old_text not in content:
         return f"Error: old_text not found in {path}"
-    if _looks_like_whole_file(content, old_text):
-        return (
-            "Error: Refusing whole-file replacement in apply_patch exact replacement mode. "
-            "Use old_text/new_text for only the smallest changed block, or provide a focused unified diff."
-        )
-    if _replacement_is_too_large(old_text, new_text):
-        return (
-            f"Error: Replacement block is too large for exact replacement mode "
-            f"({MAX_REPLACEMENT_LINES} line limit). Use a focused unified diff with context instead."
-        )
     after = content.replace(old_text, new_text, 1)
     return _format_preview_diff({path: (content, after)})
 

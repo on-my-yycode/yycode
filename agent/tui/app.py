@@ -5,7 +5,6 @@ from __future__ import annotations
 from argparse import Namespace
 
 
-MIN_INPUT_RULE_WIDTH = 40
 PROGRESS_TRACK_WIDTH = 18
 PROGRESS_PULSE_WIDTH = 6
 PROGRESS_COLORS = (
@@ -30,6 +29,29 @@ def _safe_text(value: object, limit: int | None = None) -> str:
     return text.replace("[", r"\[")
 
 
+def _is_submit_key_event(event: object) -> bool:
+    """Return whether a Textual key event should submit the prompt."""
+    names = {
+        str(getattr(event, "key", "") or "").lower(),
+        str(getattr(event, "name", "") or "").lower(),
+    }
+    return bool(names & {"ctrl+enter", "ctrl+j"})
+
+
+def _is_changed_files_key_event(event: object) -> bool:
+    names = {
+        str(getattr(event, "key", "") or "").lower(),
+        str(getattr(event, "name", "") or "").lower(),
+    }
+    return "ctrl+d" in names
+
+
+def _indent_diff_for_panel(diff: str) -> str:
+    if not diff:
+        return ""
+    return "\n".join(f"  {line}" if line else "" for line in diff.splitlines())
+
+
 def run_tui(args: Namespace) -> None:
     """Launch the Textual app."""
     try:
@@ -37,13 +59,14 @@ def run_tui(args: Namespace) -> None:
         from textual.app import App, ComposeResult
         from textual.containers import Container, Horizontal, Vertical
         from textual.screen import ModalScreen
-        from textual.widgets import Button, RichLog, Static, TextArea
+        from textual.widgets import Label, ListItem, ListView, RichLog, Static, TextArea
     except ImportError as exc:  # pragma: no cover - depends on optional runtime dep
         raise RuntimeError(
             "Textual is required for the TUI. Install project dependencies before running."
         ) from exc
 
     from .renderers import (
+        colorize_diff_for_tui,
         render_brand_text,
         render_status_bar_text,
         render_task_plan_panel,
@@ -57,7 +80,6 @@ def run_tui(args: Namespace) -> None:
         """Full task plan viewer."""
 
         BINDINGS = [
-            ("escape", "close_task_plan", "Back"),
             ("ctrl+t", "close_task_plan", "Back"),
         ]
 
@@ -81,11 +103,131 @@ def run_tui(args: Namespace) -> None:
         def refresh_task_plan(self) -> None:
             body = self.query_one("#task-plan-body", Static)
             lines = [
-                "[bold #c9a6ff]Task Plan[/] [#7f8794]Esc/Ctrl+T back[/]",
+                "[bold #c9a6ff]Task Plan[/] [#7f8794]Press Ctrl+T to close[/]",
                 "",
                 render_task_plan_panel(self.state),
             ]
             body.update("\n".join(lines))
+
+    class ChangedFilesScreen(ModalScreen[None]):
+        """Changed files and per-file diff viewer."""
+
+        BINDINGS = [
+            ("ctrl+d", "close_changed_files", "Back"),
+            ("up", "move_selection_up", "Up"),
+            ("down", "move_selection_down", "Down"),
+            ("enter", "toggle_file", "Toggle"),
+            ("space", "toggle_file", "Toggle"),
+        ]
+
+        def __init__(self, state: TuiState) -> None:
+            super().__init__()
+            self.state = state
+            self.selected_index = 0
+
+        def compose(self) -> ComposeResult:
+            yield Container(
+                Static("", id="changed-files-header"),
+                Horizontal(
+                    ListView(id="changed-files-list"),
+                    RichLog(
+                        markup=True,
+                        wrap=False,
+                        highlight=False,
+                        auto_scroll=False,
+                        id="changed-files-diff",
+                    ),
+                    id="changed-files-split",
+                ),
+                id="changed-files-dialog",
+            )
+
+        def on_mount(self) -> None:
+            self.refresh_changed_files()
+
+        def action_close_changed_files(self) -> None:
+            self.dismiss(None)
+
+        def action_move_selection_up(self) -> None:
+            if self.state.latest_changed_file_diffs:
+                self.selected_index = (self.selected_index - 1) % len(self.state.latest_changed_file_diffs)
+                self._sync_file_selection()
+
+        def action_move_selection_down(self) -> None:
+            if self.state.latest_changed_file_diffs:
+                self.selected_index = (self.selected_index + 1) % len(self.state.latest_changed_file_diffs)
+                self._sync_file_selection()
+
+        def action_toggle_file(self) -> None:
+            files = self.state.latest_changed_file_diffs
+            if not files:
+                return
+            current = files[self.selected_index]
+            current.collapsed = not current.collapsed
+            self._refresh_diff_view()
+
+        def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+            files = self.state.latest_changed_file_diffs
+            if event.list_view.id != "changed-files-list" or event.item is None or not files:
+                return
+            index = event.list_view.index or 0
+            if 0 <= index < len(files):
+                self.selected_index = index
+                self._refresh_diff_view()
+
+        def refresh_changed_files(self) -> None:
+            header = self.query_one("#changed-files-header", Static)
+            file_list = self.query_one("#changed-files-list", ListView)
+            diff_view = self.query_one("#changed-files-diff", RichLog)
+            files = self.state.latest_changed_file_diffs
+            if not files:
+                header.update("[bold #c9a6ff]Changed Files[/] [#7f8794]Press Ctrl+D to close[/]")
+                file_list.clear()
+                diff_view.clear()
+                diff_view.write("[#7f8794]No changed files for the latest task.[/]")
+                return
+            total_added = sum(item.added for item in files)
+            total_removed = sum(item.removed for item in files)
+            header.update(
+                f"[bold #c9a6ff]Changed Files[/] [#7f8794]Press Ctrl+D to close · click/select files · Enter fold[/] "
+                f"[#7f8794]{len(files)} files[/] [#8fd6a3]+{total_added}[/] [#ff8f8f]-{total_removed}[/]"
+            )
+            file_list.clear()
+            for item in files:
+                file_list.append(
+                    ListItem(
+                        Label(
+                            f"{_safe_text(item.path, 42)}  [#8fd6a3]+{item.added}[/] [#ff8f8f]-{item.removed}[/]"
+                        )
+                    )
+                )
+            self.selected_index = min(self.selected_index, len(files) - 1)
+            self._sync_file_selection()
+
+        def _sync_file_selection(self) -> None:
+            file_list = self.query_one("#changed-files-list", ListView)
+            file_list.index = self.selected_index
+            file_list.focus()
+            self._refresh_diff_view()
+
+        def _refresh_diff_view(self) -> None:
+            files = self.state.latest_changed_file_diffs
+            diff_view = self.query_one("#changed-files-diff", RichLog)
+            diff_view.clear()
+            if not files:
+                return
+            item = files[self.selected_index]
+            fold = "collapsed" if item.collapsed else "expanded"
+            diff_view.write(
+                f"[bold #f0f2f5]{_safe_text(item.path)}[/] "
+                f"[#8fd6a3]+{item.added}[/] [#ff8f8f]-{item.removed}[/] "
+                f"[#7f8794]{fold} · Enter/Space toggle[/]\n"
+            )
+            if item.collapsed:
+                diff_view.write("[#7f8794]Diff hidden.[/]")
+                return
+            diff_view.write(_indent_diff_for_panel(colorize_diff_for_tui(item.diff)))
+            diff_view.scroll_home(animate=False)
 
     class YoyoTuiApp(App[None]):
         """Main terminal UI."""
@@ -101,6 +243,7 @@ def run_tui(args: Namespace) -> None:
             ("ctrl+shift+c", "copy_timeline", "Copy timeline"),
             ("ctrl+c", "cancel_task", "Cancel task"),
             ("ctrl+t", "open_task_plan", "Task plan"),
+            ("ctrl+d", "open_changed_files", "Changed files"),
             ("ctrl+enter", "submit_prompt", "Submit"),
             ("ctrl+j", "submit_prompt", "Submit"),
             ("ctrl+q", "quit", "Quit"),
@@ -139,6 +282,12 @@ def run_tui(args: Namespace) -> None:
                 Static("", id="skill-completion"),
                 Container(
                     Static("", id="input-top-rule"),
+                    Container(
+                        Static("", id="approval-title"),
+                        Static("", id="approval-detail"),
+                        Static("", id="approval-actions"),
+                        id="approval-inline",
+                    ),
                     Horizontal(
                         Static(">", id="input-prompt"),
                         TextArea(
@@ -155,20 +304,6 @@ def run_tui(args: Namespace) -> None:
                     Static("", id="input-status-bar"),
                     id="input-shell",
                 ),
-                Container(
-                    Container(
-                        Static("", id="approval-title"),
-                        Static("", id="approval-detail"),
-                        Static("[#7f8794]Y/Enter approve | N/Esc deny | Ctrl+T task plan[/]", id="approval-hint"),
-                        Horizontal(
-                            Button("[Y] Approve", id="approve", variant="success"),
-                            Button("[N] Deny", id="deny", variant="error"),
-                            id="approval-actions",
-                        ),
-                        id="approval-panel",
-                    ),
-                    id="approval-wrapper",
-                ),
                 id="root-layout",
             )
 
@@ -183,6 +318,21 @@ def run_tui(args: Namespace) -> None:
             await self.runner.close()
 
         def on_key(self, event: events.Key) -> None:
+            if (
+                _is_submit_key_event(event)
+                and getattr(self.focused, "id", None) == "prompt-input"
+            ):
+                event.prevent_default()
+                event.stop()
+                self.run_worker(self.action_submit_prompt(), exclusive=False)
+                return
+
+            if _is_changed_files_key_event(event):
+                event.prevent_default()
+                event.stop()
+                self.action_toggle_changed_files()
+                return
+
             if self._skill_completion_open:
                 if event.key in {"up", "ctrl+p"}:
                     self._move_skill_selection(-1)
@@ -214,14 +364,6 @@ def run_tui(args: Namespace) -> None:
             elif event.key in {"n", "N", "escape"}:
                 self._resolve_current_approval(False)
                 event.prevent_default()
-                event.stop()
-
-        def on_button_pressed(self, event: Button.Pressed) -> None:
-            if event.button.id == "approve":
-                self._resolve_current_approval(True)
-                event.stop()
-            elif event.button.id == "deny":
-                self._resolve_current_approval(False)
                 event.stop()
 
         def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -282,6 +424,15 @@ def run_tui(args: Namespace) -> None:
         def action_open_task_plan(self) -> None:
             self.push_screen(TaskPlanScreen(self.runner.state))
 
+        def action_open_changed_files(self) -> None:
+            self.action_toggle_changed_files()
+
+        def action_toggle_changed_files(self) -> None:
+            if isinstance(self.screen, ChangedFilesScreen):
+                self.pop_screen()
+                return
+            self.push_screen(ChangedFilesScreen(self.runner.state))
+
         def action_timeline_line_up(self) -> None:
             if self._skill_completion_open:
                 self._move_skill_selection(-1)
@@ -294,7 +445,10 @@ def run_tui(args: Namespace) -> None:
                 return
             self._scroll_timeline_relative(1)
 
-        async def _on_stream_event(self, _event) -> None:
+        async def _on_stream_event(self, event) -> None:
+            if getattr(event, "event_type", "") == "task_finished":
+                self.call_after_refresh(lambda: self._refresh_all(force_scroll_end=True))
+                return
             self.call_after_refresh(self._refresh_all)
 
         def _refresh_status_tick(self) -> None:
@@ -319,7 +473,7 @@ def run_tui(args: Namespace) -> None:
             input_widget.focus()
             self._refresh_all()
 
-        def _refresh_all(self) -> None:
+        def _refresh_all(self, *, force_scroll_end: bool = False) -> None:
             state = self.runner.state
             self._refresh_status_surfaces()
 
@@ -334,7 +488,15 @@ def run_tui(args: Namespace) -> None:
                 self._last_timeline_content = timeline_content
                 timeline_panel.clear()
                 timeline_panel.write(timeline_content)
-                # Always scroll to end when there's new content
+                if (
+                    force_scroll_end
+                    or (
+                        self.runner.state.active_task.get("is_running")
+                        and self.runner.state.next_pending_approval() is None
+                    )
+                ):
+                    self.call_after_refresh(lambda: self._scroll_to_end(timeline_panel))
+            elif force_scroll_end:
                 self.call_after_refresh(lambda: self._scroll_to_end(timeline_panel))
 
             self._refresh_input_rules()
@@ -356,7 +518,6 @@ def run_tui(args: Namespace) -> None:
             timeline.scroll_end(animate=False)
 
         def action_timeline_page_up(self) -> None:
-            self._force_follow_timeline = False
             timeline = self.query_one("#timeline-panel", RichLog)
             timeline.focus()
             step = max(1, timeline.content_size.height // 3)
@@ -377,7 +538,7 @@ def run_tui(args: Namespace) -> None:
         def action_timeline_end(self) -> None:
             timeline = self.query_one("#timeline-panel", RichLog)
             timeline.focus()
-            timeline.scroll_end(animate=False)
+            self._scroll_to_end(timeline)
 
         def _scroll_timeline_relative(self, amount: int) -> None:
             timeline = self.query_one("#timeline-panel", RichLog)
@@ -407,7 +568,7 @@ def run_tui(args: Namespace) -> None:
                 self.notify(f"Failed to copy: {str(e)}", severity="warning")
 
         def _refresh_input_rules(self) -> None:
-            rule_width = max(MIN_INPUT_RULE_WIDTH, self.size.width - 4)
+            rule_width = max(40, self.size.width - 4)
             rule = "-" * rule_width
             self.query_one("#input-top-rule", Static).update(rule)
             self.query_one("#input-bottom-rule", Static).update(rule)
@@ -512,29 +673,66 @@ def run_tui(args: Namespace) -> None:
         def _show_approval_panel(self, approval: PendingApproval) -> None:
             self._approval_open = True
             self._current_approval = approval
+            title, detail = self._approval_copy(approval)
             self.query_one("#approval-title", Static).update(
-                f"[bold #c9a6ff]Approval required[/] [#7f8794]{_safe_text(approval.tool_name or '')}[/]"
+                f"[bold #d7ba7d]{_safe_text(title, 96)}[/]"
             )
             self.query_one("#approval-detail", Static).update(
-                f"[#d7dae0]{_safe_text(approval.title, 46)}[/]\n[#8b949e]{_safe_text(approval.detail, 46)}[/]"
+                f"[#8b949e]{_safe_text(detail, 120)}[/]"
             )
-            wrapper = self.query_one("#approval-wrapper", Container)
-            wrapper.display = True
-            self.query_one("#approve", Button).focus()
+            self.query_one("#approval-actions", Static).update(
+                "[#7f8794]Press[/] [#8fd6a3]Y[/][#7f8794]/[/][#8fd6a3]Enter[/] [#7f8794]to approve   Press[/] [#ff8f8f]N[/][#7f8794]/[/][#ff8f8f]Esc[/] [#7f8794]to deny   Ctrl+T task plan[/]"
+            )
+            self.query_one("#approval-inline", Container).display = True
+            self.query_one("#input-row", Horizontal).display = False
+            self.query_one("#input-shell", Container).add_class("approving")
+            self.query_one("#timeline-panel", RichLog).focus()
 
         def _hide_approval_panel(self) -> None:
             self._approval_open = False
             self._current_approval = None
-            self.query_one("#approval-wrapper", Container).display = False
+            self.query_one("#approval-inline", Container).display = False
+            self.query_one("#input-row", Horizontal).display = True
+            self.query_one("#input-shell", Container).remove_class("approving")
             input_widget = self.query_one("#prompt-input", TextArea)
             if not input_widget.disabled:
                 input_widget.focus()
+
+        def _approval_copy(self, approval: PendingApproval) -> tuple[str, str]:
+            target = approval.detail or ", ".join(approval.file_paths) or approval.tool_name or "this action"
+            request_text = approval.request_text
+            if "action: run_command" in request_text:
+                command = self._approval_field(request_text, "command") or target
+                return "Approve command?", command
+            if "action: create_file" in request_text:
+                path = self._approval_field(request_text, "path") or target
+                hint = "Review the preview above" if approval.diff_preview else "File creation requires approval"
+                return f"Create {path}?", hint
+            if "action: edit_file" in request_text:
+                path = self._approval_field(request_text, "path") or target
+                hint = "Review the diff above" if approval.diff_preview else "File edit requires approval"
+                return f"Approve changes to {path}?", hint
+            return "Approve action?", target
+
+        def _approval_field(self, request_text: str, field: str) -> str:
+            prefix = f"{field}:"
+            for line in request_text.splitlines():
+                if line.startswith(prefix):
+                    return line[len(prefix):].strip()
+            return ""
 
         def _resolve_current_approval(self, approved: bool) -> None:
             approval = self._current_approval
             if approval is None:
                 return
-            self.runner.resolve_approval(approval.approval_id, approved)
+            resolved = self.runner.resolve_approval(approval.approval_id, approved)
+            if approved:
+                message = "Approved. Continuing task..." if resolved else "Approval was no longer pending."
+                severity = "information" if resolved else "warning"
+            else:
+                message = "Approval denied. Task will stop without applying this change." if resolved else "Approval was no longer pending."
+                severity = "warning"
+            self.notify(message, severity=severity)
             self._hide_approval_panel()
             self._refresh_all()
 

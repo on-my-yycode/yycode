@@ -21,6 +21,14 @@ class ApprovalDenied(Exception):
         super().__init__(request.format())
 
 
+class ApprovalTargetMissing(Exception):
+    """Raised when a file approval cannot identify the target path."""
+
+    def __init__(self, tool_name: str):
+        self.tool_name = tool_name
+        super().__init__(missing_file_target_message(tool_name))
+
+
 @dataclass(frozen=True)
 class ApprovalRequest:
     """A request to approve a risky tool execution."""
@@ -62,6 +70,8 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
         return None
     if tool_name == "apply_patch":
         path = args.get("path") or _paths_from_unified_diff(args.get("patch", ""))
+        if not path:
+            raise ApprovalTargetMissing(tool_name)
         return ApprovalRequest(
             action="edit_file",
             tool_name=tool_name,
@@ -76,6 +86,8 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
             ),
         )
     if tool_name == "write_file":
+        if not args.get("path"):
+            raise ApprovalTargetMissing(tool_name)
         return ApprovalRequest(
             action="create_file",
             tool_name=tool_name,
@@ -87,6 +99,18 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
     return None
 
 
+def missing_file_target_message(tool_name: str) -> str:
+    """Return a model-facing correction when a write tool has no target path."""
+    return (
+        f"File edit blocked for {tool_name}: no target file was detected.\n\n"
+        "Retry with an explicit target file using one of these formats:\n"
+        "- apply_patch with path + old_text + new_text\n"
+        "- apply_patch with a unified diff that includes ---/+++ file headers\n"
+        "- apply_patch with Begin Patch lines such as *** Update File: path\n"
+        "- write_file with a path for a brand-new file"
+    )
+
+
 def approval_cache_key(request: ApprovalRequest) -> tuple[str, str, str]:
     """Return the cache key for approvals within one agent run."""
     return (request.action, request.tool_name, request.path)
@@ -96,6 +120,11 @@ def _paths_from_unified_diff(patch: str) -> str:
     paths = []
     for line in patch.splitlines():
         path = None
+        begin_patch_match = re.match(r"\*\*\* (?:Add|Update|Delete) File: (.+)$", line)
+        if begin_patch_match:
+            path = begin_patch_match.group(1).strip()
+        elif line.startswith("*** Move to: "):
+            path = line[len("*** Move to: "):].strip()
         if line.startswith("diff --git "):
             match = re.match(r"diff --git a/(.+?) b/(.+)$", line)
             if match:
@@ -106,4 +135,4 @@ def _paths_from_unified_diff(patch: str) -> str:
                 path = raw[2:] if raw.startswith("b/") else raw
         if path and path not in paths:
             paths.append(path)
-    return ", ".join(paths) if paths else "(unified diff)"
+    return ", ".join(paths)

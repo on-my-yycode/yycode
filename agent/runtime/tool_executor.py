@@ -4,7 +4,7 @@ import time
 
 from langchain_core.messages import ToolMessage
 
-from agent.approval import ApprovalDenied
+from agent.approval import ApprovalDenied, ApprovalTargetMissing
 from agent.logger import get_logger
 from agent.runtime.approval_service import ApprovalService
 from agent.runtime.context import AgentRuntimeContext
@@ -59,7 +59,17 @@ class ToolExecutor:
                     self.workflow_guard.apply_patch_required_message(tc),
                 )
 
-            approved_args = await self.approval_service.approve(tc.name, tc.args or {})
+            try:
+                approved_args = await self.approval_service.approve(tc.name, tc.args or {})
+            except ApprovalTargetMissing as exc:
+                status = "failed"
+                await self._emit_tool_result(
+                    str(exc),
+                    title="File edit blocked",
+                    detail="No target file detected",
+                    phase="blocked",
+                )
+                return self._tool_message(tc, str(exc))
             runner = self.registry.create_subagent_runner() if tc.name == "subagent" else None
             handler = runner.run if runner else self.registry.resolve(tc.name)
             output = await self.runtime.run_tool(

@@ -108,3 +108,5 @@ python -m pytest test_snake.py -v
 ## 许可证
 
 MIT License
+
+作者: 张磊, zlhxd, yoyofx, zl.hxd@hotmail.com, vvvv

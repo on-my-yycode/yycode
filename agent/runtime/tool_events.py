@@ -252,7 +252,12 @@ def _paths_from_unified_diff(patch: str) -> list[str]:
     paths: list[str] = []
     for line in patch.splitlines():
         path = None
-        if line.startswith("diff --git "):
+        begin_patch_match = re.match(r"\*\*\* (?:Add|Update|Delete) File: (.+)$", line)
+        if begin_patch_match:
+            path = begin_patch_match.group(1).strip()
+        elif line.startswith("*** Move to: "):
+            path = line[len("*** Move to: "):].strip()
+        elif line.startswith("diff --git "):
             match = re.match(r"diff --git a/(.+?) b/(.+)$", line)
             if match:
                 path = match.group(2)

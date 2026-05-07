@@ -548,3 +548,166 @@ Not implemented yet:
 - A dedicated Web timeline renderer.
 - `phase_changed`, `step_started`, `step_finished`, `test_started`, and `test_finished` as first-class events.
 - Rich timeline persistence for replay or audit.
+
+## TUI Timeline C Plan: Lightweight Tree Blocks
+
+This section records the current preferred TUI timeline direction.
+
+The goal is to make each timeline item feel structured and scannable without using heavy boxes. The UI should preserve the fast Codex-like flow, but group related events into small phase blocks so users can understand hierarchy at a glance.
+
+### Design Principles
+
+- Use light tree structure instead of bordered cards or drawbox containers.
+- Group contiguous related events into phase blocks.
+- Keep task state short in the timeline; full task detail belongs in the `Ctrl+T` Task Plan panel.
+- Keep low-level details visible, but subordinate to human-readable titles.
+- Preserve complete diff content, and append a compact changed-files summary.
+- Show running state with a small spinner or animated marker so the current step is obvious.
+- Avoid keeping historical task plan blocks pinned at the top of the timeline, because users can scroll with `Tab` and the status bar already carries compressed state.
+
+### Target Visual Prototype
+
+```text
+● Task State
+  0/1 done · current
+  了解当前项目结构和输入框相关实现，形成可讨论的最新方案
+  Ctrl+T full plan
+
+◇ Exploration
+  explored 1 file · inspected git
+  tokens 2.5k · input 2.4k · output 59
+
+  ├─ Inspect workspace
+  │  Check workspace state
+  │  running ◑
+  ├─ List files
+  │  .
+  │  21ms
+  └─ Inspect workspace
+     Check workspace state
+     36ms
+
+◇ Search
+  1 search · inspected files
+  tokens 3.7k · input 3.6k · output 124
+
+  ├─ Search code
+  │  Input|TextArea|key_up|up|history|prompt|submit|MainInput
+  │  agent tests
+  │  running ◓
+  └─ Inspect files
+     agent/tui/app.py, agent/tui/state.py
+     tests/test_main_input.py, tests/test_tui_state.py
+     16ms
+```
+
+### Phase Blocks
+
+Recommended block titles:
+
+- `Task State`: compact todo/task-memory summary.
+- `Exploration`: file reads, directory listing, workspace state, git inspection.
+- `Search`: grep, ripgrep, symbol lookup, code search.
+- `Edit`: apply patch, write file, file update operations.
+- `Verification`: tests, lint, typecheck, compile, manual validation commands.
+- `Approval`: pending or resolved user approval.
+- `Model`: waiting, retry, timeout, or model-side status.
+
+Phase title markers:
+
+- `●` for the primary current state, especially `Task State`.
+- `◇` for regular grouped activity blocks.
+- `├─` and `└─` for child operations.
+- `│` for child details.
+
+### Task State Rendering
+
+The timeline should not render full task memory or full todo dumps.
+
+Preferred compact shape:
+
+```text
+● Task State
+  1/2 done · current
+  结合现状给出方案
+  Ctrl+T full plan
+```
+
+Full details remain available in `Ctrl+T`, including:
+
+- goal
+- checklist
+- constraints
+- files inspected
+- decisions
+- risks
+- next steps
+
+After normal task completion, todo tool calls and todo tool messages should be pruned from provider history to reduce context pollution. If the task stops unexpectedly, the last task state may remain available as recovery context.
+
+### Tool Operation Rendering
+
+Each operation should prefer a human title, then compact detail.
+
+Example:
+
+```text
+├─ Search code
+│  key_up|history|prompt
+│  agent tests
+│  34ms
+```
+
+Running example:
+
+```text
+└─ Run tests
+   pytest tests/test_tui_state.py -q
+   running ◓
+```
+
+The renderer should derive these titles in the TUI layer where possible, using existing structured event fields first and existing content parsing only as a fallback.
+
+### Usage Rendering
+
+Token usage should be a subordinate line inside the nearest relevant block instead of a standalone timeline item when possible.
+
+Preferred shape:
+
+```text
+tokens 3.7k · input 3.6k · output 124
+```
+
+If no nearby block can own the usage event, it can remain as a compact standalone line.
+
+### Diff Rendering
+
+Diff output must keep the complete content.
+
+After the full diff, append a changed-files summary:
+
+```text
+files changed
+  agent/tui/renderers.py  +42 -11
+  tests/test_tui_state.py +18 -4
+```
+
+This keeps review accurate while giving users a quick scan target.
+
+### Implementation Notes
+
+The first implementation should stay mostly in `agent/tui/renderers.py`.
+
+Suggested approach:
+
+- Keep `StreamEvent` and TUI state schemas unchanged unless a missing field becomes unavoidable.
+- Update `_render_timeline_blocks(state)` to group contiguous events into phase blocks.
+- Reuse `_activity_summary`, `_render_tool_activity`, `_tool_activity_line`, `_render_task_state_summary`, `_task_spinner`, and diff summary helpers where possible.
+- Add a small phase classifier for known tool names and event types.
+- Update `tests/test_tui_state.py` expectations from flat action summaries to tree-like grouped blocks.
+
+Verification target:
+
+```bash
+pytest tests/test_tui_state.py tests/test_tui_approval.py tests/test_tui_runner.py tests/test_streaming_events.py tests/test_task_guard.py tests/test_task_state.py tests/test_tool_concurrency.py -q
+```

@@ -294,14 +294,19 @@ Final answer:
         self.add_user_message(content)
         await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
+        task_start_index = previous_message_count
 
+        completed_normally = False
         try:
             result = await self.graph.ainvoke({"messages": self.messages})
             self.messages = result["messages"]
+            completed_normally = self.todo_manager.can_finish_task()
         except ApprovalDenied as exc:
             self.messages.append(self._approval_denied_message(exc))
         except LLMCallError as exc:
             self.messages.append(self._llm_failed_message(exc))
+        if completed_normally:
+            self._prune_todo_artifacts(task_start_index)
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -313,13 +318,18 @@ Final answer:
         self.add_user_message(content)
         await self._compress_context_if_needed()
         previous_message_count = len(self.messages)
+        task_start_index = previous_message_count
+        completed_normally = False
         try:
             result = await self.graph.ainvoke({"messages": self.messages})
             self.messages = result["messages"]
+            completed_normally = self.todo_manager.can_finish_task()
         except ApprovalDenied as exc:
             self.messages.append(self._approval_denied_message(exc))
         except LLMCallError as exc:
             self.messages.append(self._llm_failed_message(exc))
+        if completed_normally:
+            self._prune_todo_artifacts(task_start_index)
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -343,6 +353,80 @@ Final answer:
                 f"{exc}"
             )
         )
+
+    def _prune_todo_artifacts(self, start_index: int) -> None:
+        """Remove todo tool-call artifacts produced after start_index."""
+        if start_index >= len(self.messages):
+            return
+        preserved = self.messages[:start_index]
+        for message in self.messages[start_index:]:
+            if isinstance(message, ToolMessage) and message.name == "todo":
+                continue
+            if isinstance(message, AIMessage):
+                filtered = self._without_todo_tool_calls(message)
+                if filtered is None:
+                    continue
+                preserved.append(filtered)
+                continue
+            preserved.append(message)
+        self.messages = preserved
+
+    def _without_todo_tool_calls(self, message: AIMessage) -> AIMessage | None:
+        """Return an AIMessage with todo tool calls removed, or None if empty."""
+        tool_calls = list(getattr(message, "tool_calls", []) or [])
+        tool_calls_data = list(message.additional_kwargs.get("tool_calls_data") or [])
+        provider_blocks = list(message.additional_kwargs.get("provider_blocks") or [])
+
+        filtered_tool_calls = [
+            tool_call for tool_call in tool_calls
+            if self._tool_call_name(tool_call) != "todo"
+        ]
+        filtered_tool_calls_data = [
+            tool_call for tool_call in tool_calls_data
+            if self._tool_call_name(tool_call) != "todo"
+        ]
+        filtered_provider_blocks = [
+            block for block in provider_blocks
+            if not (isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "todo")
+        ]
+
+        had_todo = (
+            len(filtered_tool_calls) != len(tool_calls)
+            or len(filtered_tool_calls_data) != len(tool_calls_data)
+            or len(filtered_provider_blocks) != len(provider_blocks)
+        )
+        if not had_todo:
+            return message
+
+        content = message.content
+        if not content and not filtered_tool_calls and not filtered_tool_calls_data and not filtered_provider_blocks:
+            return None
+
+        additional_kwargs = dict(message.additional_kwargs)
+        if tool_calls_data:
+            if filtered_tool_calls_data:
+                additional_kwargs["tool_calls_data"] = filtered_tool_calls_data
+            else:
+                additional_kwargs.pop("tool_calls_data", None)
+        if provider_blocks:
+            if filtered_provider_blocks:
+                additional_kwargs["provider_blocks"] = filtered_provider_blocks
+            else:
+                additional_kwargs.pop("provider_blocks", None)
+
+        return AIMessage(
+            content=content,
+            tool_calls=filtered_tool_calls,
+            additional_kwargs=additional_kwargs,
+            response_metadata=dict(getattr(message, "response_metadata", {}) or {}),
+            id=getattr(message, "id", None),
+            name=getattr(message, "name", None),
+        )
+
+    def _tool_call_name(self, tool_call) -> str | None:
+        if isinstance(tool_call, dict):
+            return tool_call.get("name")
+        return getattr(tool_call, "name", None)
 
     def _extract_usage_from_message(
         self,
