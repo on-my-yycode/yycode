@@ -161,12 +161,21 @@ def format_startup_info(session: Session) -> str:
     model = getattr(session.provider, "model", "(unknown)")
     skill_names = [skill.name for skill in session.skill_registry.list_skills()]
     skills = ", ".join(skill_names) if skill_names else "(none)"
+    restored_message_count = getattr(session, "restored_message_count", 0)
+    restore_line = (
+        f"\033[90mRestored messages: {restored_message_count}\033[0m"
+        if restored_message_count
+        else None
+    )
+    lines = [
+        f"\033[90mSession ID: {session.id}\033[0m",
+        f"\033[90mModel: {model}\033[0m",
+        f"\033[90mSkills: {skills}\033[0m",
+    ]
+    if restore_line:
+        lines.append(restore_line)
     return "\n".join(
-        [
-            f"\033[90mSession ID: {session.id}\033[0m",
-            f"\033[90mModel: {model}\033[0m",
-            f"\033[90mSkills: {skills}\033[0m",
-        ]
+        lines
     )
 
 
@@ -218,6 +227,20 @@ def main() -> None:
         "--silent",
         action="store_true",
         help="Run without approval prompts; risky actions are automatically approved",
+    )
+    parser.add_argument(
+        "--session-id",
+        help="Session id to use for message persistence and optional resume.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume messages from the persisted session with the same session id.",
+    )
+    parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Disable local session message persistence.",
     )
     args = parser.parse_args()
     args.workdir = resolve_startup_workdir(args.workdir)

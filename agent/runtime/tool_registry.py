@@ -79,6 +79,7 @@ class RuntimeToolRegistry:
             tools=self.runtime.tools,
             parent_session_id=self.runtime.session_id,
             skill_dirs=self.runtime.skill_dirs,
+            app_root=self.runtime.app_root,
             stream_callback=self.runtime.stream_callback,
             approval_callback=self.runtime.approval_callback,
         )

@@ -89,6 +89,7 @@ class TuiState:
         self.skills_text: str = "(none)"
         self.workspace_path: str = ""
         self.context_window_tokens: int = 0
+        self.restored_message_count: int = 0
         self.latest_usage: dict[str, int] = {}
         self.todo_manager: TodoManager | None = None
         self._counter = 0
@@ -116,6 +117,7 @@ class TuiState:
         skills_text: str,
         workspace_path: str = "",
         context_window_tokens: int = 0,
+        restored_message_count: int = 0,
         todo_manager: TodoManager | None = None,
     ) -> None:
         """Set the startup/session summary shown in the header."""
@@ -124,6 +126,7 @@ class TuiState:
         self.skills_text = skills_text or "(none)"
         self.workspace_path = workspace_path
         self.context_window_tokens = max(0, int(context_window_tokens or 0))
+        self.restored_message_count = max(0, int(restored_message_count or 0))
         self.status_line = "Ready for input"
         self.todo_manager = todo_manager
 

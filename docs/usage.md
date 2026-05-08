@@ -12,9 +12,21 @@ python main.py ~/project       # 指定工作区目录启动
 python main.py --silent        # 静默模式，自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
+python main.py --session-id abc --resume   # 恢复同一工作区下指定 session 的历史 messages
+python main.py --no-persist                # 禁用本地 session messages 持久化
 ```
 
 工作区使用位置参数指定，不提供 `--workdir`。如果不传工作区，Yoyo Agent 会使用启动命令时所在的当前目录。所有文件、Git、Shell、验证和审批 diff 都会限制在该工作区内。
+
+`sessions` 属于 yoyoagent 应用自身，而不是被操作项目的一部分。默认保存路径为：
+
+```text
+{app_root}/sessions/{workspace_hash}/{session_id}.json
+```
+
+其中 `workspace_hash = sha256(resolve(workdir))[:16]`。恢复时会校验 session 文件中的 `workdir` 与当前工作区一致，避免跨项目混用上下文。
+
+默认会保存会话 messages，但不会自动恢复旧历史；恢复需要显式传入 `--resume`。如果需要完全关闭落盘，使用 `--no-persist`。
 
 也可以通过环境变量启用静默审批：
 
@@ -23,6 +35,17 @@ YOYO_SILENT=true python main.py
 # 或
 YOYO_AUTO_APPROVE=true python main.py
 ```
+
+会话与技能相关环境变量：
+
+| 变量 | 功能 |
+|------|------|
+| `YOYO_APP_ROOT` | 覆盖 yoyoagent 应用根目录，默认是源码/发行目录 |
+| `YOYO_RUNTIME_DATA_DIR` | 覆盖运行数据目录，默认等于 `app_root` |
+| `YOYO_SESSION_DIR` | 覆盖 session messages 保存目录 |
+| `YOYO_SKILL_DIRS` | 追加额外技能目录，多个目录用逗号、换行或系统 path 分隔符分隔 |
+
+默认技能目录是 `{app_root}/skills`。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 

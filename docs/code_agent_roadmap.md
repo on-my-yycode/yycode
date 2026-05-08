@@ -64,7 +64,7 @@
 
 - Workspace / workdir 统一已进入实现阶段：命令入口已支持 `yoyoagent [workspace]`，runtime 会为 workspace-bound 工具注入 `workdir`，多数文件/git/bash/verify/搜索工具已支持显式 `workdir`。
 - 仍需完成最终收口：部分工具保留模块级 `WORKDIR = Path.cwd()` 作为 fallback，`edit_file` 仍是阻断占位工具，发行版本前需要继续去除 import-time cwd 依赖并补齐完整回归测试。
-- Session messages 持久化与恢复已完成方案设计，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+- Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 
 ## 总体路线
 
@@ -632,7 +632,7 @@ LSP manager 的基础 workspace 来自 `runtime.workdir`。目标文件必须先
 
 ## Phase 7.6: Session Messages 持久化与恢复
 
-状态：设计完成，待实现。详细设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+状态：首版已实现。详细设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 
 ### 背景
 
@@ -658,19 +658,19 @@ agent/session_store.py
 
 建议行为：
 
-- `Session.__init__` 增加 `persist_messages`、`resume`、`message_store` 参数。
+- `Session.__init__` 已增加 `app_root`、`runtime_data_dir`、`persist_messages`、`resume`、`message_store` 参数。
 - `SessionStore` 默认使用 yoyoagent 应用目录下的 `sessions/`，不写入被操作的 `workdir`。
 - session 文件按 `workspace_hash = sha256(resolve(workdir))[:16]` 分组，并保存原始 `workdir`。
 - 恢复时必须校验 session 文件中的 `workdir` 与当前 `Session.workdir` 一致。
 - `resume=True` 且存在同 session id 文件时，加载历史 messages。
 - `send()` / `send_stream()` 正常完成并裁剪内部 todo artifacts 后保存最终 `self.messages`。
 - 默认开启保存，但默认不自动恢复；恢复需显式传入 `--resume`。
-- CLI/TUI 增加 `--session-id`、`--resume`、`--no-persist`。
+- CLI/TUI 已增加 `--session-id`、`--resume`、`--no-persist`。
 
 目录归属需要和 skills 一起收口：
 
 - 目标发行模型中，`skills/` 和 `sessions/` 都属于 yoyoagent 应用目录 `app_root`。
-- 当前代码的默认 `skills` 仍按 `workdir/skills` 解析，和目标模型不一致，后续需要迁移为默认读取 `{app_root}/skills`。
+- 当前代码已迁移为默认读取 `{app_root}/skills`；`YOYO_SKILL_DIRS` 作为额外技能目录追加，项目内 `workdir/skills` 不再默认扫描。
 
 ### 风险与测试重点
 
@@ -762,9 +762,9 @@ MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 1. 实现 `yoyoagent [workspace]` 位置参数解析，默认使用当前 cwd
 2. 统一工具 workdir 注入和 workspace safe_path
 3. 补齐文件/git/bash/verify/subagent 的 workdir 回归测试
-4. 实现 `SessionStore` 文件持久化和 BaseMessage 序列化
-5. 在 `Session`、CLI 和 TUI 中接入 `--session-id`、`--resume`、`--no-persist`
-6. 补齐 session 保存、恢复、禁用持久化、损坏文件和隐私提示相关测试/文档
+4. 已实现 `SessionStore` 文件持久化和 BaseMessage 序列化
+5. 已在 `Session`、CLI 和 TUI 中接入 `--session-id`、`--resume`、`--no-persist`
+6. 已补齐 session 保存、恢复、禁用持久化和 skills 迁移相关测试/文档；后续继续补充损坏文件、列表命令和 fallback 测试
 7. 更新 LSP 基础类型和 JSON-RPC client
 8. 支持 Python language server 检测和懒启动
 9. 实现 document/workspace symbols

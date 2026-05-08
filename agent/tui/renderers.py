@@ -409,10 +409,12 @@ def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     if state is None:
         return brand_line
     workspace_text = _safe_text(state.workspace_path if state.workspace_path else "(not set)", max(12, W - 6))
+    restored = int(getattr(state, "restored_message_count", 0) or 0)
+    restored_text = f"  [#7f8794]Restored[/] [#cfd3dc]{restored} messages[/]" if restored else ""
     return "\n".join(
         [
             brand_line,
-            f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]",
+            f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]{restored_text}",
         ]
     )
 

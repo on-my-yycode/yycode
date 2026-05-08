@@ -27,6 +27,27 @@
 - 自动恢复最近会话的复杂选择 UI。
 - LangGraph checkpoint 级别的完整图状态恢复。
 
+## 当前实现状态
+
+状态：首版已实现。
+
+已完成：
+
+- 新增 `agent/app_paths.py`，集中解析 `app_root` 和 `runtime_data_dir`。
+- 新增 `agent/session_store.py`，实现 `FileSessionStore`、`SessionStoreError` 和 `workspace_hash()`。
+- `Session` 支持 `app_root`、`runtime_data_dir`、`persist_messages`、`resume` 和 `message_store`。
+- CLI/TUI 支持 `--session-id`、`--resume`、`--no-persist`。
+- `send()` / `send_stream()` 在任务结束并裁剪 todo artifacts 后保存 canonical messages。
+- `clear()` / `reset()` 会保存空历史。
+- 默认 skills 已迁移到 `{app_root}/skills`；`YOYO_SKILL_DIRS` 作为额外技能目录追加。
+
+仍未实现：
+
+- `--list-sessions` / `--resume-latest` / `--delete-session`。
+- `app_root/sessions` 不可写时 fallback 到 `~/.yoyoagent/sessions`。
+- 恢复后预压缩。
+- 多进程同 session 文件并发写协调。
+
 ## 推荐方案
 
 新增独立的 `SessionStore` / `MessageStore` 抽象，负责消息文件的读写、删除和列表。`Session` 只依赖接口，不直接关心文件格式。
@@ -91,20 +112,14 @@ YOYO_SESSION_DIR=/custom/session/dir
 
 也就是说，默认 skills 和 sessions 都是 yoyoagent 应用自身的一部分，而不是用户 `workdir` 的一部分。
 
-当前代码尚未完全符合这个模型：
-
-- `DEFAULT_SKILL_DIRS = ["skills"]`。
-- `SkillRegistry(workdir, ["skills"])` 会把相对路径解析为 `{workdir}/skills`。
-- 因此，当前默认 skills 实际来自被操作项目的 `workdir/skills`，而不是 yoyoagent 的 `app_root/skills`。
-
-后续若要与发行模型一致，应将默认 skill 搜索路径调整为：
+当前代码已经按这个模型收口：
 
 ```text
 默认技能目录：{app_root}/skills
 额外技能目录：YOYO_SKILL_DIRS 指定
 ```
 
-为兼容用户项目自定义技能，可以考虑后续增加显式配置，而不是默认读取 `workdir/skills`。
+也就是说，项目内的 `workdir/skills` 不再被默认扫描。如果某个项目确实需要自定义技能，应通过 `YOYO_SKILL_DIRS` 或后续配置文件显式指定。
 
 ## 数据格式
 
@@ -154,7 +169,7 @@ class SessionStore:
     def list_sessions(self) -> list[SessionRecord]: ...
 ```
 
-首版可以只实现文件版：
+首版已实现文件版：
 
 ```text
 FileSessionStore(app_root: Path, workdir: Path, root: Path | None = None)
@@ -278,13 +293,13 @@ Restored messages: N
 
 ## 实施步骤
 
-1. 新增 `agent/session_store.py`，实现文件版 store 和消息序列化。
-2. 在 `Session` 构造函数和 `from_config()` 中接入 `persist_messages`、`resume`、`message_store`。
-3. 在 `send()` / `send_stream()` 的最终消息更新和 todo artifact 裁剪后保存。
-4. 明确并实现 `clear()` / `reset()` 的持久化语义。
-5. 在 `main.py` 和 `agent/tui/runner.py` 增加 CLI/TUI 参数传递。
-6. 更新 README / usage 文档，说明 session id、恢复方式、存储路径和隐私提醒。
-7. 补充单元测试和集成测试。
+1. 新增 `agent/session_store.py`，实现文件版 store 和消息序列化。已完成。
+2. 在 `Session` 构造函数和 `from_config()` 中接入 `persist_messages`、`resume`、`message_store`。已完成。
+3. 在 `send()` / `send_stream()` 的最终消息更新和 todo artifact 裁剪后保存。已完成。
+4. 明确并实现 `clear()` / `reset()` 的持久化语义。已完成，当前语义为保存空历史。
+5. 在 `main.py` 和 `agent/tui/runner.py` 增加 CLI/TUI 参数传递。已完成。
+6. 更新 README / usage 文档，说明 session id、恢复方式、存储路径和隐私提醒。已完成。
+7. 补充单元测试和集成测试。已完成首版。
 
 ## 风险
 
@@ -294,13 +309,13 @@ Restored messages: N
 - `{app_root}/sessions/` 或用户配置的 session 目录如果被误同步/备份，可能泄露对话历史。
 - 多进程同时写同一 session 文件可能互相覆盖；首版可不支持并发写，但应采用临时文件 + 原子替换降低损坏概率。
 - 如果 `app_root/sessions` 不可写，需要提供清晰错误或 fallback 到用户数据目录。
-- 当前 skills 目录仍按 `workdir/skills` 解析，和目标发行模型不一致；实现 session 持久化前后需要单独规划 skills 目录迁移。
+- 旧行为中默认扫描 `workdir/skills`；当前已迁移到 `{app_root}/skills`，项目级技能需要通过显式额外目录配置。
 
 ## 待确认
 
 - 默认是否开启持久化：建议开启保存，但恢复必须显式 `--resume`。
 - `clear()` / `reset()` 对磁盘文件的精确定义。
-- 是否首版需要 `--list-sessions` / `--resume-latest`。
+- 是否需要 `--list-sessions` / `--resume-latest`。
 - `app_root` 如何解析：源码运行、便携发行和未来 pip 安装是否使用不同规则。
 - `app_root/sessions` 不可写时是否首版 fallback 到 `~/.yoyoagent/sessions`。
-- 默认 skills 是否从 `workdir/skills` 迁移到 `app_root/skills`，以及是否保留显式项目级技能扩展入口。
+- 是否增加配置文件形式的项目级技能扩展入口。

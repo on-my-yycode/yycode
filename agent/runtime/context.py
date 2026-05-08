@@ -31,6 +31,7 @@ class AgentRuntimeContext:
     workdir: Path
     session_id: str
     skill_dirs: list[str] | None = None
+    app_root: Path | None = None
     stream_callback: Optional[StreamEventCallback] = None
     approval_callback: Optional[ApprovalCallback] = None
     tools: list[dict] = field(default_factory=list)

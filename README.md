@@ -63,7 +63,10 @@ cp .env.example .env
 | `API_BASE` | 可选，自定义 API Base/Base URL | `https://api.openai.com/v1` |
 | `AI_MODEL` | 模型名称 | Anthropic 默认 `claude-3-5-sonnet-20241022`，OpenAI 默认 `gpt-4o` |
 | `YOYO_CONTEXT_WINDOW_TOKENS` | 可选，覆盖上下文窗口大小，用于 TUI/CLI 提示符统计；未设置时会按模型推断 | Claude `200000`，Doubao Code `224000`，GPT-4o/4.1/5 `128000` |
-| `YOYO_SKILL_DIRS` | 可选，额外技能目录，多个目录用逗号分隔 | `skills,../shared-skills` |
+| `YOYO_APP_ROOT` | 可选，覆盖 yoyoagent 应用根目录；默认是源码/发行目录 | `/path/to/yoyoagent` |
+| `YOYO_RUNTIME_DATA_DIR` | 可选，覆盖运行数据目录；默认等于 `app_root` | `/path/to/yoyoagent` |
+| `YOYO_SESSION_DIR` | 可选，覆盖 session messages 保存目录 | `~/.yoyoagent/sessions` |
+| `YOYO_SKILL_DIRS` | 可选，额外技能目录，多个目录用逗号分隔；默认技能目录是 `{app_root}/skills` | `../shared-skills` |
 | `YOYO_SILENT` / `YOYO_AUTO_APPROVE` | 可选，启用后自动批准高风险操作 | `true` |
 
 高级重试配置：
@@ -84,9 +87,13 @@ python main.py ~/project       # 指定工作区目录启动
 python main.py --silent        # 静默模式，自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
+python main.py --session-id abc --resume   # 恢复指定 session 的历史 messages
+python main.py --no-persist                # 禁用本地 session messages 持久化
 ```
 
 当前默认入口会启动 TUI 界面。工作区使用位置参数指定；如果不传，则使用启动命令时所在目录。上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
+
+会话 messages 默认保存到 yoyoagent 应用目录下的 `sessions/{workspace_hash}/{session_id}.json`，不会写入被操作项目。默认会保存但不会自动恢复；需要继续旧上下文时显式使用 `--session-id ... --resume`。
 
 ## 项目结构
 

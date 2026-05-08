@@ -49,6 +49,9 @@ class AgentTuiRunner:
         self.session = Session.from_config(
             workdir=getattr(self.args, "workdir", None),
             approval_callback=approval_callback,
+            session_id=getattr(self.args, "session_id", None),
+            persist_messages=not bool(getattr(self.args, "no_persist", False)),
+            resume=bool(getattr(self.args, "resume", False)),
         )
         self.session.stream_callback = self.handle_stream_event
         self.state.set_startup_info(
@@ -57,6 +60,7 @@ class AgentTuiRunner:
             skills_text=self._skills_text(),
             workspace_path=str(self.session.workdir),
             context_window_tokens=self.session.context_window_tokens,
+            restored_message_count=self.session.restored_message_count,
             todo_manager=self.session.todo_manager,
         )
 

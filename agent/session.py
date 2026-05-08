@@ -14,12 +14,14 @@ from langchain_core.messages import (
 )
 
 from agent.approval import ApprovalCallback, ApprovalDenied
+from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
 from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
-from agent.skills import DEFAULT_SKILL_DIRS, SkillRegistry, parse_skill_paths
+from agent.skills import SkillRegistry, parse_skill_paths
+from agent.session_store import FileSessionStore, SessionStore
 from agent.context_compressor import ContextCompressor
 from agent.streaming import StreamEvent, StreamEventCallback, StreamPrinter
 from agent.todo_manager import TodoManager
@@ -45,17 +47,34 @@ class Session:
         todo_manager: Optional[TodoManager] = None,
         session_id: Optional[str] = None,
         context_window_tokens: Optional[int] = None,
+        app_root: Optional[Path] = None,
+        runtime_data_dir: Optional[Path] = None,
+        persist_messages: bool = True,
+        resume: bool = False,
+        message_store: Optional[SessionStore] = None,
     ):
         self.id = session_id or str(uuid.uuid4())
         self.provider = provider
-        self.workdir = workdir or Path.cwd()
-        self.skill_dirs = list(DEFAULT_SKILL_DIRS if skill_dirs is None else skill_dirs)
+        self.workdir = (workdir or Path.cwd()).expanduser().resolve()
+        self.app_root = resolve_app_root(app_root)
+        self.runtime_data_dir = resolve_runtime_data_dir(self.app_root, runtime_data_dir)
+        self.skill_dirs = self._resolve_skill_dirs(skill_dirs)
         self.skill_registry = SkillRegistry(self.workdir, self.skill_dirs)
         self.skill_catalog_prompt = self.skill_registry.format_skill_catalog_prompt()
         self.system_prompt = system_prompt or self._default_system_prompt()
         if self.skill_catalog_prompt:
             self.system_prompt = f"{self.system_prompt}\n\n{self.skill_catalog_prompt}"
-        self.messages: list[BaseMessage] = []
+        self.persist_messages = persist_messages
+        self.message_store = message_store
+        if self.persist_messages and self.message_store is None:
+            session_root = None if os.environ.get("YOYO_SESSION_DIR") else self.runtime_data_dir / "sessions"
+            self.message_store = FileSessionStore(self.app_root, self.workdir, root=session_root)
+        self.messages: list[BaseMessage] = (
+            self.message_store.load(self.id)
+            if self.persist_messages and resume and self.message_store is not None
+            else []
+        )
+        self.restored_message_count = len(self.messages)
         self.stream_callback = stream_callback or (stream_printer or StreamPrinter()).callback
         self.approval_callback = approval_callback
         self._graph = None
@@ -70,6 +89,12 @@ class Session:
         self.context_compressor = ContextCompressor(
             context_window_tokens=self.context_window_tokens,
         )
+
+    def _resolve_skill_dirs(self, skill_dirs: Optional[Iterable[str]]) -> list[str]:
+        default_dir = str(self.app_root / "skills")
+        if skill_dirs is None:
+            return [default_dir]
+        return [default_dir, *[str(path) for path in skill_dirs]]
 
     def _default_system_prompt(self) -> str:
         """Get default system prompt."""
@@ -136,6 +161,11 @@ Final answer:
         session_id: Optional[str] = None,
         context_window_tokens: Optional[int] = None,
         approval_callback: Optional[ApprovalCallback] = None,
+        app_root: Optional[Path] = None,
+        runtime_data_dir: Optional[Path] = None,
+        persist_messages: bool = True,
+        resume: bool = False,
+        message_store: Optional[SessionStore] = None,
     ) -> "Session":
         """Create a Session from configuration parameters or environment variables."""
         provider_type = (provider_type or os.environ.get("PROVIDER", "anthropic")).lower()
@@ -172,6 +202,11 @@ Final answer:
             session_id=session_id,
             context_window_tokens=context_window_tokens,
             approval_callback=approval_callback,
+            app_root=app_root,
+            runtime_data_dir=runtime_data_dir,
+            persist_messages=persist_messages,
+            resume=resume,
+            message_store=message_store,
         )
 
     async def close(self) -> None:
@@ -190,6 +225,7 @@ Final answer:
                 self.workdir,
                 self.id,
                 self.skill_dirs,
+                self.app_root,
                 self.stream_callback,
                 self.approval_callback,
             )
@@ -198,6 +234,7 @@ Final answer:
     def reset(self) -> None:
         """Reset the session state."""
         self.messages = []
+        self._save_messages()
         self.stream_callback = StreamPrinter().callback
         self._graph = None  # Graph needs to be rebuilt as it binds to session state
         self.todo_manager.reset()
@@ -205,6 +242,7 @@ Final answer:
     def clear(self) -> None:
         """Clear message history only."""
         self.messages = []
+        self._save_messages()
 
     def add_message(self, message: BaseMessage) -> None:
         """Add a message to the history."""
@@ -307,6 +345,7 @@ Final answer:
             self.messages.append(self._llm_failed_message(exc))
         if completed_normally:
             self._prune_todo_artifacts(task_start_index)
+        self._save_messages()
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -330,6 +369,7 @@ Final answer:
             self.messages.append(self._llm_failed_message(exc))
         if completed_normally:
             self._prune_todo_artifacts(task_start_index)
+        self._save_messages()
         last_msg = self.messages[-1] if self.messages else None
         self.last_usage = self._extract_usage_from_message(last_msg)
         self._accumulate_usage_from_messages(self.messages[previous_message_count:])
@@ -482,6 +522,16 @@ Final answer:
                     ),
                 )
             )
+
+    def _save_messages(self) -> None:
+        """Persist canonical message history when configured."""
+        if not self.persist_messages or self.message_store is None:
+            return
+        self.message_store.save(
+            self.id,
+            self.messages,
+            metadata={"model": getattr(self.provider, "model", None)},
+        )
 
 
 def parse_context_window_tokens(value: Optional[str]) -> Optional[int]:

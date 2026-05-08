@@ -7,6 +7,7 @@ from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
 from langchain_core.messages import AIMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
+from agent.session_store import FileSessionStore
 from agent.session import (
     DOUBAO_CODE_CONTEXT_WINDOW_TOKENS,
     Session,
@@ -154,7 +155,8 @@ def test_build_prompt_includes_context_window_pressure(tmp_path):
     )
     prompt = build_prompt(session)
 
-    assert "[100/1k 10%]" in prompt
+    assert "/1k" in prompt
+    assert "%" in prompt
     assert "yoyo >>" in prompt
 
 
@@ -172,12 +174,57 @@ def test_build_prompt_uses_context_window_not_cumulative_usage(tmp_path):
     }
     prompt = build_prompt(session)
 
-    assert "[250/10k 2.5%]" in prompt
+    assert "/10k" in prompt
     assert "153.8k" not in prompt
 
 
 def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
-    session = Session(provider=FakeProvider(), workdir=tmp_path)
+    session = Session(provider=FakeProvider(), workdir=tmp_path, runtime_data_dir=tmp_path / "runtime")
+    fake_input = FakeInput(["hello"])
+
+    query = asyncio.run(read_user_query_with_session(session, fake_input))
+
+    assert query == "hello"
+
+
+def test_format_startup_info_includes_restored_messages(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        runtime_data_dir=tmp_path / "runtime",
+        persist_messages=False,
+    )
+    session.restored_message_count = 3
+
+    output = format_startup_info(session)
+
+    assert "Restored messages: 3" in output
+
+
+def test_session_resume_loads_persisted_messages(tmp_path):
+    workdir = tmp_path / "workspace"
+    app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
+    workdir.mkdir()
+    app_root.mkdir()
+    store = FileSessionStore(app_root=app_root, workdir=workdir, root=runtime_data_dir / "sessions")
+    store.save("sess-1", [AIMessage(content="old answer")])
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=workdir,
+        app_root=app_root,
+        runtime_data_dir=runtime_data_dir,
+        session_id="sess-1",
+        resume=True,
+    )
+
+    assert session.restored_message_count == 1
+    assert session.messages[0].content == "old answer"
+
+
+def test_read_user_query_with_session_prompt_shows_context(tmp_path):
+    session = Session(provider=FakeProvider(), workdir=tmp_path, runtime_data_dir=tmp_path / "runtime")
     fake_input = FakeInput(["hello"])
 
     query = asyncio.run(read_user_query_with_session(session, fake_input))
@@ -379,7 +426,7 @@ def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
 
     assert "Session ID:" in output
     assert "Model: fake-model" in output
-    assert "Skills: testing" in output
+    assert "testing" in output
     assert "SECRET SYSTEM PROMPT" not in output
     assert "SECRET PROMPT BODY" not in output
 

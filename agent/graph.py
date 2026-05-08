@@ -29,6 +29,7 @@ def create_runtime(
     workdir: Path,
     session_id: str,
     skill_dirs: list[str] | None = None,
+    app_root: Path | None = None,
     stream_callback: StreamEventCallback = None,
     approval_callback: ApprovalCallback = None,
 ) -> AgentRuntimeContext:
@@ -40,6 +41,7 @@ def create_runtime(
         workdir=workdir,
         session_id=session_id,
         skill_dirs=skill_dirs,
+        app_root=app_root,
         stream_callback=stream_callback,
         approval_callback=approval_callback,
         tools=TOOLS,
@@ -76,6 +78,7 @@ def create_tools_node(
     workdir: Path,
     session_id: str,
     skill_dirs: list[str] | None = None,
+    app_root: Path | None = None,
     stream_callback: StreamEventCallback = None,
     approval_callback: ApprovalCallback = None,
 ):
@@ -88,6 +91,7 @@ def create_tools_node(
             workdir=workdir,
             session_id=session_id,
             skill_dirs=skill_dirs,
+            app_root=app_root,
             stream_callback=stream_callback,
             approval_callback=approval_callback,
         )
@@ -101,6 +105,7 @@ def build_graph(
     workdir: Path,
     session_id: str,
     skill_dirs: list[str] | None = None,
+    app_root: Path | None = None,
     stream_callback: StreamEventCallback = None,
     approval_callback: ApprovalCallback = None,
 ):
@@ -112,6 +117,7 @@ def build_graph(
         workdir=workdir,
         session_id=session_id,
         skill_dirs=skill_dirs,
+        app_root=app_root,
         stream_callback=stream_callback,
         approval_callback=approval_callback,
     )

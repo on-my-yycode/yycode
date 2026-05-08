@@ -166,26 +166,63 @@ def test_skill_registry_formats_loaded_skills(tmp_path):
     assert "Always run focused tests." in output
 
 
-def test_session_uses_project_skills_directory_by_default(tmp_path):
-    skill_root = tmp_path / "skills"
+def test_session_uses_app_root_skills_directory_by_default(tmp_path):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    skill_root = app_root / "skills"
+    workdir.mkdir()
+    app_root.mkdir()
     skill_root.mkdir()
     (skill_root / "testing.md").write_text(
         "---\n"
         "name: testing\n"
-        'description: "Default skill directory works."\n'
+        'description: "App skill directory works."\n'
         "---\n\n"
         "Use focused tests.\n"
+    )
+    project_skill_root = workdir / "skills"
+    project_skill_root.mkdir()
+    (project_skill_root / "project.md").write_text(
+        "---\nname: project\ndescription: \"Should not load by default.\"\n---\n\nProject only.\n"
     )
 
     session = Session(
         provider=FakeProvider(),
-        workdir=tmp_path,
+        workdir=workdir,
+        app_root=app_root,
+        runtime_data_dir=tmp_path / "runtime",
+        persist_messages=False,
     )
 
-    assert session.skill_dirs == ["skills"]
+    assert session.skill_dirs == [str(skill_root)]
     assert "Available local skills:" in session.system_prompt
-    assert "- testing: Default skill directory works." in session.system_prompt
+    assert "- testing: App skill directory works." in session.system_prompt
+    assert "Should not load by default" not in session.system_prompt
     assert "Use focused tests." not in session.system_prompt
+
+
+def test_session_appends_explicit_extra_skill_dirs(tmp_path):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    extra = tmp_path / "extra-skills"
+    (app_root / "skills").mkdir(parents=True)
+    workdir.mkdir()
+    extra.mkdir()
+    (extra / "extra.md").write_text(
+        "---\nname: extra\ndescription: \"Extra skill.\"\n---\n\nExtra body.\n"
+    )
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=workdir,
+        app_root=app_root,
+        runtime_data_dir=tmp_path / "runtime",
+        skill_dirs=[str(extra)],
+        persist_messages=False,
+    )
+
+    assert session.skill_dirs == [str(app_root / "skills"), str(extra)]
+    assert "- extra: Extra skill." in session.system_prompt
 
 
 def test_subagent_prompt_mentions_skill_tools_without_parent_prompt(tmp_path):

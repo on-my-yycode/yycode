@@ -22,3 +22,6 @@ venv/
 
 # Local output artifacts
 output/
+
+# Local yoyoagent runtime data
+sessions/

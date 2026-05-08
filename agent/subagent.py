@@ -124,11 +124,13 @@ class SubagentRunner:
         tools: Optional[list[dict]] = None,
         parent_session_id: Optional[str] = None,
         skill_dirs: Optional[list[str]] = None,
+        app_root: Path | None = None,
         stream_callback: Optional[StreamEventCallback] = None,
         approval_callback: Optional[ApprovalCallback] = None,
     ):
         self.provider = provider
         self.workdir = workdir
+        self.app_root = app_root
         self.parent_system_prompt = parent_system_prompt
         self.parent_session_id = parent_session_id
         self.skill_registry = SkillRegistry(workdir, skill_dirs)
