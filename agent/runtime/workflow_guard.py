@@ -3,8 +3,86 @@
 from langchain_core.messages import HumanMessage
 
 from agent.runtime.context import AgentRuntimeContext, WorkflowState
-from agent.runtime.tool_events import tool_output_indicates_successful_write
+from agent.runtime.tool_events import file_paths_for_tool_call, tool_output_indicates_successful_write
 from agent.runtime.tool_registry import RuntimeToolRegistry
+
+
+CODE_EXTENSIONS = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".css",
+    ".cxx",
+    ".go",
+    ".h",
+    ".hpp",
+    ".html",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".kts",
+    ".m",
+    ".mm",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".scala",
+    ".scss",
+    ".sh",
+    ".swift",
+    ".ts",
+    ".tsx",
+    ".vue",
+}
+
+VERIFY_CONFIG_EXTENSIONS = {
+    ".gradle",
+    ".kts",
+    ".lock",
+    ".toml",
+    ".xml",
+}
+
+VERIFY_CONFIG_FILENAMES = {
+    ".eslintrc",
+    ".eslintrc.cjs",
+    ".eslintrc.js",
+    ".eslintrc.json",
+    ".prettierrc",
+    ".ruff.toml",
+    "Cargo.lock",
+    "Cargo.toml",
+    "build.gradle",
+    "build.gradle.kts",
+    "go.mod",
+    "go.sum",
+    "mypy.ini",
+    "package-lock.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pom.xml",
+    "pyproject.toml",
+    "pytest.ini",
+    "requirements-dev.txt",
+    "requirements.txt",
+    "setup.cfg",
+    "setup.py",
+    "tox.ini",
+    "tsconfig.json",
+    "yarn.lock",
+}
+
+VERIFY_CONFIG_SUFFIXES = {
+    ".csproj",
+    ".fsproj",
+    ".props",
+    ".sln",
+    ".targets",
+    ".vbproj",
+}
 
 
 class WorkflowGuard:
@@ -76,8 +154,9 @@ class WorkflowGuard:
             "Review the existing changes, then retry the write with the smallest safe patch."
         )
 
-    def update_after_tool(self, tool_name: str, output: str) -> bool:
+    def update_after_tool(self, tool_call, output: str) -> bool:
         """Update workflow state after a tool and return whether a diff event is needed."""
+        tool_name = tool_call.name
         if tool_name == "workspace_state":
             self.state.workspace_state_checked = True
         if tool_name == "git_diff":
@@ -85,7 +164,7 @@ class WorkflowGuard:
         if tool_name == "verify":
             self.state.needs_verify = False
         if self.registry.is_workspace_write(tool_name) and tool_output_indicates_successful_write(output):
-            self.state.needs_verify = True
+            self.state.needs_verify = paths_need_code_verification(file_paths_for_tool_call(tool_call))
             return True
         return False
 
@@ -105,3 +184,22 @@ class WorkflowGuard:
                 )
             )
         return additional_messages
+
+
+def paths_need_code_verification(paths: list[str]) -> bool:
+    """Return whether changed paths should trigger code verification."""
+    if not paths:
+        return True
+    return any(path_needs_code_verification(path) for path in paths)
+
+
+def path_needs_code_verification(path: str) -> bool:
+    """Return whether a single path is code or known build/test configuration."""
+    normalized = path.replace("\\", "/").rstrip("/")
+    name = normalized.rsplit("/", 1)[-1]
+    if name in VERIFY_CONFIG_FILENAMES:
+        return True
+    if any(name.endswith(suffix) for suffix in VERIFY_CONFIG_SUFFIXES):
+        return True
+    extension = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return extension in CODE_EXTENSIONS or extension in VERIFY_CONFIG_EXTENSIONS

@@ -5,6 +5,7 @@ import os
 import argparse
 import asyncio
 import contextlib
+from pathlib import Path
 
 
 from dotenv import load_dotenv
@@ -169,6 +170,16 @@ def format_startup_info(session: Session) -> str:
     )
 
 
+def resolve_startup_workdir(raw_workdir: str | None) -> Path:
+    """Resolve and validate the optional positional workspace argument."""
+    workdir = Path(raw_workdir).expanduser().resolve() if raw_workdir else Path.cwd().resolve()
+    if not workdir.exists():
+        raise SystemExit(f"Error: workspace does not exist: {workdir}")
+    if not workdir.is_dir():
+        raise SystemExit(f"Error: workspace is not a directory: {workdir}")
+    return workdir
+
+
 async def run_agent_task(session: Session, query: str) -> bool:
     """Run one agent task and let Ctrl+C cancel the task without exiting the CLI."""
     task = asyncio.create_task(session.send(query))
@@ -189,6 +200,11 @@ def main() -> None:
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Yoyo Agent")
     parser.add_argument(
+        "workdir",
+        nargs="?",
+        help="Workspace directory. Defaults to the current directory.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging to console",
@@ -204,6 +220,7 @@ def main() -> None:
         help="Run without approval prompts; risky actions are automatically approved",
     )
     args = parser.parse_args()
+    args.workdir = resolve_startup_workdir(args.workdir)
 
     # Set up logging
     setup_logging(debug=args.debug, log_to_file=args.log_file)

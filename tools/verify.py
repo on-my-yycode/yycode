@@ -3,60 +3,63 @@
 import shlex
 import subprocess
 import time
+from pathlib import Path
 
-from .read_file import WORKDIR, safe_path
+from .read_file import WORKDIR, safe_path, workspace_for
 
 MAX_OUTPUT_CHARS = 50_000
 VERIFY_TIMEOUT_SECONDS = 300
 
 
-def _target_args(target: str) -> list[str]:
+def _target_args(target: str, workdir: Path | str | None = None) -> list[str]:
     if not target:
         return []
     path_part = target.split("::", 1)[0]
     if path_part:
-        safe_path(path_part)
+        safe_path(path_part, workdir)
     return [target]
 
 
-def _has_file(*names: str) -> bool:
-    return any((WORKDIR / name).exists() for name in names)
+def _has_file(workdir: Path | str | None, *names: str) -> bool:
+    workspace = workspace_for(workdir)
+    return any((workspace.root / name).exists() for name in names)
 
 
-def _pyproject_contains(marker: str) -> bool:
-    pyproject = WORKDIR / "pyproject.toml"
+def _pyproject_contains(marker: str, workdir: Path | str | None = None) -> bool:
+    pyproject = workspace_for(workdir).root / "pyproject.toml"
     return pyproject.exists() and marker in pyproject.read_text()
 
 
-def _command_for(kind: str, target: str) -> list[str] | None:
-    extra = _target_args(target)
+def _command_for(kind: str, target: str, workdir: Path | str | None = None) -> list[str] | None:
+    extra = _target_args(target, workdir)
     if kind in {"all", "tests"}:
         return ["pytest", *extra]
     if kind == "lint":
-        if _has_file("ruff.toml", ".ruff.toml") or _pyproject_contains("[tool.ruff"):
+        if _has_file(workdir, "ruff.toml", ".ruff.toml") or _pyproject_contains("[tool.ruff", workdir):
             return ["ruff", "check", *(extra or ["."])]
         return None
     if kind == "typecheck":
-        if _has_file("mypy.ini", ".mypy.ini") or _pyproject_contains("[tool.mypy"):
+        if _has_file(workdir, "mypy.ini", ".mypy.ini") or _pyproject_contains("[tool.mypy", workdir):
             return ["mypy", *(extra or ["."])]
-        if _has_file("pyrightconfig.json"):
+        if _has_file(workdir, "pyrightconfig.json"):
             return ["pyright", *(extra or ["."])]
         return None
     raise ValueError(f"unsupported verify kind: {kind}")
 
 
-def verify(kind: str = "all", target: str = "") -> str:
+def verify(kind: str = "all", target: str = "", workdir: Path | str | None = None) -> str:
     """Run a verification check and return command output."""
     try:
+        workspace = workspace_for(workdir)
         kind = (kind or "all").strip().lower()
-        command = _command_for(kind, target or "")
+        command = _command_for(kind, target or "", workspace.root)
         if command is None:
             return f"No {kind} configuration found."
 
         started = time.monotonic()
         result = subprocess.run(
             command,
-            cwd=WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=VERIFY_TIMEOUT_SECONDS,

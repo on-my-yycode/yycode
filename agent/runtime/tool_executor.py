@@ -89,12 +89,12 @@ class ToolExecutor:
             if tc.name == "todo":
                 await self._emit_tool_result(
                     output,
-                    title="Task State",
+                    title="Task Plan",
                     detail="Updated todo items and task memory",
                     phase="planning",
                 )
 
-            should_emit_diff = self.workflow_guard.update_after_tool(tc.name, output)
+            should_emit_diff = self.workflow_guard.update_after_tool(tc, output)
             if should_emit_diff:
                 await self._emit_tool_result(diff_preview_from_output(output))
                 await self._emit_file_changed(tc)

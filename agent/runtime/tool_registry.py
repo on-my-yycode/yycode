@@ -1,5 +1,6 @@
 """Runtime tool registry and handler binding."""
 
+from functools import wraps
 from typing import Callable, Optional
 
 from agent.runtime.context import AgentRuntimeContext
@@ -13,6 +14,21 @@ DEFAULT_TOOL_EXECUTION = {
     "side_effects": "unknown",
     "concurrency": "serial",
     "timeout_seconds": DEFAULT_TOOL_TIMEOUT_SECONDS,
+}
+
+WORKSPACE_BOUND_TOOLS = {
+    "read_file",
+    "read_many_files",
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "grep",
+    "list_files",
+    "git_show",
+    "git_diff",
+    "workspace_state",
+    "verify",
+    "bash",
 }
 
 
@@ -38,7 +54,20 @@ class RuntimeToolRegistry:
             return lambda names: self.skill_registry.format_loaded_skills(names)
         if tool_name == "subagent":
             return self.create_subagent_runner().run
-        return self.runtime.tool_handlers.get(tool_name)
+        handler = self.runtime.tool_handlers.get(tool_name)
+        if handler is not None and tool_name in WORKSPACE_BOUND_TOOLS:
+            return self._bind_workdir(handler)
+        return handler
+
+    def _bind_workdir(self, handler: Callable) -> Callable:
+        """Inject runtime workdir into workspace-bound tools without exposing it to models."""
+
+        @wraps(handler)
+        def wrapped(*args, **kwargs):
+            kwargs.setdefault("workdir", self.runtime.workdir)
+            return handler(*args, **kwargs)
+
+        return wrapped
 
     def create_subagent_runner(self) -> SubagentRunner:
         """Create a subagent runner bound to the current runtime."""

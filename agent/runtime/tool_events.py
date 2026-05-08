@@ -112,7 +112,7 @@ def format_tool_event_metadata(tc) -> dict:
         items = args.get("items") or []
         active = next((item for item in items if item.get("status") == "in_progress"), None)
         return {
-            "title": "Update task state",
+            "title": "Update task plan",
             "detail": active.get("text", "") if active else f"{len(items)} item(s)",
             "phase": "planning",
             "tool_name": tool_name,

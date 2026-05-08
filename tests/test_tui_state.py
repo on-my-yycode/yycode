@@ -539,7 +539,7 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
             source="main",
             session_id="sess-1",
             event_type="tool_end",
-            title="Update task state",
+            title="Update task plan",
             detail="1 item(s)",
             status="completed",
             tool_name="todo",
@@ -550,7 +550,7 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
             source="main",
             session_id="sess-1",
             event_type="tool_result",
-            title="Task State",
+            title="Task Plan",
             content=(
                 "Task State:\n"
                 "----------------------------------------\n"
@@ -565,7 +565,7 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
     transcript = render_timeline_lines(state)
 
     assert "Tool returned" not in transcript
-    assert "● Task State" in transcript
+    assert "● Task Plan" in transcript
     assert "1/2 done" in transcript
     assert "current" in transcript
     assert "Patch" in transcript

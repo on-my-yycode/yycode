@@ -3,28 +3,35 @@
 import subprocess
 from pathlib import Path
 
-from .read_file import WORKDIR, safe_path
+from .read_file import workspace_for
 
+WORKDIR = Path.cwd()
 MAX_OUTPUT_CHARS = 50_000
 
 
-def _relative_path(path: str) -> str:
-    return str(safe_path(path).relative_to(WORKDIR))
+def _relative_path(path: str, workdir: Path | str | None = None) -> str:
+    workspace = workspace_for(workdir or WORKDIR)
+    return str(workspace.safe_path(path).relative_to(workspace.root))
 
 
-def git_diff(paths: list[str] | None = None, staged: bool = False) -> str:
+def git_diff(
+    paths: list[str] | None = None,
+    staged: bool = False,
+    workdir: Path | str | None = None,
+) -> str:
     """Return git diff for workspace-relative paths."""
     try:
+        workspace = workspace_for(workdir or WORKDIR)
         command = ["git", "diff"]
         if staged:
             command.append("--cached")
         command.append("--")
         if paths:
-            command.extend(_relative_path(path) for path in paths)
+            command.extend(_relative_path(path, workdir) for path in paths)
 
         result = subprocess.run(
             command,
-            cwd=WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=30,

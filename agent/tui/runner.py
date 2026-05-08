@@ -46,7 +46,10 @@ class AgentTuiRunner:
         """Create the underlying agent session."""
         silent_mode = bool(getattr(self.args, "silent", False))
         approval_callback = auto_approval_callback if silent_mode else self.approval_adapter.callback
-        self.session = Session.from_config(approval_callback=approval_callback)
+        self.session = Session.from_config(
+            workdir=getattr(self.args, "workdir", None),
+            approval_callback=approval_callback,
+        )
         self.session.stream_callback = self.handle_stream_event
         self.state.set_startup_info(
             session_id=self.session.id,
@@ -275,15 +278,34 @@ def _changed_files_from_diff(diff: str) -> list[dict]:
             current["removed"] += 1
     if current is not None:
         files.append(current)
+    return _merge_changed_file_sections(files)
+
+
+def _merge_changed_file_sections(files: list[dict]) -> list[dict]:
+    """Merge repeated diff sections for the same path while preserving section content."""
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for item in files:
+        if not item.get("added") and not item.get("removed"):
+            continue
+        path = str(item.get("path", ""))
+        if not path:
+            continue
+        if path not in merged:
+            merged[path] = {"path": path, "added": 0, "removed": 0, "diffs": []}
+            order.append(path)
+        merged_item = merged[path]
+        merged_item["added"] += int(item.get("added", 0) or 0)
+        merged_item["removed"] += int(item.get("removed", 0) or 0)
+        merged_item["diffs"].append("\n".join(item.get("lines", [])))
     return [
         {
-            "path": item["path"],
-            "added": item["added"],
-            "removed": item["removed"],
-            "diff": "\n".join(item["lines"]),
+            "path": merged[path]["path"],
+            "added": merged[path]["added"],
+            "removed": merged[path]["removed"],
+            "diff": "\n\n".join(diff for diff in merged[path]["diffs"] if diff),
         }
-        for item in files
-        if item["added"] or item["removed"]
+        for path in order
     ]
 
 

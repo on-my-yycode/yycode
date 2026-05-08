@@ -1,27 +1,30 @@
 """Git show inspection tool."""
 
 import subprocess
+from pathlib import Path
 
 from . import read_file
 
 MAX_OUTPUT_CHARS = 50_000
 
 
-def _relative_path(path: str) -> str:
-    return str(read_file.safe_path(path).relative_to(read_file.WORKDIR))
+def _relative_path(path: str, workdir: Path | str | None = None) -> str:
+    workspace = read_file.workspace_for(workdir)
+    return str(workspace.safe_path(path).relative_to(workspace.root))
 
 
-def git_show(ref: str = "HEAD", path: str = "") -> str:
+def git_show(ref: str = "HEAD", path: str = "", workdir: Path | str | None = None) -> str:
     """Show a git object or a file at a git ref."""
     try:
+        workspace = read_file.workspace_for(workdir)
         command = ["git", "show", "--no-ext-diff", "--color=never"]
         if path:
-            command.append(f"{ref}:{_relative_path(path)}")
+            command.append(f"{ref}:{_relative_path(path, workdir)}")
         else:
             command.append(ref)
         result = subprocess.run(
             command,
-            cwd=read_file.WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=30,

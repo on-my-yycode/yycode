@@ -5,11 +5,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from .read_file import WORKDIR, safe_path
+from .read_file import safe_path, workspace_for
 from .safety import ApprovalRequired, approval_required
 
 MAX_PATCH_CHARS = 100_000
 MAX_REPLACEMENT_LINES = 80
+WORKDIR = Path.cwd()
 
 
 def _strip_fence(patch: str) -> str:
@@ -46,17 +47,18 @@ def _changed_paths(patch: str) -> set[str]:
     return paths
 
 
-def _validate_paths(paths: set[str]) -> None:
+def _validate_paths(paths: set[str], workdir: Path | str | None = None) -> None:
+    workdir = workdir or WORKDIR
     if not paths:
         raise ValueError("no changed paths found in patch")
     for path in paths:
         if Path(path).is_absolute() or ".." in Path(path).parts:
             raise ValueError(f"path escapes workspace: {path}")
-        safe_path(path)
+        safe_path(path, workdir)
 
 
-def _read_snapshot(path: str) -> str:
-    fp = safe_path(path)
+def _read_snapshot(path: str, workdir: Path | str | None = None) -> str:
+    fp = safe_path(path, workdir or WORKDIR)
     if not fp.exists():
         return ""
     try:
@@ -65,10 +67,14 @@ def _read_snapshot(path: str) -> str:
         return "<binary or non-utf8 file>"
 
 
-def _format_operation_diff(action: str, before_by_path: dict[str, str]) -> str:
+def _format_operation_diff(
+    action: str,
+    before_by_path: dict[str, str],
+    workdir: Path | str | None = None,
+) -> str:
     sections = _diff_sections(
         {
-            path: (before, _read_snapshot(path))
+            path: (before, _read_snapshot(path, workdir or WORKDIR))
             for path, before in before_by_path.items()
         }
     )
@@ -103,9 +109,14 @@ def _format_preview_diff(before_after_by_path: dict[str, tuple[str, str]]) -> st
     return "\n".join(sections)
 
 
-def _preview_replacement(path: str, old_text: str, new_text: str) -> str:
+def _preview_replacement(
+    path: str,
+    old_text: str,
+    new_text: str,
+    workdir: Path | str | None = None,
+) -> str:
     try:
-        fp = safe_path(path)
+        fp = safe_path(path, workdir or WORKDIR)
         content = fp.read_text()
     except Exception as exc:
         return f"Error: {exc}"
@@ -120,12 +131,13 @@ def preview_apply_patch_diff(
     path: str = "",
     old_text: str = "",
     new_text: str = "",
+    workdir: Path | str | None = None,
 ) -> str:
     """Return the diff that apply_patch would apply without modifying files."""
     if path or old_text or new_text:
         if not path or not old_text:
             return ""
-        return _preview_replacement(path, old_text, new_text)
+        return _preview_replacement(path, old_text, new_text, workdir or WORKDIR)
 
     patch_text = _strip_fence(patch)
     if not patch_text.strip() or patch_text.lstrip().startswith("*** Begin Patch"):
@@ -134,7 +146,7 @@ def preview_apply_patch_diff(
         return ""
     try:
         changed_paths = _changed_paths(patch_text)
-        _validate_paths(changed_paths)
+        _validate_paths(changed_paths, workdir or WORKDIR)
     except Exception:
         return ""
     return patch_text.strip()
@@ -151,8 +163,13 @@ def _replacement_is_too_large(old_text: str, new_text: str) -> bool:
     )
 
 
-def _apply_replacement(path: str, old_text: str, new_text: str) -> str:
-    fp = safe_path(path)
+def _apply_replacement(
+    path: str,
+    old_text: str,
+    new_text: str,
+    workdir: Path | str | None = None,
+) -> str:
+    fp = safe_path(path, workdir or WORKDIR)
     content = fp.read_text()
     if old_text not in content:
         return f"Error: old_text not found in {path}"
@@ -168,7 +185,7 @@ def _apply_replacement(path: str, old_text: str, new_text: str) -> str:
         )
     before_by_path = {path: content}
     fp.write_text(content.replace(old_text, new_text, 1))
-    return _format_operation_diff(f"Applied replacement patch to {path}.", before_by_path)
+    return _format_operation_diff(f"Applied replacement patch to {path}.", before_by_path, workdir)
 
 
 def _edit_approval_required(paths: list[str]) -> str:
@@ -187,15 +204,17 @@ def apply_patch(
     old_text: str = "",
     new_text: str = "",
     approved: bool = False,
+    workdir: Path | str | None = None,
 ) -> str:
     """Apply a unified diff or exact replacement patch after path validation."""
     try:
+        workspace = workspace_for(workdir or WORKDIR)
         if path or old_text or new_text:
             if not path or not old_text:
                 return "Error: path and old_text are required for replacement patches"
             if not approved:
                 return _edit_approval_required([path])
-            return _apply_replacement(path, old_text, new_text)
+            return _apply_replacement(path, old_text, new_text, workspace.root)
 
         patch_text = _strip_fence(patch)
         if not patch_text.strip():
@@ -206,15 +225,15 @@ def apply_patch(
             return f"Error: Patch exceeds {MAX_PATCH_CHARS} characters"
 
         changed_paths = _changed_paths(patch_text)
-        _validate_paths(changed_paths)
+        _validate_paths(changed_paths, workspace.root)
         if not approved:
             return _edit_approval_required(sorted(changed_paths))
-        before_by_path = {path: _read_snapshot(path) for path in sorted(changed_paths)}
+        before_by_path = {path: _read_snapshot(path, workspace.root) for path in sorted(changed_paths)}
 
         check = subprocess.run(
             ["git", "apply", "--check", "--whitespace=nowarn", "-"],
             input=patch_text,
-            cwd=WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=60,
@@ -226,7 +245,7 @@ def apply_patch(
         result = subprocess.run(
             ["git", "apply", "--whitespace=nowarn", "-"],
             input=patch_text,
-            cwd=WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=60,
@@ -235,7 +254,7 @@ def apply_patch(
             output = (result.stdout + result.stderr).strip()
             return f"Error: {output or 'git apply failed'}"
 
-        return _format_operation_diff("Applied patch.", before_by_path)
+        return _format_operation_diff("Applied patch.", before_by_path, workspace.root)
     except subprocess.TimeoutExpired:
         return "Error: Timeout"
     except ApprovalRequired as exc:

@@ -5,6 +5,8 @@ import subprocess
 from tools import TOOL_HANDLERS, TOOLS
 from tools.git_diff import git_diff
 from tools.workspace_state import workspace_state
+from tools.bash import bash
+from tools.read_file import read_file
 
 
 def _git(repo, *args):
@@ -67,3 +69,20 @@ def test_git_diff_blocks_workspace_escape(tmp_path, monkeypatch):
     result = git_diff(paths=["../outside.txt"])
 
     assert result.startswith("Error:")
+
+
+def test_tools_use_explicit_workdir_even_when_cwd_differs(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    other = tmp_path / "other"
+    repo.mkdir()
+    other.mkdir()
+    _init_repo(repo)
+    (repo / "tracked.txt").write_text("hello\nchanged\n")
+    (repo / "note.txt").write_text("from repo\n")
+    (other / "note.txt").write_text("from other\n")
+    monkeypatch.chdir(other)
+
+    assert read_file("note.txt", workdir=repo) == "from repo"
+    assert "tracked.txt" in workspace_state(workdir=repo)
+    assert "+changed" in git_diff(paths=["tracked.txt"], workdir=repo)
+    assert str(repo) in bash("pwd", workdir=repo)

@@ -1,5 +1,7 @@
 """Runtime approval orchestration."""
 
+from pathlib import Path
+
 from agent.approval import (
     ApprovalRequest,
     ApprovalCallback,
@@ -21,17 +23,19 @@ class ApprovalService:
         stream_callback: StreamEventCallback | None = None,
         session_id: str = "",
         source: str = "main",
+        workdir: Path | str | None = None,
     ):
         self.approval_callback = approval_callback
         self.workflow_state = workflow_state
         self.stream_callback = stream_callback
         self.session_id = session_id
         self.source = source
+        self.workdir = workdir
 
     async def approve(self, tool_name: str, args: dict | None) -> dict:
         """Return tool args after approval, injecting approved=true when needed."""
         args = dict(args or {})
-        request = approval_request_for_tool(tool_name, args)
+        request = approval_request_for_tool(tool_name, args, workdir=self.workdir)
         if request is None:
             return args
 

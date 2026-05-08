@@ -7,6 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.approval import ApprovalDenied, approval_request_for_tool
+from agent.runtime.workflow_guard import path_needs_code_verification
 from agent.runtime.tool_events import file_paths_for_tool_call
 from agent.graph import create_tools_node, execute_tool_calls
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
@@ -214,7 +215,7 @@ def test_todo_tool_emits_task_state_result_event(tmp_path):
 
     result_events = [event for event in events if event.event_type == "tool_result"]
     assert len(result_events) == 1
-    assert result_events[0].title == "Task State"
+    assert result_events[0].title == "Task Plan"
     assert "[X] [1] Inspect" in result_events[0].content
     assert "[~] [2] Patch" in result_events[0].content
     assert "Goal: Restore task display" in result_events[0].content
@@ -231,8 +232,8 @@ def test_tools_node_passes_default_tool_timeouts(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "agent.graph.TOOL_HANDLERS",
         {
-            "read_file": lambda path: "read",
-            "bash": lambda command: "bash",
+            "read_file": lambda **kwargs: "read",
+            "bash": lambda **kwargs: "bash",
         },
     )
     monkeypatch.setattr(
@@ -306,6 +307,47 @@ def _tool_def(name, side_effects, concurrency="serial", timeout_seconds=30):
     }
 
 
+def test_runtime_injects_workdir_into_workspace_bound_tools(tmp_path, monkeypatch):
+    captured = {}
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return handler(**kwargs)
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "read_file": lambda **kwargs: captured.__setitem__("read_file", kwargs) or "read",
+            "bash": lambda **kwargs: captured.__setitem__("bash", kwargs) or "bash",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("read_file", "read_only", "safe"),
+            _tool_def("bash", "process", "serial", 130),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="read_file", args={"path": "x"}),
+        ToolCall(id="2", name="bash", args={"command": "pwd"}),
+    ]
+
+    asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert captured["read_file"]["workdir"] == tmp_path
+    assert captured["bash"]["workdir"] == tmp_path
+    assert "workdir" not in ai_msg.additional_kwargs["tool_calls_data"][0].args
+
+
 def test_tools_node_blocks_workspace_write_until_preflight(tmp_path, monkeypatch):
     captured = []
 
@@ -319,7 +361,7 @@ def test_tools_node_blocks_workspace_write_until_preflight(tmp_path, monkeypatch
         {
             "workspace_state": lambda: "state",
             "git_diff": lambda: "diff",
-            "apply_patch": lambda patch: "patched",
+            "apply_patch": lambda **kwargs: "patched",
         },
     )
     monkeypatch.setattr(
@@ -374,7 +416,7 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
         {
             "workspace_state": lambda: "state",
             "git_diff": lambda: "diff",
-            "apply_patch": lambda patch: "patched",
+            "apply_patch": lambda **kwargs: "patched",
         },
     )
     monkeypatch.setattr(
@@ -443,6 +485,92 @@ def test_tools_node_allows_write_after_preflight_and_reminds_verify(tmp_path, mo
     file_changed_events = [event for event in events if event.event_type == "file_changed"]
     assert len(file_changed_events) == 1
     assert file_changed_events[0].title == "File changed"
+
+
+def test_tools_node_skips_verify_reminder_for_document_only_write(tmp_path, monkeypatch):
+    captured = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        captured.append(tool_name)
+        if tool_name == "apply_patch":
+            return "Applied patch.\n\ndiff:\n@@ -1 +1 @@\n-old\n+new"
+        return f"{tool_name}:ok"
+
+    async def approve(_request):
+        return True
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda **kwargs: "state",
+            "git_diff": lambda **kwargs: "diff",
+            "apply_patch": lambda **kwargs: "patched",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("apply_patch", "workspace_write", "serial", 60),
+            _tool_def("verify", "process", "serial", 300),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        approval_callback=approve,
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+        ToolCall(
+            id="3",
+            name="apply_patch",
+            args={
+                "patch": "\n".join(
+                    [
+                        "diff --git a/docs/usage.md b/docs/usage.md",
+                        "--- a/docs/usage.md",
+                        "+++ b/docs/usage.md",
+                        "@@ -1 +1 @@",
+                        "-old",
+                        "+new",
+                    ]
+                )
+            },
+        ),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert captured == ["workspace_state", "git_diff", "apply_patch"]
+    assert [message.name for message in result["messages"]] == [
+        "workspace_state",
+        "git_diff",
+        "apply_patch",
+    ]
+    assert not any(
+        isinstance(message, HumanMessage) and "Run verify" in message.content
+        for message in result["messages"]
+    )
+
+
+def test_path_needs_code_verification_classifies_docs_and_configs():
+    assert path_needs_code_verification("docs/usage.md") is False
+    assert path_needs_code_verification("docs/diagram.drawio") is False
+    assert path_needs_code_verification("assets/screenshot.png") is False
+    assert path_needs_code_verification("assets/generated.snapshot") is False
+    assert path_needs_code_verification("config/random.json") is False
+    assert path_needs_code_verification("agent/session.py") is True
+    assert path_needs_code_verification("pyproject.toml") is True
+    assert path_needs_code_verification("package.json") is True
+    assert path_needs_code_verification("src/app.csproj") is True
 
 
 def test_tools_node_reuses_approval_for_same_action_and_path(tmp_path, monkeypatch):
@@ -640,7 +768,7 @@ def test_tools_node_raises_approval_denied_for_rejected_write(tmp_path, monkeypa
         {
             "workspace_state": lambda: "state",
             "git_diff": lambda: "diff",
-            "apply_patch": lambda patch: "patched",
+            "apply_patch": lambda **kwargs: "patched",
         },
     )
     monkeypatch.setattr(
@@ -701,7 +829,7 @@ def test_tools_node_requires_apply_patch_for_existing_file_write(tmp_path, monke
         {
             "workspace_state": lambda: "state",
             "git_diff": lambda: "diff",
-            "write_file": lambda path, content: "wrote",
+            "write_file": lambda **kwargs: "wrote",
         },
     )
     monkeypatch.setattr(
@@ -755,7 +883,7 @@ def test_tools_node_allows_write_file_for_new_file(tmp_path, monkeypatch):
         {
             "workspace_state": lambda: "state",
             "git_diff": lambda: "diff",
-            "write_file": lambda path, content: "wrote",
+            "write_file": lambda **kwargs: "wrote",
         },
     )
     monkeypatch.setattr(

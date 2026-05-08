@@ -272,7 +272,7 @@ class SubagentRunner:
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
         try:
-            request = approval_request_for_tool(tool_name, kwargs)
+            request = approval_request_for_tool(tool_name, kwargs, workdir=self.workdir)
         except ApprovalTargetMissing as exc:
             await self._emit_tool_blocked(tool_name, str(exc))
             return str(exc)

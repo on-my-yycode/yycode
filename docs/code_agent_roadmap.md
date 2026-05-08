@@ -27,13 +27,16 @@
 - 工具超时控制。
 - 工具执行 metadata：副作用、并发策略、默认超时。
 - 技能按需加载。
+- TUI 时间流：结构化工具活动、Markdown/代码高亮、任务计划面板、文件变更摘要和 diff 查看器。
+- TUI 审批交互：底部内联审批、审批前 diff preview、批准/拒绝快捷键提示。
+- Task State 历史治理：任务完成后裁剪内部 todo 工具调用，降低后续上下文污染。
 
 主要欠缺：
 
 - 更强代码导航工具。
+- Session messages 持久化与恢复，设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 - 长任务摘要记忆。
-- 安全审批机制。
-- 安全审批机制的完整交互 UI。
+- 更高级的上下文压缩策略，例如对较早对话做摘要压缩。
 - 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
 - 本地 evals。
 
@@ -50,7 +53,18 @@
 - 写入类工具执行后，workflow guard 会追加验证提醒，推动模型先运行 `verify` 再最终回复。
 - 测试覆盖工具注册、metadata、并发调度、git 状态、diff、patch、verify 和 subagent 回归。
 - Phase 5 基础代码理解工具已实现：`list_files`、`read_many_files`、Python `grep`、`git_show`。
-- Phase 7 v1 已实现：危险 bash/git 命令、删除 patch、文件创建/编辑返回 `approval_required` 阻断信息；主会话和 subagent 的写入工具会在控制台请求用户审批后才执行，用户拒绝后终止本轮任务。
+- Phase 7 v1 已实现：危险 bash/git 命令、删除 patch、文件创建/编辑会在 runtime 发起审批；主会话和 subagent 的写入工具会在用户批准后才临时注入 `approved=true` 执行。
+- TUI 审批 UI 已实现：时间流中先展示完整 diff preview，底部输入区展示内联审批提示，用户可以用 `Y`/`Enter` 批准或 `N`/`Esc` 拒绝。
+- 写入审批已补充目标文件校验：如果文件编辑请求无法识别目标文件，不弹出审批，也不阻塞整轮任务；系统会把可修正的工具结果返回给模型，让模型用明确路径或合法 diff 重试。
+- TUI 时间流已升级为结构化分组展示：探索、搜索、编辑、验证、任务状态和文件变更摘要会以更适合阅读的层次输出。
+- `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
+- 会话历史治理已实现基础版：任务正常完成后裁剪内部 todo 工具调用和工具结果，减少下一个任务被旧 Task State 污染。
+
+待校准：
+
+- Workspace / workdir 统一已进入实现阶段：命令入口已支持 `yoyoagent [workspace]`，runtime 会为 workspace-bound 工具注入 `workdir`，多数文件/git/bash/verify/搜索工具已支持显式 `workdir`。
+- 仍需完成最终收口：部分工具保留模块级 `WORKDIR = Path.cwd()` 作为 fallback，`edit_file` 仍是阻断占位工具，发行版本前需要继续去除 import-time cwd 依赖并补齐完整回归测试。
+- Session messages 持久化与恢复已完成方案设计，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 
 ## 总体路线
 
@@ -64,8 +78,10 @@
 5. 代码理解工具
 6. 上下文任务摘要
 7. 安全审批机制
-8. 任务依赖图 / DAG 调度
-9. evals
+8. Workspace / Workdir 统一
+9. Session messages 持久化与恢复
+10. 任务依赖图 / DAG 调度
+11. evals
 ```
 
 其中 MVP 建议先做前 4 项。
@@ -304,6 +320,38 @@ lint      -> ruff check .，如果项目配置存在
 typecheck -> mypy / pyright，如果项目配置存在
 ```
 
+### 验证触发策略
+
+写入工具成功后不应无条件要求运行代码测试。当前策略应按变更类型决定：
+
+- 仅代码文件和明确的构建/测试配置文件变更：需要运行 `verify`，优先使用最窄目标。
+- 其它文件变更：不要求运行代码测试。
+- 混合变更：只要包含代码或明确配置变更，就需要针对相关代码区域运行 `verify`。
+
+不会触发代码验证的示例：
+
+```text
+README.md
+docs/*.md
+*.drawio
+*.png
+*.jpg
+*.svg
+*.pdf
+未知扩展名文件
+```
+
+仍应视为需要验证的配置文件示例：
+
+```text
+pyproject.toml
+package.json
+go.mod
+Cargo.toml
+pom.xml
+*.csproj
+```
+
 ### 返回格式
 
 ```text
@@ -360,6 +408,10 @@ dependency_graph(path)
 
 ## Phase 6: 上下文任务摘要
 
+状态：部分实现。
+
+当前已实现旧工具输出轻度压缩，以及任务正常完成后的内部 todo 工具调用裁剪。尚未实现对较早 Human/AI 对话的摘要压缩，也尚未在压缩摘要中稳定保留完整任务级记忆。
+
 ### 背景
 
 当前上下文压缩只压缩旧工具输出。长任务还需要保留任务级摘要，避免丢失关键决策。
@@ -393,7 +445,7 @@ next_steps
 
 ## Phase 7: 安全审批机制
 
-状态：v1 阻断和控制台交互式审批已实现，图形化审批 UI 未实现。
+状态：v1 阻断、runtime 审批和 TUI 内联审批 UI 已实现。
 
 ### 定义
 
@@ -443,19 +495,190 @@ reason: This command discards local changes.
 risk: User work may be lost.
 ```
 
-### v1 建议
+### 当前实现
 
-当前已实现工具层阻断和运行时控制台审批：文件创建/编辑工具默认返回 `approval_required`；在主会话或 subagent 工具执行路径中，runtime 会先暂停并在控制台询问用户，用户批准后才临时注入 `approved=true` 执行；用户拒绝后抛出审批拒绝信号，由 Session 终止本轮任务。文件写入审批已支持执行前 `diff_preview`，用户能先查看待应用 diff 再确认。后续再升级为：
+当前已实现工具层阻断、runtime 审批和 TUI 内联审批：
 
-```text
-agent 发起 approval_request
-用户点击允许
-工具继续执行
-```
+- 文件创建/编辑工具在执行前生成 `ApprovalRequest`，用户批准后才注入 `approved=true`。
+- 时间流先展示审批前完整 diff preview，底部审批区只展示动作、文件和快捷键提示，避免重复显示 diff。
+- 用户拒绝后会明确提示任务因审批拒绝而停止，不再静默失败。
+- 如果写入请求无法识别目标文件，系统不会弹出审批，也不会阻塞整轮任务；该工具调用会返回可修正的失败消息给模型，模型可以用明确路径或合法 diff 重试。
+- 危险 bash/git 命令仍按命令级审批处理，不要求文件路径。
+
+后续可继续增强：
+
+- 批量文件审批策略，例如一次审批多个明确文件。
+- 更细粒度的高风险策略，例如大规模改动、依赖安装、网络访问。
+- 审批记录审计和可导出日志。
 
 ### 估算
 
 工作量：中到大，约 `1-2 天`。
+
+## Phase 7.5: Workspace / Workdir 统一
+
+状态：部分实现。
+
+已完成：
+
+- 新增 `tools/workspace.py`，提供 `Workspace.safe_path()`、`relative_path()` 和 `resolve_workspace()`；`agent/runtime/workspace.py` 作为 runtime 侧兼容导出。
+- 命令入口已支持位置参数 `yoyoagent [workspace]`，默认使用当前 cwd，并校验路径存在且为目录。
+- `RuntimeToolRegistry` 会为 workspace-bound 工具注入 `runtime.workdir`，工具 schema 不向模型暴露 `workdir`。
+- `read_file`、`read_many_files`、`write_file`、`apply_patch`、`grep`、`list_files`、`git_show`、`git_diff`、`workspace_state`、`verify`、`bash` 已支持显式 `workdir`。
+- 审批 diff preview 和 subagent 工具审批路径已传入父 runtime 的 `workdir`。
+- 已补充基础测试：位置参数解析、默认 cwd、拒绝文件路径，以及 cwd 与 workspace 不一致时 read/git/bash 工具仍使用显式 workdir。
+
+仍需收口：
+
+- 部分工具仍保留模块级 `WORKDIR = Path.cwd()` fallback，需要最终去除 import-time cwd 冻结行为。
+- `edit_file` 当前仍是引导模型改用 `apply_patch` 的阻断占位函数，不实际执行编辑；如保留为 workspace-bound 工具，需要明确是否继续占位或实现 workdir-aware 行为。
+- 需要补齐所有文件/git/bash/verify/subagent 的 workdir 回归测试，尤其是从其它 cwd 启动、`../` 路径逃逸和 subagent 继承父 workdir。
+
+### 背景
+
+发行版本需要支持用户在任意项目目录执行 `yoyoagent`。当前 `Session` 和 `AgentRuntimeContext` 已经显式携带 `workdir`，但部分工具仍使用模块级 `WORKDIR = Path.cwd()`，这会在工具 import 时冻结进程当前目录。若将来命令入口、TUI 或嵌入式调用改变 cwd，可能出现 session 认为的工作目录和实际工具执行目录不一致。
+
+### 用户层行为
+
+命令入口使用位置参数指定 workspace，不提供 `--workdir` flag：
+
+```text
+yoyoagent [workspace]
+```
+
+规则：
+
+```text
+yoyoagent              -> workdir = 当前 shell cwd
+yoyoagent .            -> workdir = 当前 shell cwd
+yoyoagent ~/project    -> workdir = ~/project
+yoyoagent ../project   -> workdir = 相对当前 cwd 解析后的目录
+```
+
+启动时需要校验：
+
+- workspace 必须存在。
+- workspace 必须是目录。
+- workspace 使用 `expanduser().resolve()` 后的真实路径。
+
+如果用户要切换项目，可以直接传位置参数，也可以先 `cd` 到目标目录再启动。
+
+### 内部规则
+
+- `Session.workdir` 是唯一工作目录来源。
+- `AgentRuntimeContext.workdir` 继承 `Session.workdir`。
+- `RuntimeToolRegistry` 负责给需要 workspace 的工具注入 `runtime.workdir`。
+- `subagent` 继承父 runtime 的 `workdir`。
+- 文件、git、bash、verify、patch、grep、list/read 工具都必须使用注入的 `workdir`。
+- 工具 schema 不暴露 `workdir`，模型不能指定或覆盖工作目录。
+- 所有文件路径必须通过统一 `safe_path` 限制在 workdir 内。
+
+### 建议实现
+
+新增 workspace 基础对象：
+
+```text
+agent/runtime/workspace.py
+```
+
+职责：
+
+```text
+Workspace.root
+Workspace.safe_path(path)
+Workspace.relative_path(path)
+Workspace.validate()
+```
+
+迁移工具时可以先保留模块级 `WORKDIR` 作为兼容 fallback，但 runtime 路径必须显式注入：
+
+```text
+def read_file(path, ..., workdir=None):
+    workspace = Workspace(workdir or WORKDIR)
+```
+
+最终目标是去除工具 import 时固定 `Path.cwd()` 的行为。
+
+### 需要迁移的工具
+
+```text
+read_file
+read_many_files
+write_file
+edit_file
+apply_patch
+grep
+list_files
+git_show
+git_diff
+workspace_state
+verify
+bash
+```
+
+### 与 LSP 的关系
+
+LSP manager 的基础 workspace 来自 `runtime.workdir`。目标文件必须先经过 workspace `safe_path` 校验；LSP root 可以从目标文件向上查找 `.git`、`pyproject.toml`、`package.json` 等项目标记，但不能越过 `runtime.workdir`。
+
+### 测试计划
+
+- 无位置参数启动时使用 `Path.cwd().resolve()`。
+- 位置参数支持相对路径、绝对路径和 `~`。
+- 不存在路径和文件路径会返回清晰错误。
+- `Session(workdir=tmp_path)` 后所有文件/git/bash/verify 工具都使用 `tmp_path`。
+- 从另一个 cwd 启动测试进程，但传入 workspace 后工具仍操作 workspace。
+- `../` 路径逃逸被拒绝。
+- subagent 继承父 workdir。
+
+## Phase 7.6: Session Messages 持久化与恢复
+
+状态：设计完成，待实现。详细设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+
+### 背景
+
+当前 `Session` 已经有稳定的 `session_id`，并在内存中维护 `Session.messages`。每轮 `send()` / `send_stream()` 会把用户输入加入 messages，调用 LangGraph 后用 `result["messages"]` 更新会话历史。
+
+但 messages 目前只存在内存中。进程退出或 TUI/CLI 重启后，即使用户知道旧 session id，也无法恢复上一轮模型上下文。TUI timeline 只适合展示，不应作为模型上下文恢复来源。
+
+### 目标
+
+- 将 `Session.messages` 本地持久化，作为模型上下文恢复来源。
+- 支持通过 `session_id` 恢复历史 messages，继续上一轮对话。
+- 首版保持低侵入：只恢复最终消息历史，不恢复运行中状态、审批队列或 TUI timeline。
+- 与现有上下文压缩、Task State 历史治理和 workspace/workdir 隔离兼容。
+
+### 推荐方案
+
+新增 `SessionStore` / `MessageStore` 抽象，由 `Session` 在生命周期中调用：
+
+```text
+agent/session_store.py
+{app_root}/sessions/{workspace_hash}/{session_id}.json
+```
+
+建议行为：
+
+- `Session.__init__` 增加 `persist_messages`、`resume`、`message_store` 参数。
+- `SessionStore` 默认使用 yoyoagent 应用目录下的 `sessions/`，不写入被操作的 `workdir`。
+- session 文件按 `workspace_hash = sha256(resolve(workdir))[:16]` 分组，并保存原始 `workdir`。
+- 恢复时必须校验 session 文件中的 `workdir` 与当前 `Session.workdir` 一致。
+- `resume=True` 且存在同 session id 文件时，加载历史 messages。
+- `send()` / `send_stream()` 正常完成并裁剪内部 todo artifacts 后保存最终 `self.messages`。
+- 默认开启保存，但默认不自动恢复；恢复需显式传入 `--resume`。
+- CLI/TUI 增加 `--session-id`、`--resume`、`--no-persist`。
+
+目录归属需要和 skills 一起收口：
+
+- 目标发行模型中，`skills/` 和 `sessions/` 都属于 yoyoagent 应用目录 `app_root`。
+- 当前代码的默认 `skills` 仍按 `workdir/skills` 解析，和目标模型不一致，后续需要迁移为默认读取 `{app_root}/skills`。
+
+### 风险与测试重点
+
+- 消息序列化必须保留 `tool_calls`、`additional_kwargs`、`response_metadata`、`tool_call_id` 等字段，避免恢复后 provider payload 不合法。
+- 持久化文件可能包含敏感上下文，需要文档提示；因为 sessions 不写入用户 workdir，首版不应自动修改用户项目 `.gitignore`。
+- `app_root/sessions` 如果不可写，需要清晰错误或 fallback 到用户数据目录。
+- 恢复大量历史可能导致 token 超窗，需要继续配合现有上下文压缩。
+- 测试需要覆盖消息序列化、同 session id 恢复、workspace hash 隔离、workdir 不一致拒绝恢复、禁用持久化、损坏文件容错、路径逃逸和 `clear()` / `reset()` 语义。
 
 ## Phase 8: Evals
 
@@ -505,9 +728,13 @@ expected.patch 可选
 2. workspace_state + git_diff
 3. apply_patch 工具
 4. verify 工具
+5. 基础代码理解工具
+6. 安全审批 v1 + TUI 审批 UI
+7. 结构化 TUI 时间流和文件变更视图
+8. 基础上下文治理
 ```
 
-预计工作量：`2-4 天`。
+MVP 已完成。后续进入增强阶段，重点是 workspace 统一、Session messages 持久化与恢复、语义代码导航、长任务摘要、DAG 调度和 evals。
 
 MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 
@@ -515,14 +742,33 @@ MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 理解代码 -> 安全编辑 -> 运行验证 -> 读取失败 -> 迭代修复 -> 总结结果
 ```
 
-## 推荐第一步
+## 推荐下一步
 
-先实现工具 metadata + 调度策略。
+建议先完成 workspace / workdir 统一，再实现 Session messages 持久化与恢复，之后推进只读 LSP 语义导航 MVP。Session 持久化设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)，LSP 设计见 [LSP 集成设计](lsp_integration_design.md)。
 
 原因：
 
-- 当前并发、串行、超时规则已经开始变多。
-- 后续新增 `apply_patch`、`verify`、`git_diff` 都需要声明副作用和超时。
-- metadata 能让调度策略从硬编码变成声明式配置。
+- 发行版本需要支持 `yoyoagent [workspace]`，并保证所有工具实际操作目录与 session workdir 一致。
+- Session messages 持久化依赖稳定的 workspace 隔离和 session id 恢复入口，适合在 workdir 统一后落地。
+- 恢复会话上下文能提升 TUI/CLI 重启后的连续任务体验，并补齐当前 session id 只有标识、没有恢复能力的问题。
+- LSP 的 workspace root、文件同步和安全边界都依赖统一的 runtime workdir。
+- 当前代码理解仍主要依赖文件搜索和文本 grep，复杂项目中成本较高。
+- LSP 能提供符号、定义、引用、hover 和诊断信息，能显著提升代码定位质量。
+- 只读 LSP 不涉及文件写入，风险低，可以在现有审批和 workflow guard 之外独立落地。
 
-第一步完成后，再推进 git 工作区保护和 apply_patch，会更稳。
+推荐顺序：
+
+```text
+1. 实现 `yoyoagent [workspace]` 位置参数解析，默认使用当前 cwd
+2. 统一工具 workdir 注入和 workspace safe_path
+3. 补齐文件/git/bash/verify/subagent 的 workdir 回归测试
+4. 实现 `SessionStore` 文件持久化和 BaseMessage 序列化
+5. 在 `Session`、CLI 和 TUI 中接入 `--session-id`、`--resume`、`--no-persist`
+6. 补齐 session 保存、恢复、禁用持久化、损坏文件和隐私提示相关测试/文档
+7. 更新 LSP 基础类型和 JSON-RPC client
+8. 支持 Python language server 检测和懒启动
+9. 实现 document/workspace symbols
+10. 实现 definition/references/hover/diagnostics
+11. 更新 prompt，引导复杂代码导航优先使用 LSP
+12. 补充 fake LSP 和缺失 language server 的回归测试
+```

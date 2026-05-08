@@ -351,6 +351,34 @@ def test_changed_files_parser_splits_consecutive_file_headers_without_diff_git()
     assert sum(item["removed"] for item in files) == 3
 
 
+def test_changed_files_parser_merges_repeated_file_sections():
+    from agent.tui.runner import _changed_files_from_diff
+
+    diff = "\n".join(
+        [
+            "diff --git a/agent/tui/app.py b/agent/tui/app.py",
+            "--- a/agent/tui/app.py",
+            "+++ b/agent/tui/app.py",
+            "@@ -1 +1 @@",
+            "-wrap=False",
+            "+wrap=True",
+            "diff --git a/agent/tui/app.py b/agent/tui/app.py",
+            "--- a/agent/tui/app.py",
+            "+++ b/agent/tui/app.py",
+            "@@ -10 +10,2 @@",
+            " old",
+            "+new",
+        ]
+    )
+
+    files = _changed_files_from_diff(diff)
+
+    assert [item["path"] for item in files] == ["agent/tui/app.py"]
+    assert files[0]["added"] == 2
+    assert files[0]["removed"] == 1
+    assert files[0]["diff"].count("diff --git a/agent/tui/app.py b/agent/tui/app.py") == 2
+
+
 def test_runner_keeps_second_turn_tool_and_text_events_in_timeline():
     async def run():
         state = TuiState()

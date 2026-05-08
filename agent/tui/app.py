@@ -132,7 +132,7 @@ def run_tui(args: Namespace) -> None:
                     ListView(id="changed-files-list"),
                     RichLog(
                         markup=True,
-                        wrap=False,
+                        wrap=True,
                         highlight=False,
                         auto_scroll=False,
                         id="changed-files-diff",
@@ -476,6 +476,7 @@ def run_tui(args: Namespace) -> None:
         def _refresh_all(self, *, force_scroll_end: bool = False) -> None:
             state = self.runner.state
             self._refresh_status_surfaces()
+            pending_approval = state.next_pending_approval()
 
             timeline_content = render_timeline_lines(
                 state,
@@ -490,9 +491,10 @@ def run_tui(args: Namespace) -> None:
                 timeline_panel.write(timeline_content)
                 if (
                     force_scroll_end
+                    or pending_approval is not None
                     or (
                         self.runner.state.active_task.get("is_running")
-                        and self.runner.state.next_pending_approval() is None
+                        and pending_approval is None
                     )
                 ):
                     self.call_after_refresh(lambda: self._scroll_to_end(timeline_panel))
@@ -686,7 +688,9 @@ def run_tui(args: Namespace) -> None:
             self.query_one("#approval-inline", Container).display = True
             self.query_one("#input-row", Horizontal).display = False
             self.query_one("#input-shell", Container).add_class("approving")
-            self.query_one("#timeline-panel", RichLog).focus()
+            timeline_panel = self.query_one("#timeline-panel", RichLog)
+            timeline_panel.focus()
+            self.call_after_refresh(lambda: self._scroll_to_end(timeline_panel))
 
         def _hide_approval_panel(self) -> None:
             self._approval_open = False

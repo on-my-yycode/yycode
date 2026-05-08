@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from .safety import unsafe_command_response
+from .read_file import workspace_for
 
 WORKDIR = Path.cwd()
 MAX_OUTPUT_CHARS = 50_000
@@ -29,16 +30,17 @@ def _format_bash_result(returncode: int, stdout: str, stderr: str) -> str:
     return result
 
 
-def bash(command: str, approved: bool = False) -> str:
+def bash(command: str, approved: bool = False, workdir: Path | str | None = None) -> str:
     """Run a shell command."""
     unsafe_response = unsafe_command_response(command)
     if unsafe_response and not approved:
         return unsafe_response
     try:
+        workspace = workspace_for(workdir or WORKDIR)
         r = subprocess.run(
             command,
             shell=True,
-            cwd=WORKDIR,
+            cwd=workspace.root,
             capture_output=True,
             text=True,
             timeout=120,

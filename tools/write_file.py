@@ -1,6 +1,7 @@
 """Write file tool."""
 
 from difflib import unified_diff
+from pathlib import Path
 
 from .diff_utils import format_diff_result
 from .read_file import safe_path
@@ -15,10 +16,15 @@ def _apply_patch_required_message(path: str) -> str:
     )
 
 
-def write_file(path: str, content: str, approved: bool = False) -> str:
+def write_file(
+    path: str,
+    content: str,
+    approved: bool = False,
+    workdir: Path | str | None = None,
+) -> str:
     """Write content to file."""
     try:
-        fp = safe_path(path)
+        fp = safe_path(path, workdir)
         if fp.exists():
             return _apply_patch_required_message(path)
         if not approved:
@@ -30,15 +36,15 @@ def write_file(path: str, content: str, approved: bool = False) -> str:
             )
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
-        return format_diff_result(f"Wrote {len(content)} bytes to {path}", [path])
+        return format_diff_result(f"Wrote {len(content)} bytes to {path}", [path], workdir=workdir)
     except Exception as e:
         return f"Error: {e}"
 
 
-def preview_write_file_diff(path: str, content: str) -> str:
+def preview_write_file_diff(path: str, content: str, workdir: Path | str | None = None) -> str:
     """Return the diff that write_file would create without writing."""
     try:
-        fp = safe_path(path)
+        fp = safe_path(path, workdir)
         if fp.exists():
             return ""
         lines = "\n".join(

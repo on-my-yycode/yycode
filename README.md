@@ -79,13 +79,14 @@ cp .env.example .env
 ### 运行
 
 ```bash
-python main.py                 # 默认启动 TUI 界面
+python main.py                 # 默认以当前目录作为工作区启动 TUI
+python main.py ~/project       # 指定工作区目录启动
 python main.py --silent        # 静默模式，自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
 ```
 
-当前默认入口会启动 TUI 界面；上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
+当前默认入口会启动 TUI 界面。工作区使用位置参数指定；如果不传，则使用启动命令时所在目录。上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 
 ## 项目结构
 
@@ -144,6 +145,7 @@ yoyoagent/
 ├── skills/                   # 技能文件目录
 │   ├── code_review.md        # 代码审查技能
 │   ├── code_workflow.md      # 通用开发工作流
+│   ├── plan.md               # 规划/需求澄清技能
 │   └── drawio/SKILL.md       # draw.io 图表生成
 ├── tests/                    # 测试文件 (100+ 测试用例)
 ├── examples/                 # 示例项目 (贪吃蛇、塔防、数学游戏)

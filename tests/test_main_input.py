@@ -23,6 +23,7 @@ from main import (
     main,
     read_user_query,
     read_user_query_with_session,
+    resolve_startup_workdir,
     run_agent_task,
 )
 
@@ -406,3 +407,43 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
     assert captured["dotenv_override"] is True
     assert captured["args"].debug is True
     assert captured["args"].silent is True
+
+
+def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_setup_logging(*, debug, log_to_file):
+        captured["logging"] = (debug, log_to_file)
+
+    def fake_load_dotenv(*, override):
+        captured["dotenv_override"] = override
+
+    def fake_run_tui(args):
+        captured["args"] = args
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path)])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
+
+    main()
+
+    assert captured["args"].workdir == tmp_path.resolve()
+
+
+def test_resolve_startup_workdir_defaults_to_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    assert resolve_startup_workdir(None) == tmp_path.resolve()
+
+
+def test_resolve_startup_workdir_rejects_files(tmp_path):
+    file_path = tmp_path / "README.md"
+    file_path.write_text("not a workspace\n")
+
+    try:
+        resolve_startup_workdir(str(file_path))
+    except SystemExit as exc:
+        assert "workspace is not a directory" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")

@@ -1409,25 +1409,25 @@ def _human_tool_result_title(item: TimelineItem) -> str:
         return "Review full diff before approval"
     if "diff" in title or item.content.startswith(("diff --git", "--- ", "@@")):
         return "Review full diff"
-    if "task state" in title:
-        return "Task state"
+    if "task state" in title or "task plan" in title:
+        return "Task plan"
     return item.title or "Tool result"
 
 
 def _is_task_state_result(item: TimelineItem) -> bool:
     title = (item.title or "").strip().lower()
-    return title == "task state" or item.content.startswith("Task State:")
+    return title in {"task state", "task plan"} or item.content.startswith("Task State:")
 
 
 def _render_task_state_summary(role_prefix: str, item: TimelineItem) -> str:
     counts = _task_state_counts(item.content)
-    summary = "Task state"
+    summary = "Task plan"
     if counts["total"]:
         summary = f"{counts['completed']}/{counts['total']} done"
         if counts["active"]:
             summary += " · current"
     lines = [
-        f"{role_prefix}[bold #8fd6a3]● Task State[/]",
+        f"{role_prefix}[bold #8fd6a3]● Task Plan[/]",
         f"  [#7f8794]{_safe_text(summary)}[/]",
     ]
     if counts["active"]:

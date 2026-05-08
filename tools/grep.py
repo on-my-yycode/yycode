@@ -72,10 +72,12 @@ def grep(
     max_results: int = 100,
     before_context: int = 0,
     after_context: int = 0,
+    workdir: Path | str | None = None,
 ) -> str:
     """Search workspace files using Python regex matching."""
     try:
-        search_path = read_file.safe_path(path)
+        workspace = read_file.workspace_for(workdir)
+        search_path = workspace.safe_path(path)
         max_results = max(1, min(int(max_results), 500))
         before_context = max(0, min(int(before_context), 20))
         after_context = max(0, min(int(after_context), 20))
@@ -85,7 +87,7 @@ def grep(
             text = _read_text(file_path)
             if text is None:
                 continue
-            relative_path = file_path.relative_to(read_file.WORKDIR)
+            relative_path = file_path.relative_to(workspace.root)
             lines = text.splitlines()
             for line_number, line in enumerate(lines, start=1):
                 if regex.search(line):

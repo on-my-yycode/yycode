@@ -1,5 +1,7 @@
 # Full TUI Design
 
+作者：张磊
+
 ## 目标
 
 把 yoyoagent 从普通 CLI 输出升级为完整的 Terminal UI，让用户在任务执行过程中能持续看到：
@@ -639,6 +641,7 @@ ApprovalService
 - diff 内容已通过 `colorize_diff_for_tui` 在内联 timeline 中带颜色高亮 ✅
 - 审批弹窗提示 "See timeline for full diff" ✅
 - HistoryScreen（Ctrl+H）支持全屏浏览历史 ✅
+- ChangedFilesScreen（Ctrl+D）支持按文件查看变更 diff，左侧文件列表会合并同一文件的重复 diff section，右侧 diff 视图支持自动换行 ✅
 - 独立 detail pane / item 选中交互 ❌ 未实现
 
 ### Phase 5: Subagent Panel 🟡 **部分完成**

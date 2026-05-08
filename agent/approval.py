@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import re
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from tools.safety import approval_required
@@ -55,7 +56,11 @@ class ApprovalRequest:
         return formatted
 
 
-def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRequest]:
+def approval_request_for_tool(
+    tool_name: str,
+    args: dict,
+    workdir: Path | str | None = None,
+) -> Optional[ApprovalRequest]:
     """Return an approval request for tool calls that require runtime confirmation."""
     if tool_name == "bash":
         command = args.get("command", "")
@@ -83,6 +88,7 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
                 path=args.get("path", ""),
                 old_text=args.get("old_text", ""),
                 new_text=args.get("new_text", ""),
+                workdir=workdir,
             ),
         )
     if tool_name == "write_file":
@@ -94,7 +100,11 @@ def approval_request_for_tool(tool_name: str, args: dict) -> Optional[ApprovalRe
             path=args.get("path", ""),
             reason="write_file creates a new workspace file.",
             risk="Creating files changes the workspace and may add unwanted artifacts.",
-            diff_preview=preview_write_file_diff(args.get("path", ""), args.get("content", "")),
+            diff_preview=preview_write_file_diff(
+                args.get("path", ""),
+                args.get("content", ""),
+                workdir=workdir,
+            ),
         )
     return None
 

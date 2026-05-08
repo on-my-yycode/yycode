@@ -20,6 +20,7 @@ def create_tools_node(runtime: AgentRuntimeContext):
         runtime.workflow_state,
         runtime.stream_callback,
         runtime.session_id,
+        workdir=runtime.workdir,
     )
     executor = ToolExecutor(runtime, registry, workflow_guard, approval_service)
 

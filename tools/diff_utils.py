@@ -1,35 +1,49 @@
 """Helpers for rendering git diffs after workspace writes."""
 
 import subprocess
+from pathlib import Path
 
 from . import read_file
 
 MAX_DIFF_CHARS = 12_000
 
 
-def _relative_paths(paths: list[str] | None) -> list[str]:
+def _workspace(workdir: Path | str | None = None):
+    return read_file.workspace_for(workdir)
+
+
+def _relative_paths(paths: list[str] | None, workdir: Path | str | None = None) -> list[str]:
     if not paths:
         return []
-    return [str(read_file.safe_path(path).relative_to(read_file.WORKDIR)) for path in paths]
+    workspace = _workspace(workdir)
+    return [str(workspace.safe_path(path).relative_to(workspace.root)) for path in paths]
 
 
-def git_diff_stat(paths: list[str] | None = None) -> str:
+def git_diff_stat(paths: list[str] | None = None, workdir: Path | str | None = None) -> str:
     """Return git diff stat for optional workspace-relative paths."""
-    return _run_git_diff(["--stat"], paths, max_chars=4_000)
+    return _run_git_diff(["--stat"], paths, max_chars=4_000, workdir=workdir)
 
 
-def git_diff_preview(paths: list[str] | None = None, max_chars: int = MAX_DIFF_CHARS) -> str:
+def git_diff_preview(
+    paths: list[str] | None = None,
+    max_chars: int = MAX_DIFF_CHARS,
+    workdir: Path | str | None = None,
+) -> str:
     """Return a capped git diff for optional workspace-relative paths."""
-    return _run_git_diff([], paths, max_chars=max_chars)
+    return _run_git_diff([], paths, max_chars=max_chars, workdir=workdir)
 
 
-def format_diff_result(action: str, paths: list[str] | None = None) -> str:
+def format_diff_result(
+    action: str,
+    paths: list[str] | None = None,
+    workdir: Path | str | None = None,
+) -> str:
     """Format a write-tool result with diff stat and capped diff preview."""
-    stat = git_diff_stat(paths)
-    diff = git_diff_preview(paths)
+    stat = git_diff_stat(paths, workdir=workdir)
+    diff = git_diff_preview(paths, workdir=workdir)
     if not diff and paths:
-        stat = stat or _untracked_files_stat(paths)
-        diff = _untracked_files_diff(paths)
+        stat = stat or _untracked_files_stat(paths, workdir=workdir)
+        diff = _untracked_files_diff(paths, workdir=workdir)
     parts = [action]
     if stat:
         parts.append(f"diff_stat:\n{stat}")
@@ -40,11 +54,17 @@ def format_diff_result(action: str, paths: list[str] | None = None) -> str:
     return "\n\n".join(parts)
 
 
-def _run_git_diff(args: list[str], paths: list[str] | None, max_chars: int) -> str:
-    command = ["git", "diff", *args, "--", *_relative_paths(paths)]
+def _run_git_diff(
+    args: list[str],
+    paths: list[str] | None,
+    max_chars: int,
+    workdir: Path | str | None = None,
+) -> str:
+    workspace = _workspace(workdir)
+    command = ["git", "diff", *args, "--", *_relative_paths(paths, workdir)]
     result = subprocess.run(
         command,
-        cwd=read_file.WORKDIR,
+        cwd=workspace.root,
         capture_output=True,
         text=True,
         timeout=30,
@@ -57,17 +77,18 @@ def _run_git_diff(args: list[str], paths: list[str] | None, max_chars: int) -> s
     return output
 
 
-def _untracked_files_diff(paths: list[str]) -> str:
+def _untracked_files_diff(paths: list[str], workdir: Path | str | None = None) -> str:
+    workspace = _workspace(workdir)
     sections = []
     for path in paths:
-        file_path = read_file.safe_path(path)
-        if not file_path.exists() or _is_tracked(path):
+        file_path = workspace.safe_path(path)
+        if not file_path.exists() or _is_tracked(path, workdir=workdir):
             continue
         try:
             text = file_path.read_text()
         except UnicodeDecodeError:
             text = "<binary or non-utf8 file>"
-        relative_path = file_path.relative_to(read_file.WORKDIR)
+        relative_path = file_path.relative_to(workspace.root)
         lines = text.splitlines()
         sections.append(
             "\n".join(
@@ -87,26 +108,28 @@ def _untracked_files_diff(paths: list[str]) -> str:
     return output
 
 
-def _untracked_files_stat(paths: list[str]) -> str:
+def _untracked_files_stat(paths: list[str], workdir: Path | str | None = None) -> str:
+    workspace = _workspace(workdir)
     stats = []
     for path in paths:
-        file_path = read_file.safe_path(path)
-        if not file_path.exists() or _is_tracked(path):
+        file_path = workspace.safe_path(path)
+        if not file_path.exists() or _is_tracked(path, workdir=workdir):
             continue
         try:
             line_count = len(file_path.read_text().splitlines())
         except UnicodeDecodeError:
             line_count = 0
-        relative_path = file_path.relative_to(read_file.WORKDIR)
+        relative_path = file_path.relative_to(workspace.root)
         stats.append(f" {relative_path} | {line_count} +")
     return "\n".join(stats)
 
 
-def _is_tracked(path: str) -> bool:
-    relative_path = str(read_file.safe_path(path).relative_to(read_file.WORKDIR))
+def _is_tracked(path: str, workdir: Path | str | None = None) -> bool:
+    workspace = _workspace(workdir)
+    relative_path = str(workspace.safe_path(path).relative_to(workspace.root))
     result = subprocess.run(
         ["git", "ls-files", "--error-unmatch", "--", relative_path],
-        cwd=read_file.WORKDIR,
+        cwd=workspace.root,
         capture_output=True,
         text=True,
         timeout=30,

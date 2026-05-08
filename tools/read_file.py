@@ -2,15 +2,19 @@
 
 from pathlib import Path
 
+from .workspace import Workspace
+
 WORKDIR = Path.cwd()
 
 
-def safe_path(p: str) -> Path:
+def workspace_for(workdir: Path | str | None = None) -> Workspace:
+    """Return the workspace for a tool call."""
+    return Workspace(Path(workdir) if workdir is not None else WORKDIR)
+
+
+def safe_path(p: str, workdir: Path | str | None = None) -> Path:
     """Get a safe path within the workspace."""
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
-        raise ValueError(f"Path escapes workspace: {p}")
-    return path
+    return workspace_for(workdir).safe_path(p)
 
 
 def read_file(
@@ -18,10 +22,11 @@ def read_file(
     limit: int = None,
     start_line: int | None = None,
     end_line: int | None = None,
+    workdir: Path | str | None = None,
 ) -> str:
     """Read file contents."""
     try:
-        text = safe_path(path).read_text()
+        text = safe_path(path, workdir).read_text()
         lines = text.splitlines()
         if start_line is not None or end_line is not None:
             start = max((start_line or 1) - 1, 0)

@@ -33,14 +33,21 @@ def _iter_files(path: Path, max_depth: int | None, depth: int = 0):
             yield child
 
 
-def list_files(path: str = ".", pattern: str = "*", max_results: int = 200, max_depth: int | None = None) -> str:
+def list_files(
+    path: str = ".",
+    pattern: str = "*",
+    max_results: int = 200,
+    max_depth: int | None = None,
+    workdir: Path | str | None = None,
+) -> str:
     """List workspace-relative files, optionally filtered by glob pattern."""
     try:
-        root = read_file.safe_path(path)
+        workspace = read_file.workspace_for(workdir)
+        root = workspace.safe_path(path)
         max_results = max(1, min(int(max_results), MAX_RESULTS))
         files = []
         for file_path in _iter_files(root, max_depth):
-            relative_path = str(file_path.relative_to(read_file.WORKDIR))
+            relative_path = str(file_path.relative_to(workspace.root))
             if fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(file_path.name, pattern):
                 files.append(relative_path)
                 if len(files) >= max_results:
