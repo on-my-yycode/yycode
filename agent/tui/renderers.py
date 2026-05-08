@@ -409,12 +409,14 @@ def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     if state is None:
         return brand_line
     workspace_text = _safe_text(state.workspace_path if state.workspace_path else "(not set)", max(12, W - 6))
+    session_text = _safe_text(state.session_id if state.session_id else "(starting)", max(12, W - 10))
     restored = int(getattr(state, "restored_message_count", 0) or 0)
     restored_text = f"  [#7f8794]Restored[/] [#cfd3dc]{restored} messages[/]" if restored else ""
     return "\n".join(
         [
             brand_line,
-            f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]{restored_text}",
+            f"[#7f8794]Session[/] [#cfd3dc]{session_text}[/]{restored_text}",
+            f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]",
         ]
     )
 
@@ -475,7 +477,7 @@ def render_status_bar_text(
         f"output[/] [#cfd3dc]{_format_tokens(output_tokens)}[/][#7f8794])[/]"
     )
     todo_items = getattr(state.todo_manager, "todo_items", []) if state.todo_manager else []
-    todo_reserve = 28 if todo_items else 8
+    todo_reserve = 40 if todo_items else 8
 
     parts = [status_part, elapsed_part, tokens_part]
     for optional in (context_part, model_part):

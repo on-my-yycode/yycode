@@ -5,6 +5,8 @@ import os
 import argparse
 import asyncio
 import contextlib
+import textwrap
+from datetime import datetime
 from pathlib import Path
 
 
@@ -12,7 +14,9 @@ from dotenv import load_dotenv
 
 from agent import Session
 from agent.approval import ApprovalRequest
+from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
 from agent.logger import setup_logging
+from agent.session_store import FileSessionStore
 from agent.streaming import colorize_diff
 
 # Try to enable readline for better input experience
@@ -204,46 +208,174 @@ async def run_agent_task(session: Session, query: str) -> bool:
         return False
 
 
-def main() -> None:
-    """Parse startup args and launch the TUI on the main thread."""
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Yoyo Agent")
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser with user-facing help text."""
+    examples = """\
+Examples:
+  yoyoagent
+  yoyoagent ~/project
+  yoyoagent -s
+  yoyoagent -r bugfix-123
+  yoyoagent -x bugfix-123
+  yoyoagent ~/project -t
+  yoyoagent -a
+
+Session data:
+  Messages are saved by default under {app_root}/sessions/{workspace_hash}/{session_id}.json.
+  Use -s/--sessions to inspect saved sessions for WORKDIR.
+  Use -r/--resume ID to continue a previous conversation in the same workspace.
+  Use -x/--delete ID to delete a saved session for WORKDIR.
+
+Environment:
+  PROVIDER                    LLM provider: anthropic or openai.
+  API_KEY                     API key for the selected provider.
+  API_BASE                    Optional custom API base URL.
+  AI_MODEL                    Model name override.
+  YOYO_APP_ROOT               Yoyo Agent app/release directory.
+  YOYO_RUNTIME_DATA_DIR       Runtime data directory; defaults to app_root.
+  YOYO_SESSION_DIR            Session messages directory override.
+  YOYO_SKILL_DIRS             Extra skill directories, separated by comma/pathsep.
+  YOYO_CONTEXT_WINDOW_TOKENS  Context window size override for token pressure.
+  YOYO_SILENT                 Auto-approve risky actions when truthy.
+  YOYO_AUTO_APPROVE           Alias for YOYO_SILENT.
+"""
+    parser = argparse.ArgumentParser(
+        prog="yoyoagent",
+        description="Yoyo Agent - terminal coding assistant with workspace tools and session persistence.",
+        epilog=textwrap.dedent(examples),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "workdir",
         nargs="?",
-        help="Workspace directory. Defaults to the current directory.",
+        metavar="WORKDIR",
+        help="Workspace directory to operate on. Defaults to the current directory.",
     )
     parser.add_argument(
+        "-d",
         "--debug",
         action="store_true",
-        help="Enable debug logging to console",
+        help="Enable debug logging to console.",
     )
     parser.add_argument(
         "--log-file",
         action="store_true",
-        help="Write logs to agent_debug.log",
+        help="Write logs to agent_debug.log.",
+    )
+    parser.add_argument(
+        "-a",
+        "--auto",
+        dest="auto",
+        action="store_true",
+        help="Auto-approve risky actions.",
     )
     parser.add_argument(
         "--silent",
+        dest="auto",
         action="store_true",
-        help="Run without approval prompts; risky actions are automatically approved",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--session-id",
-        help="Session id to use for message persistence and optional resume.",
-    )
-    parser.add_argument(
+        "-r",
         "--resume",
+        metavar="ID",
+        help="Resume messages from the persisted session id in the same workspace.",
+    )
+    parser.add_argument(
+        "-s",
+        "--sessions",
+        dest="sessions",
         action="store_true",
-        help="Resume messages from the persisted session with the same session id.",
+        help="List persisted sessions for WORKDIR and exit.",
+    )
+    parser.add_argument(
+        "--list-sessions",
+        dest="sessions",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "-t",
+        "--temp",
+        dest="temp",
+        action="store_true",
+        help="Temporary session; do not save messages.",
+    )
+    parser.add_argument(
+        "-x",
+        "--delete",
+        metavar="ID",
+        help="Delete a persisted session id for WORKDIR and exit.",
     )
     parser.add_argument(
         "--no-persist",
+        dest="temp",
         action="store_true",
-        help="Disable local session message persistence.",
+        help=argparse.SUPPRESS,
     )
+    return parser
+
+
+def list_sessions_for_workdir(workdir: Path) -> str:
+    """Return a display table of persisted sessions for a workspace."""
+    store = create_session_store_for_workdir(workdir)
+    records = store.list_sessions()
+    if not records:
+        return f"No sessions found for workspace: {workdir}"
+
+    lines = [
+        f"Sessions for workspace: {workdir}",
+        "",
+        f"{'Session ID':<40}  {'Updated':<25}  Workdir",
+        f"{'-' * 40}  {'-' * 25}  {'-' * 7}",
+    ]
+    for record in records:
+        lines.append(f"{record.session_id:<40}  {format_session_updated_at(record.updated_at):<25}  {record.workdir}")
+    return "\n".join(lines)
+
+
+def delete_session_for_workdir(workdir: Path, session_id: str) -> str:
+    """Delete a persisted session for a workspace."""
+    store = create_session_store_for_workdir(workdir)
+    before = {record.session_id for record in store.list_sessions()}
+    store.delete(session_id)
+    if session_id not in before:
+        return f"No session found for workspace {workdir}: {session_id}"
+    return f"Deleted session for workspace {workdir}: {session_id}"
+
+
+def create_session_store_for_workdir(workdir: Path) -> FileSessionStore:
+    """Create the default file session store for a workspace."""
+    app_root = resolve_app_root()
+    runtime_data_dir = resolve_runtime_data_dir(app_root)
+    session_root = None if os.environ.get("YOYO_SESSION_DIR") else runtime_data_dir / "sessions"
+    return FileSessionStore(app_root=app_root, workdir=workdir, root=session_root)
+
+
+def format_session_updated_at(value: str) -> str:
+    """Format persisted session timestamps for CLI display."""
+    if not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def main() -> None:
+    """Parse startup args and launch the TUI on the main thread."""
+    parser = build_arg_parser()
     args = parser.parse_args()
     args.workdir = resolve_startup_workdir(args.workdir)
+    args.session_id = args.resume
+
+    if args.sessions:
+        print(list_sessions_for_workdir(args.workdir))
+        return
+    if args.delete:
+        print(delete_session_for_workdir(args.workdir, args.delete))
+        return
 
     # Set up logging
     setup_logging(debug=args.debug, log_to_file=args.log_file)
@@ -254,8 +386,8 @@ def main() -> None:
         print("\033[90m[DEBUG] Debug mode enabled. Logs written to agent_debug.log\033[0m\n")
 
     load_dotenv(override=True)
-    if args.silent or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):
-        args.silent = True
+    if args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):
+        args.auto = True
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
 
     from agent.tui.app import run_tui

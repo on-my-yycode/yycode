@@ -133,7 +133,7 @@ logger.debug(f"Full tc object: {tc!r}")
 | **子代理工具过滤** | `agent/subagent.py:filter_subagent_tool()` | 禁止 `subagent` 和 `todo` 递归/逃逸 |
 | **Bash 超时保护** | `tools/bash.py` | 120s 超时，50k 字符限制 |
 | **文件读取大小限制** | `tools/read_file.py` | 50k 字符上限 |
-| **沉默模式明确提示** | `main.py` | `--silent` 参数打印明确警告 |
+| **自动审批模式明确提示** | `main.py` | `-a` / `--auto` 参数打印明确警告 |
 | **安全测试覆盖** | `tests/test_safety.py` | 8 个测试覆盖危险命令检测、审批流程、diff 预览 |
 | **子代理安全角色** | `agent/subagent.py:ROLE_PROMPTS` | `security` 角色专门用于安全审查 |
 

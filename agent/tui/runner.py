@@ -44,14 +44,14 @@ class AgentTuiRunner:
 
     async def start(self) -> None:
         """Create the underlying agent session."""
-        silent_mode = bool(getattr(self.args, "silent", False))
+        silent_mode = bool(getattr(self.args, "auto", False))
         approval_callback = auto_approval_callback if silent_mode else self.approval_adapter.callback
         self.session = Session.from_config(
             workdir=getattr(self.args, "workdir", None),
             approval_callback=approval_callback,
             session_id=getattr(self.args, "session_id", None),
-            persist_messages=not bool(getattr(self.args, "no_persist", False)),
-            resume=bool(getattr(self.args, "resume", False)),
+            persist_messages=not bool(getattr(self.args, "temp", False)),
+            resume=bool(getattr(self.args, "session_id", None)),
         )
         self.session.stream_callback = self.handle_stream_event
         self.state.set_startup_info(

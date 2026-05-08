@@ -16,11 +16,15 @@ from agent.session import (
 )
 from main import (
     auto_approval_callback,
+    build_arg_parser,
     build_prompt,
+    delete_session_for_workdir,
     env_flag_enabled,
     format_startup_info,
     format_context_percent,
     format_token_count,
+    format_session_updated_at,
+    list_sessions_for_workdir,
     main,
     read_user_query,
     read_user_query_with_session,
@@ -445,7 +449,7 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
-    monkeypatch.setattr("sys.argv", ["main.py", "--debug", "--silent"])
+    monkeypatch.setattr("sys.argv", ["main.py", "-d", "-a"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
     main()
@@ -453,7 +457,135 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
     assert captured["logging"] == (True, False)
     assert captured["dotenv_override"] is True
     assert captured["args"].debug is True
-    assert captured["args"].silent is True
+    assert captured["args"].auto is True
+
+
+def test_arg_parser_help_includes_examples_and_session_options():
+    help_text = build_arg_parser().format_help()
+
+    assert "Examples:" in help_text
+    assert "yoyoagent ~/project" in help_text
+    assert "yoyoagent -r bugfix-123" in help_text
+    assert "-r" in help_text
+    assert "--resume ID" in help_text
+    assert "-s" in help_text
+    assert "--sessions" in help_text
+    assert "-x" in help_text
+    assert "--delete" in help_text
+    assert "-t" in help_text
+    assert "--temp" in help_text
+    assert "-a" in help_text
+    assert "--auto" in help_text
+    assert "--session-id" not in help_text
+    assert "--list-sessions" not in help_text
+    assert "--no-persist" not in help_text
+    assert "--silent" not in help_text
+    assert "YOYO_SESSION_DIR" in help_text
+    assert "Session messages directory override." in help_text
+    assert "LLM provider: anthropic or openai." in help_text
+
+
+def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_setup_logging(*, debug, log_to_file):
+        captured["logging"] = (debug, log_to_file)
+
+    def fake_load_dotenv(*, override):
+        captured["dotenv_override"] = override
+
+    def fake_run_tui(args):
+        captured["args"] = args
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--resume", "sess-1"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
+
+    main()
+
+    assert captured["args"].session_id == "sess-1"
+    assert captured["args"].resume == "sess-1"
+
+
+def test_list_sessions_for_workdir_outputs_saved_sessions(tmp_path, monkeypatch):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    store.save("sess-1", [AIMessage(content="hello")])
+
+    output = list_sessions_for_workdir(workdir)
+
+    assert "Sessions for workspace:" in output
+    assert "sess-1" in output
+    assert "Workdir" in output
+    assert str(workdir.resolve()) in output
+    assert ".json" not in output
+    assert "T03:" not in output
+
+
+def test_format_session_updated_at_uses_minute_precision():
+    assert format_session_updated_at("2026-02-05T03:04:59.123Z") == "2026-02-05 03:04"
+    assert format_session_updated_at("not-a-date") == "not-a-date"
+
+
+def test_main_list_sessions_exits_before_tui(tmp_path, monkeypatch, capsys):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    store.save("sess-1", [AIMessage(content="hello")])
+
+    def fail_run_tui(args):
+        raise AssertionError("TUI should not start when listing sessions")
+
+    monkeypatch.setattr("sys.argv", ["main.py", str(workdir), "-s"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
+
+    main()
+
+    assert "sess-1" in capsys.readouterr().out
+
+
+def test_delete_session_for_workdir_removes_saved_session(tmp_path, monkeypatch):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    store.save("sess-1", [AIMessage(content="hello")])
+
+    output = delete_session_for_workdir(workdir, "sess-1")
+
+    assert "Deleted session" in output
+    assert store.load("sess-1") == []
+
+
+def test_main_delete_session_exits_before_tui(tmp_path, monkeypatch, capsys):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    store.save("sess-1", [AIMessage(content="hello")])
+
+    def fail_run_tui(args):
+        raise AssertionError("TUI should not start when deleting sessions")
+
+    monkeypatch.setattr("sys.argv", ["main.py", str(workdir), "-x", "sess-1"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
+
+    main()
+
+    assert "Deleted session" in capsys.readouterr().out
+    assert store.load("sess-1") == []
 
 
 def test_main_resolves_positional_workdir(tmp_path, monkeypatch):

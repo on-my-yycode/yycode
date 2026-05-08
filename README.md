@@ -84,16 +84,18 @@ cp .env.example .env
 ```bash
 python main.py                 # 默认以当前目录作为工作区启动 TUI
 python main.py ~/project       # 指定工作区目录启动
-python main.py --silent        # 静默模式，自动批准高风险操作
+python main.py -a              # 自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
-python main.py --session-id abc --resume   # 恢复指定 session 的历史 messages
-python main.py --no-persist                # 禁用本地 session messages 持久化
+python main.py -s              # 列出当前工作区可恢复的 sessions
+python main.py -r abc          # 恢复指定 session 的历史 messages
+python main.py -x abc          # 删除指定 session
+python main.py -t              # 临时会话，不保存 session messages
 ```
 
 当前默认入口会启动 TUI 界面。工作区使用位置参数指定；如果不传，则使用启动命令时所在目录。上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 
-会话 messages 默认保存到 yoyoagent 应用目录下的 `sessions/{workspace_hash}/{session_id}.json`，不会写入被操作项目。默认会保存但不会自动恢复；需要继续旧上下文时显式使用 `--session-id ... --resume`。
+会话 messages 默认保存到 yoyoagent 应用目录下的 `sessions/{workspace_hash}/{session_id}.json`，不会写入被操作项目。默认会保存但不会自动恢复；需要继续旧上下文时先用 `-s` / `--sessions` 查看，再用 `-r <id>` / `--resume <id>` 恢复；不再需要的历史可用 `-x <id>` / `--delete <id>` 删除。
 
 ## 项目结构
 
@@ -168,7 +170,7 @@ yoyoagent/
 
 ```bash
 python main.py                 # 默认启动 TUI 界面
-python main.py --silent        # 静默模式，自动批准高风险操作
+python main.py -a              # 自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
 ```
@@ -226,21 +228,30 @@ uv run ruff check .
 
 ## 文档
 
-详细文档请查看 `docs/` 目录：
+详细文档请查看 `docs/` 目录。顶层文档和图表作用如下：
 
-- [项目结构](docs/project_structure.md)
-- [代码代理路线图](docs/code_agent_roadmap.md)
-- [核心工作流](docs/core_workflow.md)
-- [核心工作流重构设计](docs/core_workflow_refactor_design.md)
-- [TUI 设计文档](docs/full_tui_design.md)
-- [TUI 流程分析](docs/tui_flow_analysis.md)
-- [上下文压缩设计](docs/context_compression_design.md)
-- [结构化事件时间线设计](docs/structured_event_timeline_design.md)
-- [Task Graph DAG 设计](docs/task_graph_dag_design.md)
-- [LSP 集成设计](docs/lsp_integration_design.md)
-- [安全审查报告](docs/security_review_report.md)
-- [架构图 (draw.io)](docs/yoyoagent_architecture.drawio)
-- [核心工作流程图 (draw.io)](docs/yoyoagent_core_workflow.drawio)
+| 文档 | 作用和说明 |
+|------|------------|
+| [使用说明](docs/usage.md) | 日常启动参数、会话恢复/删除、TUI 快捷键、审批交互、技能与工具清单。 |
+| [项目结构](docs/project_structure.md) | 项目目录、核心模块、LangGraph 工作流、runtime 层和当前架构扩展建议。 |
+| [代码代理路线图](docs/code_agent_roadmap.md) | 代码代理能力演进路线、已完成项、后续计划和里程碑记录。 |
+| [核心工作流](docs/core_workflow.md) | 当前核心执行链路说明，覆盖 Session、graph、nodes、runtime、Task State 和测试覆盖。 |
+| [核心工作流重构设计](docs/core_workflow_refactor_design.md) | 将 `graph.py` 拆分为 nodes/runtime 服务的设计背景、目标结构、迁移计划和风险控制。 |
+| [完整 TUI 设计](docs/full_tui_design.md) | Textual TUI 的界面布局、交互设计、组件职责和实现方案。 |
+| [TUI 流程分析](docs/tui_flow_analysis.md) | TUI 从输入到 Agent 执行、流式事件、渲染和审批的流程梳理。 |
+| [上下文压缩设计](docs/context_compression_design.md) | 长会话上下文压缩策略、触发条件、消息裁剪和摘要保留方案。 |
+| [会话持久化设计](docs/session_persistence_design.md) | Session messages 本地保存、恢复、列表、删除、临时会话和后续增强设计。 |
+| [结构化事件时间线设计](docs/structured_event_timeline_design.md) | 结构化事件时间线的数据模型、事件类型、渲染行为和 UI 演进方案。 |
+| [Task Graph DAG 设计](docs/task_graph_dag_design.md) | 面向复杂任务的 DAG 调度、依赖关系、并发执行和状态管理设计。 |
+| [LSP 集成设计](docs/lsp_integration_design.md) | Language Server Protocol 集成目标、模块划分、诊断/符号/补全能力和演进计划。 |
+| [安全审查报告](docs/security_review_report.md) | 项目安全风险清单、严重程度分级、已有防护和优先行动建议。 |
+| [变更日志更新确认计划](docs/confirmed_plan_changelog_update.md) | 更新 changelog 前确认过的执行计划和范围说明。 |
+| [工作流 Mermaid 图](docs/workflow_diagram.mmd) | 核心工作流的 Mermaid 源文件，可用于生成流程图。 |
+| [工作流 ASCII 图](docs/workflow_diagram_art.txt) | 核心工作流的纯文本图示，便于在终端或 Markdown 中快速查看。 |
+| [架构图源文件](docs/yoyoagent_architecture.drawio) / [PNG](docs/yoyoagent_architecture.drawio.png) | Yoyo Agent 架构图的 draw.io 源文件和导出图片。 |
+| [核心工作流程图源文件](docs/yoyoagent_core_workflow.drawio) / [PNG](docs/yoyoagent_core_workflow.drawio.png) | 核心工作流 draw.io 源文件和导出图片。 |
+| [结构化事件时间线图源文件](docs/structured_event_timeline_design.drawio) / [PNG](docs/structured_event_timeline_design.png) | 结构化事件时间线设计图源文件和导出图片。 |
+| [结构化事件时间线流程图源文件](docs/structured_event_timeline_flowchart.drawio) / [PNG](docs/structured_event_timeline_flowchart.drawio.png) | 结构化事件时间线流程图源文件和导出图片。 |
 
 变更日志请查看 `changes/` 目录。
 

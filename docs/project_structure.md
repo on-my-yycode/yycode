@@ -69,7 +69,28 @@ yoyoagent/
 │   └── test_utils.py         # 单元测试
 │
 └── docs/                     # 文档目录
-    └── project_structure.md  # 本文档
+    ├── usage.md                              # 日常启动、会话、TUI、审批、技能和工具使用说明
+    ├── project_structure.md                  # 项目结构、模块职责、工作流和扩展建议（本文档）
+    ├── code_agent_roadmap.md                 # 代码代理能力路线图、实施状态和后续计划
+    ├── core_workflow.md                      # 当前核心工作流架构与 runtime 执行链路
+    ├── core_workflow_refactor_design.md      # 核心工作流拆分重构的设计、迁移计划和风险控制
+    ├── full_tui_design.md                    # Textual TUI 完整界面与交互设计
+    ├── tui_flow_analysis.md                  # TUI 输入、事件流、渲染和审批流程分析
+    ├── context_compression_design.md         # 长会话上下文压缩触发、裁剪和摘要策略
+    ├── session_persistence_design.md         # Session messages 保存、恢复、列表、删除和临时会话设计
+    ├── structured_event_timeline_design.md   # 结构化事件时间线的数据模型和 UI 演进方案
+    ├── task_graph_dag_design.md              # 复杂任务 DAG 调度、依赖关系和状态管理设计
+    ├── lsp_integration_design.md             # LSP 集成目标、模块划分、诊断和符号能力设计
+    ├── security_review_report.md             # 安全风险清单、已有防护和优先行动建议
+    ├── confirmed_plan_changelog_update.md    # changelog 更新前确认的执行计划
+    ├── workflow_diagram.mmd                  # 核心工作流 Mermaid 图源文件
+    ├── workflow_diagram_art.txt              # 核心工作流 ASCII 图
+    ├── yoyoagent_architecture.drawio(.png)   # 架构图源文件及导出 PNG
+    ├── yoyoagent_core_workflow.drawio(.png)  # 核心工作流程图源文件及导出 PNG
+    ├── structured_event_timeline_design.drawio / .png
+    │                                         # 结构化事件时间线设计图源文件及导出 PNG
+    └── structured_event_timeline_flowchart.drawio / .drawio.png
+                                              # 结构化事件时间线流程图源文件及导出 PNG
 ```
 
 ## 核心架构分析

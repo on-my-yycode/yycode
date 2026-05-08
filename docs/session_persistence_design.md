@@ -36,14 +36,14 @@
 - 新增 `agent/app_paths.py`，集中解析 `app_root` 和 `runtime_data_dir`。
 - 新增 `agent/session_store.py`，实现 `FileSessionStore`、`SessionStoreError` 和 `workspace_hash()`。
 - `Session` 支持 `app_root`、`runtime_data_dir`、`persist_messages`、`resume` 和 `message_store`。
-- CLI/TUI 支持 `--session-id`、`--resume`、`--no-persist`。
+- CLI/TUI 支持 `-r` / `--resume <id>`、`-s` / `--sessions`、`-x` / `--delete <id>`、`-t` / `--temp`。
 - `send()` / `send_stream()` 在任务结束并裁剪 todo artifacts 后保存 canonical messages。
 - `clear()` / `reset()` 会保存空历史。
 - 默认 skills 已迁移到 `{app_root}/skills`；`YOYO_SKILL_DIRS` 作为额外技能目录追加。
 
 仍未实现：
 
-- `--list-sessions` / `--resume-latest` / `--delete-session`。
+- `--resume-latest`。
 - `app_root/sessions` 不可写时 fallback 到 `~/.yoyoagent/sessions`。
 - 恢复后预压缩。
 - 多进程同 session 文件并发写协调。
@@ -209,24 +209,23 @@ message_store: SessionStore | None = None
 建议参数：
 
 ```text
---session-id <id>   指定 session id
---resume            从同 session id 的持久化文件恢复 messages
---no-persist        禁用本地持久化
+-r, --resume <id>   从指定 session id 的持久化文件恢复 messages
+-s, --sessions      列出当前 workdir 下可恢复的 sessions
+-x, --delete <id>   删除当前 workdir 下指定 session
+-t, --temp          临时会话，不保存 messages
 ```
 
 推荐默认：
 
 - 默认开启保存。
-- 默认不自动恢复历史，必须显式 `--resume`。
-- 未指定 `--session-id` 时生成新 id。
-- 指定 `--session-id --resume` 时恢复已有历史；如果历史不存在，则以该 id 开始新会话。
+- 默认不自动恢复历史，必须显式 `-r <id>` / `--resume <id>`。
+- 未指定 `--resume` 时生成新 id。
+- 指定 `--resume <id>` 时恢复已有历史；如果历史不存在，则以该 id 开始新会话。
 
 后续增强：
 
 ```text
---list-sessions
 --resume-latest
---delete-session <id>
 ```
 
 TUI 启动信息可以继续显示 `Session ID`，并在恢复成功时补充一行：
@@ -286,9 +285,10 @@ Restored messages: N
 
 ### CLI / TUI 测试
 
-- `--session-id` 传入 `Session.from_config()`。
-- `--resume` 触发历史加载。
-- `--no-persist` 禁止写入。
+- `-r` / `--resume <id>` 传入 `Session.from_config(session_id=id, resume=True)`。
+- `-s` / `--sessions` 输出当前 workdir 下的 session 列表并退出。
+- `-x` / `--delete <id>` 删除当前 workdir 下指定 session 文件并退出。
+- `-t` / `--temp` 禁止写入。
 - TUI startup info 展示恢复状态。
 
 ## 实施步骤
@@ -313,9 +313,9 @@ Restored messages: N
 
 ## 待确认
 
-- 默认是否开启持久化：建议开启保存，但恢复必须显式 `--resume`。
+- 默认是否开启持久化：建议开启保存，但恢复必须显式 `-r <id>` / `--resume <id>`。
 - `clear()` / `reset()` 对磁盘文件的精确定义。
-- 是否需要 `--list-sessions` / `--resume-latest`。
+- 是否需要 `--resume-latest`。
 - `app_root` 如何解析：源码运行、便携发行和未来 pip 安装是否使用不同规则。
 - `app_root/sessions` 不可写时是否首版 fallback 到 `~/.yoyoagent/sessions`。
 - 是否增加配置文件形式的项目级技能扩展入口。

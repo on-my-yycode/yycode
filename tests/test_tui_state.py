@@ -866,7 +866,7 @@ def test_tui_timeline_shows_diff_preview_before_approval_request():
 def test_tui_status_header_uses_compact_two_column_layout():
     state = TuiState()
     state.set_startup_info(
-        session_id="sess-1",
+        session_id="12345678-1234-5678-1234-567812345678",
         model_name="deepseek-reasoner-with-a-very-long-name",
         skills_text="drawio",
         workspace_path="/Users/yoyofx/Documents/github/yoyoagent",
@@ -875,6 +875,9 @@ def test_tui_status_header_uses_compact_two_column_layout():
     status = render_status_text(state, width=140)
 
     assert "YOYOAGENT" in status
+    assert "Session" in status
+    assert "12345678-1234-5678-1234-567812345678" in status
+    assert "Dir" in status
     assert "Model" in status
     assert "Status" in status
     assert "┬" not in status

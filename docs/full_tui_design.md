@@ -210,19 +210,85 @@ Textual App 主类及所有内嵌 widget。
 - 提供 `run_tui(args)` 公共入口函数
 - 所有 Textual widget 均在此文件内定义为内部类（不需要单独的 `widgets.py`）
 
+当前主界面 ASCII 设计图：
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Yoyo Agent  session: abc123  restored: 42  model: gpt-4.1  cwd: ~/project    │
+│ task: running · implementing · ctx 18k/128k · todo 2/5                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Timeline / Transcript                                      RichLog           │
+│                                                                              │
+│  You                                                                         │
+│  帮我更新 UI 设计文档                                                        │
+│                                                                              │
+│  Yoyo                                                                        │
+│  我会先检查文档，然后补充 UI 区域和组件说明。                                │
+│                                                                              │
+│  explored 1 file                                                             │
+│    docs/full_tui_design.md                                                   │
+│                                                                              │
+│  Edited 1 file                                                               │
+│    docs/full_tui_design.md                                                   │
+│                                                                              │
+│  ran 1 check · passed                                                        │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Skill completion                                                             │
+│  @code_workflow   Universal code development workflow                        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Approval                                                                     │
+│  apply_patch wants to edit docs/full_tui_design.md                           │
+│  Y/Enter approve · N/Esc reject · Ctrl+T task plan · Ctrl+D diff             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ > 请继续补充设计图                                                           │
+│                                                                              │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ready · 0 running · tokens 1.2k/128k · Ctrl+Enter send · Ctrl+Q quit         │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+说明：上图表达主界面的视觉区域，不要求每一行文本固定存在。`Skill completion` 和 `Approval` 区域是条件显示区域：无技能候选或无待审批请求时为空或隐藏，只保留主时间线与输入区。
+
 当前布局：
 
 ```text
-Vertical(root-layout)
-  ├── Static(top-panel)          # header：模型/会话/上下文/任务状态
-  ├── RichLog(timeline-panel)    # 可滚动 timeline（全高）
-  └── Container(input-shell)     # 底部输入区域
-        ├── Static(input-top-rule)
-        ├── Horizontal(input-row)
-        │     ├── Static(input-prompt)   # ">" 提示符
-        │     └── TextArea(prompt-input) # 用户输入框
-        └── Static(input-bottom-rule)
+Vertical(root-layout)                         # 根布局容器，纵向排列所有主区域
+  ├── Static(top-panel)                       # 顶部状态区
+  ├── RichLog(timeline-panel)                 # 主时间线区
+  ├── Static(skill-completion)                # 技能补全候选区
+  └── Container(input-shell)                  # 底部输入与审批区
+        ├── Static(input-top-rule)            # 输入区顶部分隔线
+        ├── Container(approval-inline)        # 内联审批提示区
+        │     ├── Static(approval-title)      # 审批标题
+        │     ├── Static(approval-detail)     # 审批目标/风险说明
+        │     └── Static(approval-actions)    # 审批快捷键提示
+        ├── Horizontal(input-row)             # 输入行
+        │     ├── Static(input-prompt)        # `>` 提示符
+        │     └── TextArea(prompt-input)      # 多行用户输入框
+        ├── Static(input-bottom-rule)         # 输入区底部分隔线
+        └── Static(input-status-bar)          # 状态栏：运行态、耗时、token、todo 等
 ```
+
+UI 区域定义与组件选型：
+
+| UI 区域 | Textual 组件 | 组件 ID / 类 | 作用 |
+|---------|--------------|--------------|------|
+| 根布局 | `Vertical` | `root-layout` | 按“顶部状态 → 时间线 → 技能补全 → 输入/审批”纵向组织主界面。 |
+| 顶部状态区 | `Static` | `top-panel` | 展示品牌、session id、恢复消息数、工作区、模型、上下文和任务状态；内容由 `render_brand_text` / `render_status_bar_text` 生成。 |
+| 主时间线区 | `RichLog` | `timeline-panel`, `selectable` | 展示 Transcript 风格事件时间线；支持 Rich markup、自动换行、手动滚动和复制。时间线内容由 `render_timeline_lines(..., header_mode="main")` 生成。 |
+| 技能补全候选区 | `Static` | `skill-completion` | 输入技能引用时显示候选技能列表；不打开时为空。 |
+| 底部输入与审批区 | `Container` | `input-shell` | 承载内联审批、输入框、分隔线和状态栏，固定在底部。 |
+| 内联审批提示区 | `Container` + `Static` | `approval-inline`, `approval-title`, `approval-detail`, `approval-actions` | 高风险操作等待审批时展示标题、目标/风险说明和快捷键；用户通过 `Y/Enter` 批准，`N/Esc` 拒绝。 |
+| 输入行 | `Horizontal` | `input-row` | 横向排列输入提示符和多行输入框。 |
+| 输入提示符 | `Static` | `input-prompt` | 显示 `>`，提示用户输入位置。 |
+| 用户输入框 | `TextArea` | `prompt-input` | 多行 prompt 输入；`Ctrl+Enter` / `Ctrl+J` 提交。 |
+| 输入状态栏 | `Static` | `input-status-bar` | 展示运行状态、耗时、token、模型、上下文和 todo 摘要。 |
+| 任务计划弹窗 | `ModalScreen` + `Container` + `Static` | `TaskPlanScreen`, `task-plan-dialog`, `task-plan-body` | `Ctrl+T` 打开，展示当前 Task State / Todo memory。 |
+| Changed Files 弹窗 | `ModalScreen` + `ListView` + `RichLog` | `ChangedFilesScreen`, `changed-files-list`, `changed-files-diff` | `Ctrl+D` 打开，左侧列出变更文件，右侧用 `RichLog` 展示 diff。 |
+
+说明：当前主时间线没有自定义 widget，而是使用 Textual 的 `RichLog` 作为滚动显示组件；`TuiState.timeline` 保存结构化事件，`agent/tui/renderers.py` 将状态渲染为 Rich markup 后写入 `RichLog`。
 
 快捷键：
 

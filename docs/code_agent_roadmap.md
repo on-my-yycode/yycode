@@ -664,8 +664,8 @@ agent/session_store.py
 - 恢复时必须校验 session 文件中的 `workdir` 与当前 `Session.workdir` 一致。
 - `resume=True` 且存在同 session id 文件时，加载历史 messages。
 - `send()` / `send_stream()` 正常完成并裁剪内部 todo artifacts 后保存最终 `self.messages`。
-- 默认开启保存，但默认不自动恢复；恢复需显式传入 `--resume`。
-- CLI/TUI 已增加 `--session-id`、`--resume`、`--no-persist`。
+- 默认开启保存，但默认不自动恢复；恢复需显式传入 `-r <id>` / `--resume <id>`。
+- CLI/TUI 已增加 `-r` / `--resume <id>`、`-s` / `--sessions`、`-x` / `--delete <id>`、`-t` / `--temp`。
 
 目录归属需要和 skills 一起收口：
 
@@ -763,7 +763,7 @@ MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 2. 统一工具 workdir 注入和 workspace safe_path
 3. 补齐文件/git/bash/verify/subagent 的 workdir 回归测试
 4. 已实现 `SessionStore` 文件持久化和 BaseMessage 序列化
-5. 已在 `Session`、CLI 和 TUI 中接入 `--session-id`、`--resume`、`--no-persist`
+5. 已在 `Session`、CLI 和 TUI 中接入 `-r` / `--resume <id>`、`-s` / `--sessions`、`-x` / `--delete <id>`、`-t` / `--temp`
 6. 已补齐 session 保存、恢复、禁用持久化和 skills 迁移相关测试/文档；后续继续补充损坏文件、列表命令和 fallback 测试
 7. 更新 LSP 基础类型和 JSON-RPC client
 8. 支持 Python language server 检测和懒启动
