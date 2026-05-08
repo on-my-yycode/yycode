@@ -1091,3 +1091,27 @@ def test_tui_timeline_escapes_nested_tool_args_for_textual_markup():
     to_content(transcript)
     assert "Greeting / introduction" in transcript
     assert "files_inspected" in transcript
+
+
+def test_tui_timeline_formats_load_skill_input_readably():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="plan")
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_start",
+            title="Load skill",
+            phase="planning",
+            status="running",
+            tool_name="load_skill",
+            metadata={"args": {"names": ["plan", "code_workflow"]}},
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    plain = to_content(transcript).plain
+    assert "Input names=plan, code_workflow" in plain
+    assert "\\['plan'" not in transcript

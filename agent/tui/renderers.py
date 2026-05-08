@@ -848,7 +848,7 @@ def _tool_activity_tree_details(
             details.append(item.title)
 
     if start and _should_show_tool_input(start):
-        details.append(f"Input {_format_args(args)}")
+        details.append(f"Input {_format_args_plain(args)}")
     if end and end.elapsed_ms is not None:
         details.append(_format_duration(end.elapsed_ms))
     elif status in {"running", "in_progress"}:
@@ -1617,13 +1617,43 @@ def _render_tool_return(item: TimelineItem, role_prefix: str) -> str:
 
 
 def _format_args(args: object) -> str:
-    if not isinstance(args, dict) or not args:
+    formatted = _format_args_plain(args)
+    if formatted == "{}":
         return "[#7f8794]{}[/]"
+    return f"[#8b949e]{_safe_text(formatted)}[/]"
+
+
+def _format_args_plain(args: object) -> str:
+    if not isinstance(args, dict) or not args:
+        return "{}"
     parts = []
     for key, value in list(args.items())[:5]:
-        parts.append(f"{_safe_text(key)}={_safe_repr(value, 120)}")
+        parts.append(f"{_safe_text(key)}={_format_arg_value(value)}")
     suffix = " ..." if len(args) > 5 else ""
-    return f"[#8b949e]{', '.join(parts)}{suffix}[/]"
+    return f"{', '.join(parts)}{suffix}"
+
+
+def _format_arg_value(value: object) -> str:
+    """Format tool argument values for compact human-readable display."""
+    if isinstance(value, str):
+        return _safe_text(value, 120)
+    if isinstance(value, (int, float, bool)) or value is None:
+        return _safe_text(value)
+    if isinstance(value, list):
+        items = [_format_arg_value(item) for item in value[:4]]
+        suffix = ", ..." if len(value) > 4 else ""
+        return f"{', '.join(items)}{suffix}"
+    if isinstance(value, tuple):
+        items = [_format_arg_value(item) for item in value[:4]]
+        suffix = ", ..." if len(value) > 4 else ""
+        return f"{', '.join(items)}{suffix}"
+    if isinstance(value, dict):
+        parts = []
+        for key, item in list(value.items())[:4]:
+            parts.append(f"{_safe_text(key)}: {_format_arg_value(item)}")
+        suffix = ", ..." if len(value) > 4 else ""
+        return "{" + ", ".join(parts) + suffix + "}"
+    return _safe_repr(value, 120)
 
 
 def _indent_block(text: str) -> str:
