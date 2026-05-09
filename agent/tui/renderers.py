@@ -284,7 +284,8 @@ def _highlight_code_line_for_tui(line: str, lang: str) -> str:
 
 
 def _normalize_code_lang(lang: str) -> str:
-    return (lang or "").strip().lower().split(None, 1)[0]
+    parts = (lang or "").strip().lower().split(None, 1)
+    return parts[0] if parts else ""
 
 
 def _highlight_keyword_line(
@@ -1096,8 +1097,10 @@ def render_approval_text(approval: PendingApproval) -> str:
 
 def _render_subagent(subagent: SubagentStatus) -> str:
     elapsed = f" ({subagent.elapsed_ms} ms)" if subagent.elapsed_ms is not None else ""
+    skills = _skills_suffix(subagent.skills)
     return (
         f"[#9cdcfe]@{_safe_text(subagent.role)}[/] "
+        f"{skills}"
         f"{_status_badge(subagent.status)} "
         f"{_safe_text(subagent.detail)}{elapsed}"
     )
@@ -1190,7 +1193,8 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> 
     if item.event_type in {"subagent_started", "subagent_finished"}:
         status = _status_badge(item.status)
         detail = _detail_line(item.detail)
-        return _activity_line("@", "#9cdcfe", role_prefix, item, status, detail)
+        skills = _skills_suffix(item.metadata.get("skills") if isinstance(item.metadata, dict) else None)
+        return _activity_line("@", "#9cdcfe", role_prefix, item, f"{skills}{status}", detail)
     if item.event_type in {"agent_thinking"}:
         return None  # 临时状态不显示在最终时间线中
     return None
@@ -1673,6 +1677,20 @@ def _activity_line(
     title = _safe_text(str(item.title).lower())
     phase = f" [#7f8794]{_safe_text(item.phase)}[/]" if item.phase else ""
     return f"{role_prefix}[{marker_color}]{marker}[/] [#cfd3dc]{title}[/]{phase} {status}{detail}"
+
+
+def _skills_suffix(skills: object) -> str:
+    if not isinstance(skills, list) or not skills:
+        return ""
+    names = []
+    for skill in skills:
+        name = str(skill).strip().lstrip("/")
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return ""
+    rendered = " ".join(f"/{_safe_text(name)}" for name in names)
+    return f"[#7f8794]using[/] [#c9a6ff]{rendered}[/] "
 
 
 def _task_running_line(

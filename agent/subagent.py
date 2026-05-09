@@ -17,7 +17,7 @@ from agent.approval import (
 from agent.llm_retry import chat_with_retry
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
-from agent.skills import SkillRegistry
+from agent.skills import LoadedSkill, SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
 from agent.tool_retry import async_run_tool_with_retry
 from tools import TOOLS
@@ -73,6 +73,7 @@ def build_subagent_system_prompt(
     workdir: Path,
     parent_prompt: str,
     skill_catalog_prompt: str = "",
+    loaded_skills_prompt: str = "",
 ) -> str:
     """Build the role-specific system prompt for a child agent."""
     role_prompt = ROLE_PROMPTS[role]
@@ -90,6 +91,8 @@ Important constraints:
 - Be concise: return at most 5 bullets unless the task explicitly asks for detail."""
     if skill_catalog_prompt:
         prompt = f"{prompt}\n\n{skill_catalog_prompt}"
+    if loaded_skills_prompt:
+        prompt = f"{prompt}\n\n{loaded_skills_prompt}"
     return prompt
 
 def format_subagent_result(
@@ -97,6 +100,7 @@ def format_subagent_result(
     session_id: str,
     hit_turn_limit: bool,
     content: str,
+    skills: Optional[list[str]] = None,
 ) -> str:
     """Format a subagent result for the parent agent."""
     if len(content) > MAX_OUTPUT_CHARS:
@@ -106,6 +110,7 @@ def format_subagent_result(
     return (
         f"Subagent result\n"
         f"role: {role}\n"
+        f"skills: {', '.join(skills) if skills else 'none'}\n"
         f"session_id: {session_id}\n"
         f"status: {status}\n\n"
         f"{content}"
@@ -156,10 +161,15 @@ class SubagentRunner:
         task: str,
         context: str = "",
         max_turns: int = DEFAULT_MAX_TURNS,
+        skills: Optional[list[str]] = None,
     ) -> str:
         """Run a subagent and return a formatted summary result."""
         if role not in ROLE_PROMPTS:
             return f"Error: Unknown subagent role: {role}"
+        explicit_skills = self._normalize_skills(skills)
+        loaded_skills = self._load_explicit_skills(explicit_skills)
+        if isinstance(loaded_skills, str):
+            return loaded_skills
 
         max_turns = self._normalize_max_turns(max_turns)
         self.last_usage = {
@@ -183,12 +193,13 @@ class SubagentRunner:
             self.workdir,
             self.parent_system_prompt,
             self.skill_catalog_prompt,
+            self._format_explicit_skills_prompt(loaded_skills),
         )
-        prompt = self._build_user_prompt(task, context)
+        prompt = self._build_user_prompt(task, context, explicit_skills)
         messages: list[BaseMessage] = [HumanMessage(content=prompt)]
         hit_turn_limit = True
         start_time = time.perf_counter()
-        await self._emit_subagent_started(session_id, role, task)
+        await self._emit_subagent_started(session_id, role, task, explicit_skills)
 
         try:
             for _ in range(max_turns):
@@ -253,6 +264,7 @@ class SubagentRunner:
                 task,
                 "failed",
                 int((time.perf_counter() - start_time) * 1000),
+                explicit_skills,
             )
             self._active_session_id = None
             self._active_role = None
@@ -266,8 +278,9 @@ class SubagentRunner:
             task,
             status,
             int((time.perf_counter() - start_time) * 1000),
+            explicit_skills,
         )
-        result = format_subagent_result(role, session_id, hit_turn_limit, final_content)
+        result = format_subagent_result(role, session_id, hit_turn_limit, final_content, explicit_skills)
         self._active_session_id = None
         self._active_role = None
         return result
@@ -327,10 +340,59 @@ class SubagentRunner:
             )
         )
 
-    def _build_user_prompt(self, task: str, context: str) -> str:
+    def _build_user_prompt(self, task: str, context: str, skills: list[str] | None = None) -> str:
+        explicit = ""
+        if skills:
+            explicit = "Explicit skills:\n" + "\n".join(f"- {skill}" for skill in skills) + "\n\n"
         if context:
-            return f"Task:\n{task}\n\nContext:\n{context}"
-        return f"Task:\n{task}"
+            return f"{explicit}Task:\n{task}\n\nContext:\n{context}"
+        return f"{explicit}Task:\n{task}"
+
+    def _normalize_skills(self, skills: Optional[list[str]]) -> list[str]:
+        normalized: list[str] = []
+        for skill in skills or []:
+            name = str(skill).strip()
+            if name.startswith("/"):
+                name = name[1:]
+            if name and name not in normalized:
+                normalized.append(name)
+        return normalized
+
+    def _load_explicit_skills(self, skills: list[str]) -> list[LoadedSkill] | str:
+        if not skills:
+            return []
+        loaded = self.skill_registry.load_skills(skills)
+        loaded_names = {skill.name for skill in loaded}
+        missing = [skill for skill in skills if skill not in loaded_names]
+        if not missing:
+            return loaded
+        available = ", ".join(skill.name for skill in self.skill_registry.list_skills()) or "(none)"
+        return (
+            f"Error: Unknown skill: /{missing[0]}\n"
+            f"Available skills: {available}"
+        )
+
+    def _format_explicit_skills_prompt(self, skills: list[LoadedSkill]) -> str:
+        if not skills:
+            return ""
+        sections = [
+            "Explicit skills selected by the parent:",
+            *[f"- {skill.name}" for skill in skills],
+            "",
+            "Loaded skill instructions:",
+        ]
+        for skill in skills:
+            sections.append("")
+            sections.append(f"## {skill.name}")
+            sections.append(f"Source: {skill.path}")
+            if skill.description:
+                sections.append(f"Description: {skill.description}")
+            sections.append("")
+            sections.append(skill.content)
+        sections.append("")
+        sections.append("You must follow the loaded skill instructions for this delegated task.")
+        sections.append("If a selected skill is not suitable for the task, mention that in your result.")
+        return "\n".join(sections).rstrip()
 
     def _last_ai_content(self, messages: list[BaseMessage]) -> str:
         for msg in reversed(messages):
@@ -353,7 +415,13 @@ class SubagentRunner:
         self.last_usage["output_tokens"] += usage.get("output_tokens", 0)
         self.last_usage["total_tokens"] += usage.get("total_tokens", 0)
 
-    async def _emit_subagent_started(self, session_id: str, role: str, task: str) -> None:
+    async def _emit_subagent_started(
+        self,
+        session_id: str,
+        role: str,
+        task: str,
+        skills: Optional[list[str]] = None,
+    ) -> None:
         if self.stream_callback is None:
             return
         await self.stream_callback(
@@ -368,7 +436,7 @@ class SubagentRunner:
                 detail=task,
                 phase="implementing" if role == "worker" else "exploring",
                 status="running",
-                metadata={"task": task},
+                metadata={"task": task, "skills": skills or []},
             )
         )
 
@@ -379,6 +447,7 @@ class SubagentRunner:
         task: str,
         status: str,
         elapsed_ms: int,
+        skills: Optional[list[str]] = None,
     ) -> None:
         if self.stream_callback is None:
             return
@@ -395,7 +464,7 @@ class SubagentRunner:
                 phase="implementing" if role == "worker" else "exploring",
                 status=status,
                 elapsed_ms=elapsed_ms,
-                metadata={"task": task},
+                metadata={"task": task, "skills": skills or []},
             )
         )
 

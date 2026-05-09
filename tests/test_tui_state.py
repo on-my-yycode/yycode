@@ -71,6 +71,7 @@ def test_tui_state_tracks_pending_approval_and_subagent_status():
             detail="Implement TUI panel refresh",
             phase="implementing",
             status="running",
+            metadata={"skills": ["/plan", "plan"]},
         )
     )
 
@@ -80,6 +81,7 @@ def test_tui_state_tracks_pending_approval_and_subagent_status():
     assert approval.diff_preview == "+new"
     assert state.subagents["sub-1"].role == "worker"
     assert state.subagents["sub-1"].status == "running"
+    assert state.subagents["sub-1"].skills == ["plan"]
 
     state.apply_event(
         StreamEvent(
@@ -94,6 +96,30 @@ def test_tui_state_tracks_pending_approval_and_subagent_status():
     )
 
     assert state.next_pending_approval() is None
+
+
+def test_tui_timeline_shows_subagent_explicit_skills():
+    state = TuiState()
+    state.apply_event(
+        StreamEvent(
+            source="subagent",
+            session_id="sub-1",
+            role="architect",
+            parent_session_id="main-1",
+            event_type="subagent_started",
+            title="Start architect subagent",
+            detail="Design plugin system",
+            phase="exploring",
+            status="running",
+            metadata={"skills": ["plan"]},
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "@architect" in transcript
+    assert "using" in transcript
+    assert "/plan" in transcript
 
 
 def test_tui_timeline_shows_denied_approval_as_task_stopped():
@@ -425,6 +451,26 @@ def test_tui_timeline_highlights_common_code_fence_languages():
     assert "[bold #c586c0]class[/]" in transcript
     assert "[bold #c586c0]func[/]" in transcript
     assert "[bold #c586c0]return[/]" in transcript
+    to_content(transcript)
+
+
+def test_tui_timeline_renders_plain_code_fence_without_language():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content="```\nplain text\n\n```\n```   \nmore plain text\n```",
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "code" in transcript
+    assert "plain text" in transcript
+    assert "more plain text" in transcript
     to_content(transcript)
 
 

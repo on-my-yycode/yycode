@@ -14,6 +14,7 @@ from agent.session import (
     infer_context_window_tokens,
     parse_context_window_tokens,
 )
+from agent.tui.app import _completion_context
 from main import (
     auto_approval_callback,
     build_arg_parser,
@@ -252,6 +253,38 @@ def test_run_agent_task_cancels_current_task_without_reraising():
 
     assert result is False
     assert cancelled is True
+
+
+def test_tui_completion_context_detects_subagent_role_token():
+    assert _completion_context("@arch", (0, 5)) == (
+        "role",
+        "arch",
+        (0, 0),
+        (0, 5),
+    )
+
+
+def test_tui_completion_context_detects_skill_token_in_existing_text():
+    assert _completion_context("please use /pl to design", (0, 14)) == (
+        "skill",
+        "pl",
+        (0, 11),
+        (0, 14),
+    )
+
+
+def test_tui_completion_context_uses_current_line_only():
+    text = "first line\n@sec"
+    assert _completion_context(text, (1, 4)) == (
+        "role",
+        "sec",
+        (1, 0),
+        (1, 4),
+    )
+
+
+def test_tui_completion_context_ignores_plain_text_tokens():
+    assert _completion_context("please use skill", (0, 10)) is None
 
 
 def test_format_token_count_supports_compact_units():

@@ -30,11 +30,15 @@
 - TUI 时间流：结构化工具活动、Markdown/代码高亮、任务计划面板、文件变更摘要和 diff 查看器。
 - TUI 审批交互：底部内联审批、审批前 diff preview、批准/拒绝快捷键提示。
 - Task State 历史治理：任务完成后裁剪内部 todo 工具调用，降低后续上下文污染。
+- Workspace / workdir 统一基础版：命令入口支持 `yoyoagent [workspace]`，runtime 为 workspace-bound 工具注入 `workdir`。
+- Session messages 持久化与恢复首版：默认保存 messages，支持 `-r` 恢复、`-s` 列表、`-x` 删除、`-t` 临时会话。
+- subagent 显式 skill 委派：`subagent` 工具支持 `skills` 参数，`@architect /plan ...` 可将 skill 隔离加载到 subagent 上下文。
+- TUI 输入补全：支持 `/skill`、正文中间 `/skill`、`@role` subagent 角色补全。
 
 主要欠缺：
 
 - 更强代码导航工具。
-- Session messages 持久化与恢复，设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+- Message Token Manager：当前会话 message token 统计、压缩建议和手动压缩旧 tool output，设计见 [Message Token Manager 设计](message_token_manager_design.md)。
 - 长任务摘要记忆。
 - 更高级的上下文压缩策略，例如对较早对话做摘要压缩。
 - 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
@@ -59,12 +63,17 @@
 - TUI 时间流已升级为结构化分组展示：探索、搜索、编辑、验证、任务状态和文件变更摘要会以更适合阅读的层次输出。
 - `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
 - 会话历史治理已实现基础版：任务正常完成后裁剪内部 todo 工具调用和工具结果，减少下一个任务被旧 Task State 污染。
+- Workspace / workdir 统一基础版已实现：命令入口支持位置参数 workspace，主要 workspace 工具使用 runtime 注入的 `workdir`。
+- Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+- subagent 显式 skill 委派首版已实现，详见 [Subagent 显式 Skill 委派设计](subagent_explicit_skill_design.md)。
+- TUI 已支持 `@role` 补全，以及在已有正文中按光标 token 触发 `/skill` 补全。
 
 待校准：
 
 - Workspace / workdir 统一已进入实现阶段：命令入口已支持 `yoyoagent [workspace]`，runtime 会为 workspace-bound 工具注入 `workdir`，多数文件/git/bash/verify/搜索工具已支持显式 `workdir`。
 - 仍需完成最终收口：部分工具保留模块级 `WORKDIR = Path.cwd()` 作为 fallback，`edit_file` 仍是阻断占位工具，发行版本前需要继续去除 import-time cwd 依赖并补齐完整回归测试。
-- Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
+- Session messages 持久化仍需补齐损坏文件、不可写 session 目录 fallback、列表命令边界和更多恢复容错测试。
+- Message Token Manager 已完成设计，尚未实现。
 
 ## 总体路线
 
@@ -80,8 +89,9 @@
 7. 安全审批机制
 8. Workspace / Workdir 统一
 9. Session messages 持久化与恢复
-10. 任务依赖图 / DAG 调度
-11. evals
+10. Message Token Manager
+11. 任务依赖图 / DAG 调度
+12. evals
 ```
 
 其中 MVP 建议先做前 4 项。
@@ -443,6 +453,48 @@ next_steps
 
 工作量：中到大，约 `1-2 天`。
 
+## Phase 6.5: Message Token Manager
+
+状态：已完成设计，待实现。详细设计见 [Message Token Manager 设计](message_token_manager_design.md)。
+
+### 背景
+
+当前已有 session messages 持久化、上下文窗口显示、provider/tokenizer token counting 和旧 tool output 自动压缩。用户仍缺少一个可见界面来判断：
+
+- 当前上下文到底用了多少 token。
+- token 主要被 system prompt、tools schema、user、assistant 还是 tool output 消耗。
+- 哪些历史 tool output 最值得压缩。
+- 手动压缩预计能节省多少 token，以及风险是什么。
+
+### 首版目标
+
+- 新增 `MessageContextManager`，分析 `Session.messages`、`system_prompt` 和 tools schema 的 token 占用。
+- TUI 新增 `Ctrl+M` 只读统计面板。
+- 展示整体 context usage、压力等级、按 role/type 分布和最大消息列表。
+- 明确区分整体 exact/estimated token 与逐条 estimated token。
+- 给出旧 `ToolMessage` 的压缩建议。
+- 支持用户确认后手动压缩旧 tool output 为 compact marker。
+
+### 后续增强
+
+- 清除消息能力，但默认不物理删除，优先 replace with compact marker。
+- undo / backup / operation history。
+- 可配置 keep recent N、压缩阈值、tool output 最大长度。
+- 模型生成式摘要压缩，用于高价值历史 assistant/tool 内容。
+- `/messages` 命令入口。
+
+### 风险
+
+- 逐条 message token 首版只能估算，需要在 UI 明确标注。
+- 物理删除消息容易破坏 assistant tool call / ToolMessage 配对，后续清除能力必须非常保守。
+- 模型摘要可能丢失事实或引入幻觉，不应放入首版。
+
+### 估算
+
+只读统计 + 压缩建议：中，约 `1 天`。
+
+手动压缩旧 tool output：中，约 `0.5-1 天`。
+
 ## Phase 7: 安全审批机制
 
 状态：v1 阻断、runtime 审批和 TUI 内联审批 UI 已实现。
@@ -636,9 +688,9 @@ LSP manager 的基础 workspace 来自 `runtime.workdir`。目标文件必须先
 
 ### 背景
 
-当前 `Session` 已经有稳定的 `session_id`，并在内存中维护 `Session.messages`。每轮 `send()` / `send_stream()` 会把用户输入加入 messages，调用 LangGraph 后用 `result["messages"]` 更新会话历史。
+`Session` 有稳定的 `session_id`，并维护 `Session.messages`。每轮 `send()` / `send_stream()` 会把用户输入加入 messages，调用 LangGraph 后用 `result["messages"]` 更新会话历史。
 
-但 messages 目前只存在内存中。进程退出或 TUI/CLI 重启后，即使用户知道旧 session id，也无法恢复上一轮模型上下文。TUI timeline 只适合展示，不应作为模型上下文恢复来源。
+该阶段解决的问题是：messages 如果只存在内存中，进程退出或 TUI/CLI 重启后，即使用户知道旧 session id，也无法恢复上一轮模型上下文。当前首版已将 canonical messages 持久化到 yoyoagent 应用目录下的 `sessions/`，恢复时仍不依赖 TUI timeline。
 
 ### 目标
 
@@ -649,7 +701,7 @@ LSP manager 的基础 workspace 来自 `runtime.workdir`。目标文件必须先
 
 ### 推荐方案
 
-新增 `SessionStore` / `MessageStore` 抽象，由 `Session` 在生命周期中调用：
+已新增 `SessionStore` 抽象，由 `Session` 在生命周期中调用：
 
 ```text
 agent/session_store.py
@@ -734,7 +786,7 @@ expected.patch 可选
 8. 基础上下文治理
 ```
 
-MVP 已完成。后续进入增强阶段，重点是 workspace 统一、Session messages 持久化与恢复、语义代码导航、长任务摘要、DAG 调度和 evals。
+MVP 已完成。后续进入增强阶段，重点是 workspace 最终收口、Message Token Manager、语义代码导航、长任务摘要、DAG 调度和 evals。
 
 MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 
@@ -744,13 +796,13 @@ MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 
 ## 推荐下一步
 
-建议先完成 workspace / workdir 统一，再实现 Session messages 持久化与恢复，之后推进只读 LSP 语义导航 MVP。Session 持久化设计见 [Session Messages 持久化与恢复设计](session_persistence_design.md)，LSP 设计见 [LSP 集成设计](lsp_integration_design.md)。
+建议先完成 workspace / workdir 最终收口，再实现 Message Token Manager 首版，之后推进只读 LSP 语义导航 MVP。Message Token Manager 设计见 [Message Token Manager 设计](message_token_manager_design.md)，LSP 设计见 [LSP 集成设计](lsp_integration_design.md)。
 
 原因：
 
 - 发行版本需要支持 `yoyoagent [workspace]`，并保证所有工具实际操作目录与 session workdir 一致。
-- Session messages 持久化依赖稳定的 workspace 隔离和 session id 恢复入口，适合在 workdir 统一后落地。
-- 恢复会话上下文能提升 TUI/CLI 重启后的连续任务体验，并补齐当前 session id 只有标识、没有恢复能力的问题。
+- Session messages 持久化与恢复首版已落地，后续重点是容错、不可写目录 fallback 和边界测试。
+- Message Token Manager 依赖现有 messages 持久化、token counting 和上下文压缩能力，适合作为下一阶段上下文治理的用户可见入口。
 - LSP 的 workspace root、文件同步和安全边界都依赖统一的 runtime workdir。
 - 当前代码理解仍主要依赖文件搜索和文本 grep，复杂项目中成本较高。
 - LSP 能提供符号、定义、引用、hover 和诊断信息，能显著提升代码定位质量。
@@ -765,10 +817,13 @@ MVP 完成后，yoyoagent 将具备更完整的代码任务闭环：
 4. 已实现 `SessionStore` 文件持久化和 BaseMessage 序列化
 5. 已在 `Session`、CLI 和 TUI 中接入 `-r` / `--resume <id>`、`-s` / `--sessions`、`-x` / `--delete <id>`、`-t` / `--temp`
 6. 已补齐 session 保存、恢复、禁用持久化和 skills 迁移相关测试/文档；后续继续补充损坏文件、列表命令和 fallback 测试
-7. 更新 LSP 基础类型和 JSON-RPC client
-8. 支持 Python language server 检测和懒启动
-9. 实现 document/workspace symbols
-10. 实现 definition/references/hover/diagnostics
-11. 更新 prompt，引导复杂代码导航优先使用 LSP
-12. 补充 fake LSP 和缺失 language server 的回归测试
+7. 实现 MessageContextManager 的只读 token 统计和压缩建议
+8. TUI 增加 `Ctrl+M` Message Token Manager 面板
+9. 支持用户确认后手动压缩旧 ToolMessage
+10. 更新 LSP 基础类型和 JSON-RPC client
+11. 支持 Python language server 检测和懒启动
+12. 实现 document/workspace symbols
+13. 实现 definition/references/hover/diagnostics
+14. 更新 prompt，引导复杂代码导航优先使用 LSP
+15. 补充 fake LSP 和缺失 language server 的回归测试
 ```

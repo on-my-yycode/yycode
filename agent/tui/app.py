@@ -19,6 +19,13 @@ PROGRESS_COLORS = (
     "#facc15",
 )
 MAX_SKILL_SUGGESTIONS = 8
+SUBAGENT_ROLE_DESCRIPTIONS = {
+    "explorer": "investigate codebase",
+    "architect": "design technical approach",
+    "worker": "implement focused changes",
+    "tester": "verify and test",
+    "security": "review security risks",
+}
 
 
 def _safe_text(value: object, limit: int | None = None) -> str:
@@ -44,6 +51,27 @@ def _is_changed_files_key_event(event: object) -> bool:
         str(getattr(event, "name", "") or "").lower(),
     }
     return "ctrl+d" in names
+
+
+def _completion_context(
+    text: str,
+    cursor_location: tuple[int, int],
+) -> tuple[str, str, tuple[int, int], tuple[int, int]] | None:
+    """Return completion kind, token, start and end locations at the cursor."""
+    row, column = cursor_location
+    lines = text.split("\n")
+    if row < 0 or row >= len(lines):
+        return None
+    line = lines[row]
+    column = max(0, min(column, len(line)))
+    start = column
+    while start > 0 and not line[start - 1].isspace():
+        start -= 1
+    token = line[start:column]
+    if not token or token[0] not in {"/", "@"}:
+        return None
+    kind = "skill" if token[0] == "/" else "role"
+    return kind, token[1:].strip().lower(), (row, start), (row, column)
 
 
 def _indent_diff_for_panel(diff: str) -> str:
@@ -264,9 +292,11 @@ def run_tui(args: Namespace) -> None:
             self._session_ready = False
             self._last_timeline_content = ""
             self._progress_frame = 0
-            self._skill_suggestions: list[tuple[str, str]] = []
-            self._skill_suggestion_index = 0
-            self._skill_completion_open = False
+            self._completion_kind: str | None = None
+            self._completion_range: tuple[tuple[int, int], tuple[int, int]] | None = None
+            self._completion_suggestions: list[tuple[str, str]] = []
+            self._completion_suggestion_index = 0
+            self._completion_open = False
 
         def compose(self) -> ComposeResult:
             yield Vertical(
@@ -333,24 +363,24 @@ def run_tui(args: Namespace) -> None:
                 self.action_toggle_changed_files()
                 return
 
-            if self._skill_completion_open:
+            if self._completion_open:
                 if event.key in {"up", "ctrl+p"}:
-                    self._move_skill_selection(-1)
+                    self._move_completion_selection(-1)
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key in {"down", "ctrl+n"}:
-                    self._move_skill_selection(1)
+                    self._move_completion_selection(1)
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key in {"enter", "tab"}:
-                    self._complete_selected_skill()
+                    self._complete_selected_completion()
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key == "escape":
-                    self._hide_skill_completion()
+                    self._hide_completion()
                     event.prevent_default()
                     event.stop()
                     return
@@ -369,7 +399,7 @@ def run_tui(args: Namespace) -> None:
         def on_text_area_changed(self, event: TextArea.Changed) -> None:
             if event.text_area.id != "prompt-input":
                 return
-            self._update_skill_completion(event.text_area.text)
+            self._update_completion(event.text_area)
 
         def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
             if self._approval_open:
@@ -398,7 +428,7 @@ def run_tui(args: Namespace) -> None:
             text = input_widget.text.strip()
             if not text:
                 return
-            self._hide_skill_completion()
+            self._hide_completion()
             if text.lower() in {"q", "exit"}:
                 await self.action_quit()
                 return
@@ -434,14 +464,14 @@ def run_tui(args: Namespace) -> None:
             self.push_screen(ChangedFilesScreen(self.runner.state))
 
         def action_timeline_line_up(self) -> None:
-            if self._skill_completion_open:
-                self._move_skill_selection(-1)
+            if self._completion_open:
+                self._move_completion_selection(-1)
                 return
             self._scroll_timeline_relative(-1)
 
         def action_timeline_line_down(self) -> None:
-            if self._skill_completion_open:
-                self._move_skill_selection(1)
+            if self._completion_open:
+                self._move_completion_selection(1)
                 return
             self._scroll_timeline_relative(1)
 
@@ -502,7 +532,7 @@ def run_tui(args: Namespace) -> None:
                 self.call_after_refresh(lambda: self._scroll_to_end(timeline_panel))
 
             self._refresh_input_rules()
-            self._update_skill_completion(self.query_one("#prompt-input", TextArea).text)
+            self._update_completion(self.query_one("#prompt-input", TextArea))
             self._maybe_show_approval_prompt()
 
         def _refresh_status_surfaces(self) -> None:
@@ -575,47 +605,46 @@ def run_tui(args: Namespace) -> None:
             self.query_one("#input-top-rule", Static).update(rule)
             self.query_one("#input-bottom-rule", Static).update(rule)
 
-        def _update_skill_completion(self, text: str) -> None:
-            token = self._skill_completion_token(text)
-            if token is None:
-                self._hide_skill_completion()
+        def _update_completion(self, input_widget: TextArea) -> None:
+            context = _completion_context(input_widget.text, input_widget.cursor_location)
+            if context is None:
+                self._hide_completion()
                 return
+            kind, token, start, end = context
 
-            suggestions = self._matching_skills(token)
+            suggestions = self._matching_skills(token) if kind == "skill" else self._matching_roles(token)
             if not suggestions:
-                self._hide_skill_completion()
+                self._hide_completion()
                 return
 
-            if suggestions != self._skill_suggestions:
-                self._skill_suggestions = suggestions
-                self._skill_suggestion_index = 0
+            if (
+                kind != self._completion_kind
+                or start != (self._completion_range[0] if self._completion_range else None)
+                or suggestions != self._completion_suggestions
+            ):
+                self._completion_suggestions = suggestions
+                self._completion_suggestion_index = 0
             else:
-                self._skill_suggestion_index = min(
-                    self._skill_suggestion_index,
-                    max(0, len(self._skill_suggestions) - 1),
+                self._completion_suggestion_index = min(
+                    self._completion_suggestion_index,
+                    max(0, len(self._completion_suggestions) - 1),
                 )
-            self._skill_completion_open = True
+            self._completion_kind = kind
+            self._completion_range = (start, end)
+            self._completion_open = True
             panel = self.query_one("#skill-completion", Static)
             panel.display = True
-            panel.update(self._render_skill_completion())
+            panel.update(self._render_completion())
 
-        def _hide_skill_completion(self) -> None:
-            self._skill_completion_open = False
-            self._skill_suggestions = []
-            self._skill_suggestion_index = 0
+        def _hide_completion(self) -> None:
+            self._completion_kind = None
+            self._completion_range = None
+            self._completion_open = False
+            self._completion_suggestions = []
+            self._completion_suggestion_index = 0
             panel = self.query_one("#skill-completion", Static)
             panel.display = False
             panel.update("")
-
-        def _skill_completion_token(self, text: str) -> str | None:
-            if "\n" in text:
-                return None
-            if not text.startswith("/"):
-                return None
-            first = text.split(" ", 1)[0]
-            if first != text:
-                return None
-            return first[1:].strip().lower()
 
         def _matching_skills(self, token: str) -> list[tuple[str, str]]:
             if self.runner.session is None:
@@ -634,35 +663,46 @@ def run_tui(args: Namespace) -> None:
                 ]
             return rows[:MAX_SKILL_SUGGESTIONS]
 
-        def _render_skill_completion(self) -> str:
-            lines = ["[#7f8794]skills[/] [#555d6b]Up/Down select · Enter/Tab complete · Esc close[/]"]
-            for index, (name, description) in enumerate(self._skill_suggestions):
-                selected = index == self._skill_suggestion_index
+        def _matching_roles(self, token: str) -> list[tuple[str, str]]:
+            roles = list(SUBAGENT_ROLE_DESCRIPTIONS.items())
+            rows = [(name, description) for name, description in roles if name.startswith(token)]
+            if token and not rows:
+                rows = [(name, description) for name, description in roles if token in name]
+            return rows
+
+        def _render_completion(self) -> str:
+            header = "skills" if self._completion_kind == "skill" else "subagents"
+            prefix = "/" if self._completion_kind == "skill" else "@"
+            lines = [f"[#7f8794]{header}[/] [#555d6b]Up/Down select · Enter/Tab complete · Esc close[/]"]
+            for index, (name, description) in enumerate(self._completion_suggestions):
+                selected = index == self._completion_suggestion_index
                 marker = ">" if selected else " "
                 name_style = "bold #c9a6ff" if selected else "#d7dae0"
                 desc_style = "#a1a8b3" if selected else "#6f7785"
                 detail = f" [{desc_style}]{_safe_text(description, 70)}[/]" if description else ""
-                lines.append(f"[#7f8794]{marker}[/] [{name_style}]/{_safe_text(name)}[/]{detail}")
+                lines.append(f"[#7f8794]{marker}[/] [{name_style}]{prefix}{_safe_text(name)}[/]{detail}")
             return "\n".join(lines)
 
-        def _move_skill_selection(self, delta: int) -> None:
-            if not self._skill_suggestions:
+        def _move_completion_selection(self, delta: int) -> None:
+            if not self._completion_suggestions:
                 return
-            self._skill_suggestion_index = (
-                self._skill_suggestion_index + delta
-            ) % len(self._skill_suggestions)
-            self.query_one("#skill-completion", Static).update(self._render_skill_completion())
+            self._completion_suggestion_index = (
+                self._completion_suggestion_index + delta
+            ) % len(self._completion_suggestions)
+            self.query_one("#skill-completion", Static).update(self._render_completion())
 
-        def _complete_selected_skill(self) -> None:
-            if not self._skill_suggestions:
-                self._hide_skill_completion()
+        def _complete_selected_completion(self) -> None:
+            if not self._completion_suggestions or self._completion_range is None:
+                self._hide_completion()
                 return
-            skill_name = self._skill_suggestions[self._skill_suggestion_index][0]
+            name = self._completion_suggestions[self._completion_suggestion_index][0]
+            prefix = "/" if self._completion_kind == "skill" else "@"
             input_widget = self.query_one("#prompt-input", TextArea)
-            completion = f"/{skill_name} "
-            input_widget.load_text(completion)
-            input_widget.move_cursor((0, len(completion)))
-            self._hide_skill_completion()
+            start, end = self._completion_range
+            completion = f"{prefix}{name} "
+            input_widget.replace(completion, start, end)
+            input_widget.move_cursor((start[0], start[1] + len(completion)))
+            self._hide_completion()
             input_widget.focus()
 
         def _maybe_show_approval_prompt(self) -> None:

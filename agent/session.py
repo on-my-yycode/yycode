@@ -128,6 +128,7 @@ Tools and editing:
 Subagent delegation:
 - Use subagent only for focused, bounded subtasks.
 - Use explorer for investigation, architect for design, worker for implementation, tester for verification, and security for security review.
+- If the user writes an explicit delegation like "@architect /plan design X", call subagent with role="architect", skills=["plan"], and task="design X" instead of loading that skill in the main context.
 - Give each subagent a specific task, relevant context, expected output, and clear boundaries.
 - Do not delegate small one-or-two-tool-call tasks.
 - After a subagent returns, integrate its result yourself and update Task State.

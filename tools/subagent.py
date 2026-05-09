@@ -32,12 +32,26 @@ subagent_tool = {
                 "type": "integer",
                 "description": "Optional recursion limit for the subagent run. Defaults to 8.",
             },
+            "skills": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional local skill names to load into the subagent context before it starts. "
+                    "Use this for explicit delegation such as @architect /plan task."
+                ),
+            },
         },
         "required": ["role", "task"],
     },
 }
 
 
-def subagent(role: str, task: str, context: str = "", max_turns: int = 8) -> str:
+def subagent(
+    role: str,
+    task: str,
+    context: str = "",
+    max_turns: int = 8,
+    skills: list[str] | None = None,
+) -> str:
     """Dummy subagent handler - should be bound by the graph at runtime."""
     raise RuntimeError("Subagent tool handler should be created by SubagentRunner")

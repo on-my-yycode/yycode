@@ -63,7 +63,9 @@ def test_subagent_tool_is_registered():
         "task",
         "context",
         "max_turns",
+        "skills",
     }
+    assert subagent_tool["input_schema"]["properties"]["skills"]["items"]["type"] == "string"
 
 
 def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
@@ -85,6 +87,8 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     assert "do not expose long internal reasoning" in session.system_prompt
     assert "Use list_skills to discover available local skills" in session.system_prompt
     assert "Use explorer for investigation" in session.system_prompt
+    assert '@architect /plan design X' in session.system_prompt
+    assert 'skills=["plan"]' in session.system_prompt
     assert "architect for design" in session.system_prompt
     assert "security for security review" in session.system_prompt
     assert "Give each subagent a specific task" in session.system_prompt
@@ -193,10 +197,69 @@ def test_subagent_runner_uses_filtered_tools_and_returns_summary(tmp_path):
     result = asyncio.run(runner.run(role="explorer", task="inspect code"))
 
     assert "role: explorer" in result
+    assert "skills: none" in result
     assert "status: completed" in result
     assert "found the answer" in result
     assert "subagent" not in {tool["name"] for tool in provider.calls[0]["tools"]}
     assert "todo" not in {tool["name"] for tool in provider.calls[0]["tools"]}
+
+
+def test_subagent_runner_loads_explicit_skill_into_prompt(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_root.mkdir()
+    (skill_root / "plan.md").write_text(
+        "---\n"
+        "name: plan\n"
+        'description: "Planning-only skill."\n'
+        "---\n\n"
+        "Discuss the plan but do not edit files.\n"
+    )
+    provider = FakeProvider([ChatResponse(content="planned")])
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={},
+        tools=TOOLS,
+        skill_dirs=["skills"],
+    )
+
+    result = asyncio.run(
+        runner.run(role="architect", task="design plugin system", skills=["/plan"])
+    )
+
+    system_prompt = provider.calls[0]["system_prompt"]
+    first_message = provider.calls[0]["messages"][0]
+    assert "Explicit skills selected by the parent:" in system_prompt
+    assert "## plan" in system_prompt
+    assert "Discuss the plan but do not edit files." in system_prompt
+    assert "skills: plan" in result
+    assert "planned" in result
+    assert "Explicit skills:" in first_message["content"]
+    assert "- plan" in first_message["content"]
+
+
+def test_subagent_runner_unknown_explicit_skill_does_not_call_provider(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_root.mkdir()
+    (skill_root / "plan.md").write_text("---\nname: plan\n---\n\nPlan carefully.\n")
+    provider = FakeProvider([ChatResponse(content="should not run")])
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={},
+        tools=TOOLS,
+        skill_dirs=["skills"],
+    )
+
+    result = asyncio.run(
+        runner.run(role="architect", task="design plugin system", skills=["missing"])
+    )
+
+    assert "Error: Unknown skill: /missing" in result
+    assert "Available skills: plan" in result
+    assert provider.calls == []
 
 
 def test_subagent_runner_raises_approval_denied_for_self_approved_write(tmp_path):
@@ -353,12 +416,42 @@ def test_subagent_runner_emits_structured_stream_events(tmp_path):
     assert events[0].event_type == "subagent_started"
     assert events[0].title == "worker subagent started"
     assert events[0].phase == "implementing"
+    assert events[0].metadata["skills"] == []
     assert events[1].event_type == "text_delta"
     assert events[1].content == "streamed"
     assert events[2].event_type == "usage"
     assert events[2].usage == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
     assert events[3].event_type == "subagent_finished"
     assert events[3].status == "completed"
+    assert events[3].metadata["skills"] == []
+
+
+def test_subagent_runner_events_include_explicit_skills(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_root.mkdir()
+    (skill_root / "plan.md").write_text("---\nname: plan\n---\n\nPlan carefully.\n")
+    events: list[StreamEvent] = []
+
+    async def collect_event(event: StreamEvent):
+        events.append(event)
+
+    provider = FakeProvider([ChatResponse(content="done")])
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={},
+        tools=TOOLS,
+        skill_dirs=["skills"],
+        stream_callback=collect_event,
+    )
+
+    asyncio.run(runner.run(role="architect", task="plan", skills=["plan"]))
+
+    assert events[0].event_type == "subagent_started"
+    assert events[0].metadata["skills"] == ["plan"]
+    assert events[-1].event_type == "subagent_finished"
+    assert events[-1].metadata["skills"] == ["plan"]
 
 
 def test_main_llm_node_emits_structured_stream_events():

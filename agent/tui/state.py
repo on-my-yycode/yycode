@@ -59,6 +59,7 @@ class SubagentStatus:
     title: str
     detail: str
     status: str
+    skills: list[str] = field(default_factory=list)
     elapsed_ms: int | None = None
 
 
@@ -528,6 +529,7 @@ class TuiState:
                 title=item.title,
                 detail=item.detail,
                 status=item.status or "running",
+                skills=_metadata_skills(item.metadata),
                 elapsed_ms=item.elapsed_ms,
             )
             return
@@ -538,6 +540,7 @@ class TuiState:
                 title=item.title,
                 detail=item.detail,
                 status=item.status or "completed",
+                skills=_metadata_skills(item.metadata),
                 elapsed_ms=item.elapsed_ms,
             )
             return
@@ -549,5 +552,19 @@ class TuiState:
                 title=item.title,
                 detail=item.detail,
                 status=item.status or (existing.status if existing else "running"),
+                skills=_metadata_skills(item.metadata) or (existing.skills if existing else []),
                 elapsed_ms=item.elapsed_ms,
             )
+
+
+def _metadata_skills(metadata: dict[str, Any]) -> list[str]:
+    """Return normalized skill names stored in event metadata."""
+    raw = metadata.get("skills") if isinstance(metadata, dict) else None
+    if not isinstance(raw, list):
+        return []
+    skills: list[str] = []
+    for item in raw:
+        name = str(item).strip().lstrip("/")
+        if name and name not in skills:
+            skills.append(name)
+    return skills

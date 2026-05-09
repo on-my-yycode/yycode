@@ -124,6 +124,8 @@ role="architect", skills=["plan"], and task="task".
 
 ## 第一版 MVP
 
+状态：已实现。
+
 第一版建议只做核心能力：
 
 ```text
@@ -134,6 +136,17 @@ runner 预加载指定 skill 内容并注入 subagent system prompt
 subagent result 增加 skills 字段
 主 agent system prompt 增加 @role /skill 调用约定
 ```
+
+当前实现：
+
+- `tools/subagent.py` schema 已增加 `skills: string[]`。
+- `SubagentRunner.run(..., skills=None)` 已支持显式 skills。
+- runner 会规范化 `/skill` / `skill` 写法，去重并忽略空值。
+- runner 会在 provider 调用前加载指定 skills，并注入 subagent system prompt。
+- unknown skill 会返回明确错误，不启动 provider 调用。
+- `Subagent result` 已包含 `skills: ...`。
+- `subagent_started` / `subagent_finished` 事件 metadata 已包含 `skills`。
+- 主 agent system prompt 已加入 `@role /skill` 的调度约定。
 
 ### 为什么不先做硬 parser
 
@@ -366,6 +379,8 @@ Delegate: @architect · skills: /plan
 
 ### Phase 1：工具级显式 skill
 
+状态：已完成。
+
 - 扩展 `tools/subagent.py` schema，增加 `skills`。
 - 扩展 `SubagentRunner.run(...)`，支持 `skills`。
 - runner 校验并加载 skills。
@@ -374,6 +389,8 @@ Delegate: @architect · skills: /plan
 - 主 agent system prompt 增加 `@role /skill` 调度约定。
 
 ### Phase 2：事件与 TUI 展示
+
+状态：部分完成。
 
 - `subagent_started` / `subagent_finished` 事件 metadata 增加 skills。
 - 时间线显示 `@architect using /plan`。
