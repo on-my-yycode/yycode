@@ -339,7 +339,45 @@ def test_subagent_runner_allows_write_after_runtime_approval(tmp_path):
     result = asyncio.run(runner.run(role="worker", task="write"))
 
     assert "done" in result
-    assert called == [{"path": "new.py", "content": "x", "approved": True}]
+    assert called == [{"path": "new.py", "content": "x", "workdir": tmp_path, "approved": True}]
+
+
+def test_subagent_runner_injects_parent_workdir_into_workspace_tools(tmp_path):
+    called = []
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="read-1",
+                        name="read_file",
+                        args={"path": "notes.txt"},
+                    )
+                ],
+            ),
+            ChatResponse(content="done"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"read_file": lambda **kwargs: called.append(kwargs) or "read"},
+        tools=[
+            {
+                "name": "read_file",
+                "description": "read",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    result = asyncio.run(runner.run(role="explorer", task="read workspace"))
+
+    assert "done" in result
+    assert called == [{"path": "notes.txt", "workdir": tmp_path}]
+    assert provider.calls[0]["messages"][0]["content"] == "Task:\nread workspace"
 
 
 def test_subagent_runner_returns_tool_message_for_write_without_target(tmp_path):

@@ -4,6 +4,7 @@ from functools import wraps
 from typing import Callable, Optional
 
 from agent.runtime.context import AgentRuntimeContext
+from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
 from agent.skills import SkillRegistry
 from agent.subagent import SubagentRunner
 
@@ -15,22 +16,6 @@ DEFAULT_TOOL_EXECUTION = {
     "concurrency": "serial",
     "timeout_seconds": DEFAULT_TOOL_TIMEOUT_SECONDS,
 }
-
-WORKSPACE_BOUND_TOOLS = {
-    "read_file",
-    "read_many_files",
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "grep",
-    "list_files",
-    "git_show",
-    "git_diff",
-    "workspace_state",
-    "verify",
-    "bash",
-}
-
 
 class RuntimeToolRegistry:
     """Resolve runtime-bound tool handlers and execution metadata."""

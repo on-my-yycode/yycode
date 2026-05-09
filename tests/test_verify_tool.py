@@ -13,8 +13,8 @@ def test_verify_tool_is_registered():
 
 def test_verify_runs_pytest_target(tmp_path, monkeypatch):
     (tmp_path / "test_sample.py").write_text("def test_ok():\n    assert True\n")
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.verify.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = verify(kind="tests", target="test_sample.py")
 
@@ -29,8 +29,8 @@ def test_verify_reports_invalid_kind():
 
 
 def test_verify_blocks_workspace_escape(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.verify.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = verify(kind="tests", target="../outside.py")
 

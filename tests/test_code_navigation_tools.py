@@ -43,7 +43,7 @@ def test_list_files_filters_by_glob(tmp_path, monkeypatch):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("print('hello')\n")
     (tmp_path / "README.md").write_text("# demo\n")
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = list_files(pattern="*.py")
 
@@ -53,7 +53,7 @@ def test_list_files_filters_by_glob(tmp_path, monkeypatch):
 def test_read_many_files_adds_headers_and_limits_lines(tmp_path, monkeypatch):
     (tmp_path / "a.py").write_text("one\ntwo\n")
     (tmp_path / "b.py").write_text("three\nfour\n")
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = read_many_files(["a.py", "b.py"], limit=1)
 
@@ -63,7 +63,7 @@ def test_read_many_files_adds_headers_and_limits_lines(tmp_path, monkeypatch):
 
 def test_read_file_supports_line_ranges(tmp_path, monkeypatch):
     (tmp_path / "sample.py").write_text("one\ntwo\nthree\nfour\n")
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = read_file("sample.py", start_line=2, end_line=3)
 
@@ -72,7 +72,7 @@ def test_read_file_supports_line_ranges(tmp_path, monkeypatch):
 
 def test_git_show_reads_file_at_ref(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = git_show(ref="HEAD", path="src/app.py")
 
@@ -81,7 +81,7 @@ def test_git_show_reads_file_at_ref(tmp_path, monkeypatch):
 
 def test_git_show_blocks_workspace_escape(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = git_show(ref="HEAD", path="../outside.py")
 

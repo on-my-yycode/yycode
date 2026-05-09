@@ -1,6 +1,7 @@
 """Tests for internal tools_node concurrency scheduling."""
 
 import asyncio
+import inspect
 import time
 
 import pytest
@@ -9,9 +10,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from agent.approval import ApprovalDenied, approval_request_for_tool
 from agent.runtime.workflow_guard import path_needs_code_verification
 from agent.runtime.tool_events import file_paths_for_tool_call
+from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
 from agent.graph import create_tools_node, execute_tool_calls
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.todo_manager import TodoManager
+from tools import TOOL_HANDLERS
 
 
 class FakeToolCall:
@@ -346,6 +349,18 @@ def test_runtime_injects_workdir_into_workspace_bound_tools(tmp_path, monkeypatc
     assert captured["read_file"]["workdir"] == tmp_path
     assert captured["bash"]["workdir"] == tmp_path
     assert "workdir" not in ai_msg.additional_kwargs["tool_calls_data"][0].args
+
+
+def test_workspace_bound_tool_handlers_accept_runtime_workdir():
+    missing_handlers = sorted(name for name in WORKSPACE_BOUND_TOOLS if name not in TOOL_HANDLERS)
+    missing_workdir = [
+        name
+        for name in sorted(WORKSPACE_BOUND_TOOLS)
+        if "workdir" not in inspect.signature(TOOL_HANDLERS[name]).parameters
+    ]
+
+    assert missing_handlers == []
+    assert missing_workdir == []
 
 
 def test_tools_node_blocks_workspace_write_until_preflight(tmp_path, monkeypatch):

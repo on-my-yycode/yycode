@@ -19,7 +19,7 @@ def test_grep_tool_is_registered():
 
 
 def test_grep_finds_matches(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     file_path = tmp_path / "sample.txt"
     file_path.write_text("alpha\nneedle here\nbeta\n")
 
@@ -29,7 +29,7 @@ def test_grep_finds_matches(tmp_path, monkeypatch):
 
 
 def test_grep_reports_no_matches(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "sample.txt").write_text("alpha\n")
 
     result = grep("needle", ".")
@@ -38,7 +38,7 @@ def test_grep_reports_no_matches(tmp_path, monkeypatch):
 
 
 def test_grep_blocks_paths_outside_workspace(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     outside = Path(tmp_path).parent
 
     result = grep("needle", str(outside))
@@ -47,7 +47,7 @@ def test_grep_blocks_paths_outside_workspace(tmp_path, monkeypatch):
 
 
 def test_grep_reports_invalid_regex(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "sample.txt").write_text("alpha\n")
 
     result = grep("[", ".")
@@ -56,7 +56,7 @@ def test_grep_reports_invalid_regex(tmp_path, monkeypatch):
 
 
 def test_grep_skips_binary_files(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "binary.bin").write_bytes(b"needle\x00here")
     (tmp_path / "sample.txt").write_text("needle\n")
 
@@ -67,7 +67,7 @@ def test_grep_skips_binary_files(tmp_path, monkeypatch):
 
 
 def test_grep_supports_context_lines(tmp_path, monkeypatch):
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "sample.txt").write_text("alpha\nbeta\nneedle here\ngamma\ndelta\n")
 
     result = grep("needle", ".", before_context=1, after_context=2)

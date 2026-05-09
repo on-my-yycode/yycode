@@ -5,12 +5,11 @@ from pathlib import Path
 
 from .read_file import workspace_for
 
-WORKDIR = Path.cwd()
 MAX_OUTPUT_CHARS = 50_000
 
 
 def _relative_path(path: str, workdir: Path | str | None = None) -> str:
-    workspace = workspace_for(workdir or WORKDIR)
+    workspace = workspace_for(workdir)
     return str(workspace.safe_path(path).relative_to(workspace.root))
 
 
@@ -21,7 +20,7 @@ def git_diff(
 ) -> str:
     """Return git diff for workspace-relative paths."""
     try:
-        workspace = workspace_for(workdir or WORKDIR)
+        workspace = workspace_for(workdir)
         command = ["git", "diff"]
         if staged:
             command.append("--cached")

@@ -40,7 +40,7 @@ def test_workspace_tools_are_registered():
 def test_workspace_state_reports_branch_and_changes(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     (tmp_path / "tracked.txt").write_text("hello\nchanged\n")
-    monkeypatch.setattr("tools.workspace_state.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = workspace_state()
 
@@ -52,8 +52,8 @@ def test_workspace_state_reports_branch_and_changes(tmp_path, monkeypatch):
 def test_git_diff_returns_scoped_diff(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     (tmp_path / "tracked.txt").write_text("hello\nchanged\n")
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.git_diff.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = git_diff(paths=["tracked.txt"])
 
@@ -63,8 +63,8 @@ def test_git_diff_returns_scoped_diff(tmp_path, monkeypatch):
 
 def test_git_diff_blocks_workspace_escape(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.git_diff.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = git_diff(paths=["../outside.txt"])
 

@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from .read_file import WORKDIR, safe_path, workspace_for
+from .read_file import safe_path, workspace_for
 
 MAX_OUTPUT_CHARS = 50_000
 VERIFY_TIMEOUT_SECONDS = 300

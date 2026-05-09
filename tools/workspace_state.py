@@ -5,12 +5,11 @@ from pathlib import Path
 
 from .read_file import workspace_for
 
-WORKDIR = Path.cwd()
 MAX_OUTPUT_CHARS = 20_000
 
 
 def _run_git(args: list[str], workdir: Path | str | None = None) -> tuple[int, str]:
-    workspace = workspace_for(workdir or WORKDIR)
+    workspace = workspace_for(workdir)
     result = subprocess.run(
         ["git", *args],
         cwd=workspace.root,

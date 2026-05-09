@@ -63,15 +63,14 @@
 - TUI 时间流已升级为结构化分组展示：探索、搜索、编辑、验证、任务状态和文件变更摘要会以更适合阅读的层次输出。
 - `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
 - 会话历史治理已实现基础版：任务正常完成后裁剪内部 todo 工具调用和工具结果，减少下一个任务被旧 Task State 污染。
-- Workspace / workdir 统一基础版已实现：命令入口支持位置参数 workspace，主要 workspace 工具使用 runtime 注入的 `workdir`。
+- Workspace / workdir 统一已完成主要收口：命令入口支持位置参数 workspace，workspace-bound 工具使用 runtime 注入的 `workdir`，subagent 继承父 workdir。
 - Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 - subagent 显式 skill 委派首版已实现，详见 [Subagent 显式 Skill 委派设计](subagent_explicit_skill_design.md)。
 - TUI 已支持 `@role` 补全，以及在已有正文中按光标 token 触发 `/skill` 补全。
 
 待校准：
 
-- Workspace / workdir 统一已进入实现阶段：命令入口已支持 `yoyoagent [workspace]`，runtime 会为 workspace-bound 工具注入 `workdir`，多数文件/git/bash/verify/搜索工具已支持显式 `workdir`。
-- 仍需完成最终收口：部分工具保留模块级 `WORKDIR = Path.cwd()` 作为 fallback，`edit_file` 仍是阻断占位工具，发行版本前需要继续去除 import-time cwd 依赖并补齐完整回归测试。
+- Workspace / workdir 后续只剩增强项：继续补充更多从不同 cwd 启动、路径逃逸和直接工具调用的边界测试。
 - Session messages 持久化仍需补齐损坏文件、不可写 session 目录 fallback、列表命令边界和更多恢复容错测试。
 - Message Token Manager 已完成设计，尚未实现。
 
@@ -578,17 +577,19 @@ risk: User work may be lost.
 - `RuntimeToolRegistry` 会为 workspace-bound 工具注入 `runtime.workdir`，工具 schema 不向模型暴露 `workdir`。
 - `read_file`、`read_many_files`、`write_file`、`apply_patch`、`grep`、`list_files`、`git_show`、`git_diff`、`workspace_state`、`verify`、`bash` 已支持显式 `workdir`。
 - 审批 diff preview 和 subagent 工具审批路径已传入父 runtime 的 `workdir`。
-- 已补充基础测试：位置参数解析、默认 cwd、拒绝文件路径，以及 cwd 与 workspace 不一致时 read/git/bash 工具仍使用显式 workdir。
+- subagent 执行 workspace-bound 工具时会注入父 `workdir`。
+- 已去除 workspace 工具中的模块级 `WORKDIR = Path.cwd()` fallback，默认 workspace 改为调用时 `Path.cwd()`。
+- `edit_file` 保留为阻断占位工具，但已接受 runtime 注入的 `workdir`，避免工具执行签名错误。
+- 已补充基础测试：位置参数解析、默认 cwd、拒绝文件路径、cwd 与 workspace 不一致时 read/git/bash 工具仍使用显式 workdir、subagent 继承父 workdir、所有 workspace-bound handler 接受 `workdir`。
 
-仍需收口：
+后续增强：
 
-- 部分工具仍保留模块级 `WORKDIR = Path.cwd()` fallback，需要最终去除 import-time cwd 冻结行为。
-- `edit_file` 当前仍是引导模型改用 `apply_patch` 的阻断占位函数，不实际执行编辑；如保留为 workspace-bound 工具，需要明确是否继续占位或实现 workdir-aware 行为。
-- 需要补齐所有文件/git/bash/verify/subagent 的 workdir 回归测试，尤其是从其它 cwd 启动、`../` 路径逃逸和 subagent 继承父 workdir。
+- 继续扩展所有 workspace-bound 工具的直接调用边界测试，尤其是符号链接、绝对路径和嵌套 workspace。
+- 若未来恢复 `edit_file` 的真实编辑能力，需要实现 workdir-aware 行为；当前仍推荐使用 `apply_patch`。
 
 ### 背景
 
-发行版本需要支持用户在任意项目目录执行 `yoyoagent`。当前 `Session` 和 `AgentRuntimeContext` 已经显式携带 `workdir`，但部分工具仍使用模块级 `WORKDIR = Path.cwd()`，这会在工具 import 时冻结进程当前目录。若将来命令入口、TUI 或嵌入式调用改变 cwd，可能出现 session 认为的工作目录和实际工具执行目录不一致。
+发行版本需要支持用户在任意项目目录执行 `yoyoagent`。当前 `Session` 和 `AgentRuntimeContext` 已经显式携带 `workdir`，workspace-bound 工具由 runtime 注入该目录；直接调用工具时才回退到调用时的当前目录。
 
 ### 用户层行为
 

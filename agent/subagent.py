@@ -17,6 +17,7 @@ from agent.approval import (
 from agent.llm_retry import chat_with_retry
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
+from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
 from agent.skills import LoadedSkill, SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
 from agent.tool_retry import async_run_tool_with_retry
@@ -286,6 +287,8 @@ class SubagentRunner:
         return result
 
     async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
+        if tool_name in WORKSPACE_BOUND_TOOLS:
+            kwargs.setdefault("workdir", self.workdir)
         try:
             request = approval_request_for_tool(tool_name, kwargs, workdir=self.workdir)
         except ApprovalTargetMissing as exc:

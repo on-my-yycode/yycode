@@ -27,7 +27,7 @@ def _init_repo(repo):
 
 def test_write_file_blocks_existing_files(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = write_file("sample.txt", "new\n")
 
@@ -38,7 +38,7 @@ def test_write_file_blocks_existing_files(tmp_path, monkeypatch):
 
 def test_write_file_requires_approval_for_new_files(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = write_file("new.txt", "new\n")
 
@@ -49,7 +49,7 @@ def test_write_file_requires_approval_for_new_files(tmp_path, monkeypatch):
 
 def test_write_file_allows_new_files_after_approval_and_returns_diff_preview(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = write_file("new.txt", "new\n", approved=True)
 
@@ -62,7 +62,7 @@ def test_write_file_allows_new_files_after_approval_and_returns_diff_preview(tmp
 
 def test_edit_file_is_blocked_and_requires_apply_patch(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = edit_file("sample.txt", "old", "new")
 

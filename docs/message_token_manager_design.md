@@ -295,7 +295,7 @@ MessageTokenManagerScreen
 Ctrl+M
 ```
 
-`/messages` 可以作为后续命令入口，不是首版必须项。
+`/messages` 命令不纳入当前设计规划，避免新增一套命令解析入口。
 
 ### ASCII UI 草图
 

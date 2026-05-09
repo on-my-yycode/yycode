@@ -114,8 +114,8 @@ def test_approval_request_blocks_write_file_without_target_file():
 
 def test_approval_request_includes_apply_patch_diff_preview(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     request = approval_request_for_tool(
         "apply_patch",
@@ -136,7 +136,7 @@ def test_approval_request_includes_apply_patch_diff_preview(tmp_path, monkeypatc
 
 def test_approval_request_includes_write_file_diff_preview(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     request = approval_request_for_tool(
         "write_file",

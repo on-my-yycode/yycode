@@ -1,6 +1,14 @@
 """Edit file tool."""
 
-def edit_file(path: str, old_text: str, new_text: str) -> str:
+from pathlib import Path
+
+
+def edit_file(
+    path: str,
+    old_text: str,
+    new_text: str,
+    workdir: Path | str | None = None,
+) -> str:
     """Replace exact text in file."""
     return (
         f"Code workflow guard blocked edit_file for: {path}\n\n"

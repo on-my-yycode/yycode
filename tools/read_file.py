@@ -4,12 +4,10 @@ from pathlib import Path
 
 from .workspace import Workspace
 
-WORKDIR = Path.cwd()
-
 
 def workspace_for(workdir: Path | str | None = None) -> Workspace:
     """Return the workspace for a tool call."""
-    return Workspace(Path(workdir) if workdir is not None else WORKDIR)
+    return Workspace(Path(workdir) if workdir is not None else Path.cwd())
 
 
 def safe_path(p: str, workdir: Path | str | None = None) -> Path:

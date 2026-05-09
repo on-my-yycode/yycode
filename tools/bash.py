@@ -6,7 +6,6 @@ from pathlib import Path
 from .safety import unsafe_command_response
 from .read_file import workspace_for
 
-WORKDIR = Path.cwd()
 MAX_OUTPUT_CHARS = 50_000
 
 
@@ -36,7 +35,7 @@ def bash(command: str, approved: bool = False, workdir: Path | str | None = None
     if unsafe_response and not approved:
         return unsafe_response
     try:
-        workspace = workspace_for(workdir or WORKDIR)
+        workspace = workspace_for(workdir)
         r = subprocess.run(
             command,
             shell=True,

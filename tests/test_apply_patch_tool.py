@@ -34,8 +34,8 @@ def test_apply_patch_tool_is_registered():
 
 def test_apply_patch_requires_approval_for_unified_diff(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     patch = """diff --git a/sample.txt b/sample.txt
 --- a/sample.txt
 +++ b/sample.txt
@@ -53,8 +53,8 @@ def test_apply_patch_requires_approval_for_unified_diff(tmp_path, monkeypatch):
 
 def test_apply_patch_applies_unified_diff_after_approval(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     patch = """diff --git a/sample.txt b/sample.txt
 --- a/sample.txt
 +++ b/sample.txt
@@ -74,8 +74,8 @@ def test_apply_patch_applies_unified_diff_after_approval(tmp_path, monkeypatch):
 
 def test_apply_patch_rejects_deletions(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     patch = """diff --git a/sample.txt b/sample.txt
 deleted file mode 100644
 --- a/sample.txt
@@ -99,8 +99,8 @@ def test_apply_patch_rejects_begin_patch_format():
 
 def test_apply_patch_supports_exact_replacement_mode(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = apply_patch(path="sample.txt", old_text="old\n", new_text="new\n", approved=True)
 
@@ -113,8 +113,8 @@ def test_apply_patch_supports_exact_replacement_mode(tmp_path, monkeypatch):
 
 def test_apply_patch_replacement_diff_shows_only_current_operation(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "sample.txt").write_text("first changed\nsecond\n")
 
     result = apply_patch(
@@ -132,8 +132,8 @@ def test_apply_patch_replacement_diff_shows_only_current_operation(tmp_path, mon
 
 def test_apply_patch_rejects_whole_file_replacement(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     content = "\n".join(f"line {index}" for index in range(100)) + "\n"
     (tmp_path / "sample.txt").write_text(content)
 
@@ -149,8 +149,8 @@ def test_apply_patch_rejects_whole_file_replacement(tmp_path, monkeypatch):
 
 def test_apply_patch_preview_shows_whole_file_replacement_diff(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     content = "\n".join(f"line {index}" for index in range(100)) + "\n"
     (tmp_path / "sample.txt").write_text(content)
 
@@ -176,8 +176,8 @@ def test_apply_patch_preview_shows_whole_file_replacement_diff(tmp_path, monkeyp
 
 def test_apply_patch_rejects_large_replacement_block(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     old_text = "\n".join(f"line {index}" for index in range(81)) + "\n"
     content = old_text + "tail\n"
     (tmp_path / "sample.txt").write_text(content)
@@ -200,8 +200,8 @@ def test_apply_patch_replacement_requires_path_and_old_text():
 
 def test_apply_patch_replacement_requires_approval(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    monkeypatch.setattr("tools.read_file.WORKDIR", tmp_path)
-    monkeypatch.setattr("tools.apply_patch.WORKDIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
 
     result = apply_patch(path="sample.txt", old_text="old\n", new_text="new\n")
 

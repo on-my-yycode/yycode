@@ -10,7 +10,6 @@ from .safety import ApprovalRequired, approval_required
 
 MAX_PATCH_CHARS = 100_000
 MAX_REPLACEMENT_LINES = 80
-WORKDIR = Path.cwd()
 
 
 def _strip_fence(patch: str) -> str:
@@ -48,7 +47,6 @@ def _changed_paths(patch: str) -> set[str]:
 
 
 def _validate_paths(paths: set[str], workdir: Path | str | None = None) -> None:
-    workdir = workdir or WORKDIR
     if not paths:
         raise ValueError("no changed paths found in patch")
     for path in paths:
@@ -58,7 +56,7 @@ def _validate_paths(paths: set[str], workdir: Path | str | None = None) -> None:
 
 
 def _read_snapshot(path: str, workdir: Path | str | None = None) -> str:
-    fp = safe_path(path, workdir or WORKDIR)
+    fp = safe_path(path, workdir)
     if not fp.exists():
         return ""
     try:
@@ -74,7 +72,7 @@ def _format_operation_diff(
 ) -> str:
     sections = _diff_sections(
         {
-            path: (before, _read_snapshot(path, workdir or WORKDIR))
+            path: (before, _read_snapshot(path, workdir))
             for path, before in before_by_path.items()
         }
     )
@@ -116,7 +114,7 @@ def _preview_replacement(
     workdir: Path | str | None = None,
 ) -> str:
     try:
-        fp = safe_path(path, workdir or WORKDIR)
+        fp = safe_path(path, workdir)
         content = fp.read_text()
     except Exception as exc:
         return f"Error: {exc}"
@@ -137,7 +135,7 @@ def preview_apply_patch_diff(
     if path or old_text or new_text:
         if not path or not old_text:
             return ""
-        return _preview_replacement(path, old_text, new_text, workdir or WORKDIR)
+        return _preview_replacement(path, old_text, new_text, workdir)
 
     patch_text = _strip_fence(patch)
     if not patch_text.strip() or patch_text.lstrip().startswith("*** Begin Patch"):
@@ -146,7 +144,7 @@ def preview_apply_patch_diff(
         return ""
     try:
         changed_paths = _changed_paths(patch_text)
-        _validate_paths(changed_paths, workdir or WORKDIR)
+        _validate_paths(changed_paths, workdir)
     except Exception:
         return ""
     return patch_text.strip()
@@ -169,7 +167,7 @@ def _apply_replacement(
     new_text: str,
     workdir: Path | str | None = None,
 ) -> str:
-    fp = safe_path(path, workdir or WORKDIR)
+    fp = safe_path(path, workdir)
     content = fp.read_text()
     if old_text not in content:
         return f"Error: old_text not found in {path}"
@@ -208,7 +206,7 @@ def apply_patch(
 ) -> str:
     """Apply a unified diff or exact replacement patch after path validation."""
     try:
-        workspace = workspace_for(workdir or WORKDIR)
+        workspace = workspace_for(workdir)
         if path or old_text or new_text:
             if not path or not old_text:
                 return "Error: path and old_text are required for replacement patches"
