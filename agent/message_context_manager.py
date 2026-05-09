@@ -32,6 +32,8 @@ class MessageTokenStat:
     compressible: bool
     recommendation: str
     risk: RiskLevel
+    context_policy: str
+    ephemeral_kind: str
 
 
 @dataclass(frozen=True)
@@ -217,6 +219,8 @@ class MessageContextManager:
             compressible=compressible,
             recommendation=recommendation,
             risk="low" if compressible else "medium",
+            context_policy=_context_policy(message),
+            ephemeral_kind=_ephemeral_kind(message),
         )
 
     def _latest_user_index(self, messages: list[BaseMessage]) -> int | None:
@@ -304,3 +308,15 @@ def _preview(text: object, limit: int = 120) -> str:
 def _is_compressed(message: BaseMessage) -> bool:
     kwargs = getattr(message, "additional_kwargs", {}) or {}
     return bool(kwargs.get("context_compressed"))
+
+
+def _context_policy(message: BaseMessage) -> str:
+    kwargs = getattr(message, "additional_kwargs", {}) or {}
+    return str(kwargs.get("context_policy") or "full")
+
+
+def _ephemeral_kind(message: BaseMessage) -> str:
+    kwargs = getattr(message, "additional_kwargs", {}) or {}
+    if not kwargs.get("context_ephemeral"):
+        return ""
+    return str(kwargs.get("ephemeral_kind") or "ephemeral")

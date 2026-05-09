@@ -54,6 +54,32 @@ def test_message_context_manager_suggests_old_large_tool_outputs_only():
     assert suggestions[0].saved_tokens > 0
 
 
+def test_message_context_manager_reports_context_policy_and_ephemeral_kind():
+    manager = MessageContextManager(keep_recent_messages=1, min_tool_tokens=10)
+    messages = [
+        ToolMessage(
+            content="[Tool output omitted]",
+            tool_call_id="call-1",
+            name="bash",
+            additional_kwargs={"context_policy": "marker"},
+        ),
+        HumanMessage(
+            content="Run verify.",
+            additional_kwargs={
+                "context_ephemeral": True,
+                "ephemeral_kind": "verify_reminder",
+            },
+        ),
+    ]
+
+    stats = manager.message_stats(messages)
+
+    assert stats[0].context_policy == "marker"
+    assert stats[0].ephemeral_kind == ""
+    assert stats[1].context_policy == "full"
+    assert stats[1].ephemeral_kind == "verify_reminder"
+
+
 def test_message_context_manager_compress_selected_preserves_tool_linkage():
     manager = MessageContextManager(keep_recent_messages=1, min_tool_tokens=10)
     original = ToolMessage(content="x" * 1_000, tool_call_id="call-1", name="read_file")

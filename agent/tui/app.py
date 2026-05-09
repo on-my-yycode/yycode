@@ -312,6 +312,7 @@ def run_tui(args: Namespace) -> None:
                     ),
                     id="message-token-split",
                 ),
+                Static("↑↓ select · C compress selected · A compress suggested · Ctrl+M close", id="message-token-footer"),
                 id="message-token-dialog",
             )
 
@@ -419,19 +420,45 @@ def run_tui(args: Namespace) -> None:
 
         def _render_header(self) -> str:
             if self.summary is None:
-                return "[bold #c9a6ff]Message Token Manager[/] [#7f8794]Press Ctrl+M to close[/]"
+                return "[bold #c9a6ff]Message Tokens[/]\n[#7f8794]Loading current session context...[/]"
             total = _format_tokens_short(self.summary.total_tokens)
             window = _format_tokens_short(self.summary.context_window_tokens)
+            remaining = _format_tokens_short(self.summary.remaining_tokens)
             savings = _format_tokens_short(self.summary.compression_savings_estimate)
+            percent = self._context_percent()
+            bar = self._usage_bar(percent)
+            pressure = str(self.summary.pressure).upper()
+            pressure_color = self._pressure_color(str(self.summary.pressure))
             pending = ""
             if self.pending_compression_indexes:
-                pending = f" [#d7ba7d]confirm {len(self.pending_compression_indexes)}[/]"
+                pending = f"\n[#d7ba7d]⚠ Confirm compression: press {'A' if self.pending_compression_action == 'suggested' else 'C'} again for {len(self.pending_compression_indexes)} message(s).[/]"
             return (
-                "[bold #c9a6ff]Message Token Manager[/] "
-                f"[#7f8794]Press Ctrl+M to close · C compress selected · A compress suggested[/] "
-                f"[#cfd3dc]{total}/{window}[/] [#7f8794]{self.summary.token_source} · {self.summary.pressure} · save ~{savings}[/]"
+                f"[bold #c9a6ff]Message Tokens[/]  "
+                f"[#cfd3dc]{total} / {window}[/]  "
+                f"[{pressure_color}]{percent:.0f}% {pressure}[/]\n"
+                f"[{pressure_color}]{bar}[/]  "
+                f"[#7f8794]remaining[/] [#cfd3dc]{remaining}[/]  "
+                f"[#7f8794]save ~[/][#8fd6a3]{savings}[/]  "
+                f"[#7f8794]source {self.summary.token_source}[/]"
                 f"{pending}"
             )
+
+        def _context_percent(self) -> float:
+            if self.summary is None or self.summary.context_window_tokens <= 0:
+                return 0.0
+            return min((self.summary.total_tokens / self.summary.context_window_tokens) * 100, 100.0)
+
+        def _usage_bar(self, percent: float, width: int = 18) -> str:
+            filled = max(0, min(width, int(round(width * percent / 100))))
+            return "█" * filled + "░" * (width - filled)
+
+        def _pressure_color(self, pressure: str) -> str:
+            return {
+                "low": "#8fd6a3",
+                "medium": "#d7ba7d",
+                "high": "#f97316",
+                "critical": "#ff8f8f",
+            }.get(pressure.lower(), "#7f8794")
 
         def _entries(self) -> list[ContextBlockStat | MessageTokenStat]:
             return [*self.blocks, *self.stats]
@@ -445,14 +472,18 @@ def run_tui(args: Namespace) -> None:
         def _entry_label(self, entry: ContextBlockStat | MessageTokenStat) -> str:
             if isinstance(entry, ContextBlockStat):
                 return (
-                    f"[#7f8794]block[/] [#d7dae0]{_safe_text(entry.name, 24)}[/] "
-                    f"[#7f8794]~{_format_tokens_short(entry.estimated_tokens)} protected[/]"
+                    f"[#7f8794]◆ protected[/] [#d7dae0]{_safe_text(entry.name, 18):<18}[/] "
+                    f"[#cfd3dc]{_format_tokens_short(entry.estimated_tokens):>6}[/] "
+                    f"[#7f8794]system[/]"
                 )
-            marker = "[#d7ba7d]compress[/]" if entry.compressible else f"[#7f8794]{entry.recommendation}[/]"
+            marker = "[#d7ba7d]⚠ compress[/]" if entry.compressible else f"[#7f8794]{entry.recommendation}[/]"
+            policy = "" if entry.context_policy == "full" else f" [#8fd6a3]{entry.context_policy}[/]"
+            ephemeral = f" [#d7ba7d]{entry.ephemeral_kind}[/]" if entry.ephemeral_kind else ""
             return (
                 f"[#7f8794]#{entry.index:<3}[/] [#d7dae0]{entry.role:<9}[/] "
-                f"[#cfd3dc]~{_format_tokens_short(entry.estimated_tokens):>5}[/] "
-                f"{marker} [#7f8794]{_safe_text(entry.preview, 46)}[/]"
+                f"[#cfd3dc]{_format_tokens_short(entry.estimated_tokens):>6}[/] "
+                f"[#7f8794]{entry.percent:>4.0f}%[/]  "
+                f"{marker}{policy}{ephemeral}  [#7f8794]{_safe_text(entry.preview, 34)}[/]"
             )
 
         def _sync_selection(self) -> None:
@@ -466,16 +497,16 @@ def run_tui(args: Namespace) -> None:
             detail.clear()
             if self.summary is not None:
                 breakdown = "  ".join(
-                    f"{key}: {_format_tokens_short(value)}"
+                    f"{key} {_format_tokens_short(value)}"
                     for key, value in sorted(self.summary.by_role.items())
                 )
                 detail.write(
-                    f"[bold #f0f2f5]Context[/]\n"
-                    f"  [#7f8794]tokens[/] [#cfd3dc]{_format_tokens_short(self.summary.total_tokens)}"
-                    f"/{_format_tokens_short(self.summary.context_window_tokens)}[/] "
-                    f"[#7f8794]{self.summary.token_source} · {self.summary.pressure}[/]\n"
-                    f"  [#7f8794]remaining[/] [#cfd3dc]{_format_tokens_short(self.summary.remaining_tokens)}[/]\n"
-                    f"  [#7f8794]breakdown[/] [#cfd3dc]{_safe_text(breakdown)}[/]"
+                    f"[bold #c9a6ff]Session context[/]\n"
+                    f"[#7f8794]Usage[/] [#cfd3dc]{_format_tokens_short(self.summary.total_tokens)} / {_format_tokens_short(self.summary.context_window_tokens)}[/]  "
+                    f"[{self._pressure_color(str(self.summary.pressure))}]{self._context_percent():.0f}% {str(self.summary.pressure).upper()}[/]\n"
+                    f"[#7f8794]Remaining[/] [#cfd3dc]{_format_tokens_short(self.summary.remaining_tokens)}[/]  "
+                    f"[#7f8794]Potential saving[/] [#8fd6a3]~{_format_tokens_short(self.summary.compression_savings_estimate)}[/]\n"
+                    f"[#7f8794]By role[/] [#cfd3dc]{_safe_text(breakdown or '-')}[/]"
                     f"{self._pending_hint()}\n"
                 )
             entry = self._selected_entry()
@@ -484,24 +515,43 @@ def run_tui(args: Namespace) -> None:
                 return
             if isinstance(entry, ContextBlockStat):
                 detail.write(
-                    f"[bold #f0f2f5]{_safe_text(entry.name)}[/]\n"
-                    f"  [#7f8794]estimated tokens[/] [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]\n"
-                    f"  [#7f8794]status[/] [#cfd3dc]protected[/]\n\n"
-                    f"{_safe_text(entry.preview or '(empty)')}"
+                    f"[bold #f0f2f5]Protected block[/]\n"
+                    f"[#7f8794]Name[/]        [#cfd3dc]{_safe_text(entry.name)}[/]\n"
+                    f"[#7f8794]Tokens[/]      [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]\n"
+                    f"[#7f8794]Action[/]      [#cfd3dc]Protected, never compressed[/]\n\n"
+                    f"[bold #f0f2f5]Preview[/]\n"
+                    f"[#7f8794]{_safe_text(entry.preview or '(empty)')}[/]"
                 )
                 return
             detail.write(
-                f"[bold #f0f2f5]Message #{entry.index}[/]\n"
-                f"  [#7f8794]role[/] [#cfd3dc]{entry.role}[/]\n"
-                f"  [#7f8794]type[/] [#cfd3dc]{entry.message_type}[/]\n"
-                f"  [#7f8794]estimated tokens[/] [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]\n"
-                f"  [#7f8794]share[/] [#cfd3dc]{entry.percent:.1f}%[/]\n"
-                f"  [#7f8794]recommendation[/] [#cfd3dc]{entry.recommendation}[/]\n"
-                f"  [#7f8794]risk[/] [#cfd3dc]{entry.risk}[/]\n\n"
-                f"{_safe_text(entry.preview or '(empty)')}"
+                f"[bold #f0f2f5]Selected message[/]\n"
+                f"[#7f8794]Index[/]       [#cfd3dc]#{entry.index}[/]\n"
+                f"[#7f8794]Role[/]        [#cfd3dc]{entry.role}[/]\n"
+                f"[#7f8794]Type[/]        [#cfd3dc]{entry.message_type}[/]\n"
+                f"[#7f8794]Tokens[/]      [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]  [#7f8794]{entry.percent:.1f}% of context[/]\n"
+                f"[#7f8794]Risk[/]        [#cfd3dc]{entry.risk}[/]\n"
+                f"[#7f8794]Action[/]      [#cfd3dc]{entry.recommendation}[/]\n\n"
+                f"[#7f8794]Policy[/]      [#cfd3dc]{entry.context_policy}[/]\n"
+                f"[#7f8794]Ephemeral[/]   [#cfd3dc]{entry.ephemeral_kind or '-'}[/]\n\n"
+                f"[bold #f0f2f5]Recommendation[/]\n"
+                f"{self._recommendation_text(entry)}\n\n"
+                f"[bold #f0f2f5]Preview[/]\n"
+                f"[#7f8794]{_safe_text(entry.preview or '(empty)')}[/]"
             )
             if entry.compressible:
-                detail.write("\n\n[#d7ba7d]Press C to compact this old tool output.[/]")
+                detail.write("\n\n[#d7ba7d]Press C to compact this old tool output. Press C again to confirm.[/]")
+
+        def _recommendation_text(self, entry: MessageTokenStat) -> str:
+            if entry.compressible:
+                return (
+                    "[#d7ba7d]Compress recommended.[/] "
+                    "[#7f8794]This is an older tool output and can be replaced with a compact marker to recover context.[/]"
+                )
+            if entry.protected:
+                return "[#7f8794]Protected because it is recent or user-facing context. Keep unchanged.[/]"
+            if entry.recommendation == "keep compressed":
+                return "[#7f8794]Already compacted. No further action needed.[/]"
+            return "[#7f8794]Keep this message. Expected savings are low or the content may still be useful.[/]"
 
     class YoyoTuiApp(App[None]):
         """Main terminal UI."""

@@ -9,6 +9,7 @@ from agent.runtime.tool_events import file_paths_for_tool_call
 
 
 MAX_MODEL_TOOL_OUTPUT_CHARS = 4_000
+MAX_MODEL_READ_OUTPUT_CHARS = 12_000
 MAX_MODEL_DIFF_LINES = 80
 MAX_MODEL_COMMAND_OUTPUT_CHARS = 3_000
 
@@ -39,6 +40,8 @@ def build_tool_output_view(tool_name: str, raw_output: str, tc) -> ToolOutputVie
         )
     if tool_name in {"bash", "verify"}:
         return _command_output_view(tool_name, display)
+    if tool_name in {"read_file", "read_many_files", "grep", "git_show"}:
+        return _read_output_view(tool_name, display, tc)
     if len(display) > MAX_MODEL_TOOL_OUTPUT_CHARS:
         return ToolOutputView(
             display=display,
@@ -89,6 +92,26 @@ def _command_output_view(tool_name: str, output: str) -> ToolOutputView:
             context_policy="compact",
         )
     return ToolOutputView(display=output, model=output)
+
+
+def _read_output_view(tool_name: str, output: str, tc) -> ToolOutputView:
+    if len(output) <= MAX_MODEL_READ_OUTPUT_CHARS:
+        return ToolOutputView(display=output, model=output)
+    paths = file_paths_for_tool_call(tc)
+    path_text = ", ".join(paths[:10]) if paths else "(unknown)"
+    head = output[:5_000].rstrip()
+    tail = output[-2_000:].lstrip()
+    omitted = max(len(output) - len(head) - len(tail), 0)
+    model = (
+        f"{tool_name} output was compacted for model context.\n"
+        f"paths: {path_text}\n"
+        f"original_chars: {len(output)}\n"
+        f"omitted_chars: {omitted}\n"
+        "Use a narrower read_file line range or grep query if more detail is needed.\n\n"
+        f"head:\n{head}\n\n"
+        f"tail:\n{tail}"
+    )
+    return ToolOutputView(display=output, model=model, context_policy="compact")
 
 
 def _compact_write_output(tool_name: str, output: str, tc) -> str:

@@ -60,7 +60,7 @@
 - Phase 7 v1 已实现：危险 bash/git 命令、删除 patch、文件创建/编辑会在 runtime 发起审批；主会话和 subagent 的写入工具会在用户批准后才临时注入 `approved=true` 执行。
 - TUI 审批 UI 已实现：时间流中先展示完整 diff preview，底部输入区展示内联审批提示，用户可以用 `Y`/`Enter` 批准或 `N`/`Esc` 拒绝。
 - 写入审批已补充目标文件校验：如果文件编辑请求无法识别目标文件，不弹出审批，也不阻塞整轮任务；系统会把可修正的工具结果返回给模型，让模型用明确路径或合法 diff 重试。
-- TUI 时间流已升级为结构化分组展示：探索、搜索、编辑、验证、任务状态和文件变更摘要会以更适合阅读的层次输出。
+- 文件操作卡片功能已移除，当前 timeline 保持结构化工具活动聚合；文件修改结果主要通过最终文件变更摘要和 `Ctrl+D` diff 面板查看。
 - `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
 - 会话历史治理已实现基础版：任务正常完成后裁剪内部 todo 工具调用和工具结果，减少下一个任务被旧 Task State 污染。
 - Workspace / workdir 统一已完成主要收口：命令入口支持位置参数 workspace，workspace-bound 工具使用 runtime 注入的 `workdir`，subagent 继承父 workdir。

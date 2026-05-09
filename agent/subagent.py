@@ -17,6 +17,7 @@ from agent.approval import (
 from agent.llm_retry import chat_with_retry
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
+from agent.runtime.tool_output import build_tool_output_view
 from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
 from agent.skills import LoadedSkill, SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
@@ -255,9 +256,15 @@ class SubagentRunner:
                     else:
                         handler = self.tool_handlers.get(tc.name)
                     output = await self._run_tool(handler, tc.name, **tc.args)
-                    messages.append(
-                        ToolMessage(content=output, tool_call_id=tc.id, name=tc.name)
+                    output_view = build_tool_output_view(tc.name, output, tc)
+                    tool_message = ToolMessage(
+                        content=output_view.model,
+                        tool_call_id=tc.id,
+                        name=tc.name,
                     )
+                    if output_view.context_policy != "full":
+                        tool_message.additional_kwargs["context_policy"] = output_view.context_policy
+                    messages.append(tool_message)
         except Exception:
             await self._emit_subagent_finished(
                 session_id,

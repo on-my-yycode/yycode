@@ -1,5 +1,7 @@
 # Yoyo Agent
 
+作者: yoyofx-g
+
 一个基于 LangGraph 的智能编程助手，支持多 LLM 提供商。
 
 ## 功能特性

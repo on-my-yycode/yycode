@@ -380,6 +380,50 @@ def test_subagent_runner_injects_parent_workdir_into_workspace_tools(tmp_path):
     assert provider.calls[0]["messages"][0]["content"] == "Task:\nread workspace"
 
 
+def test_subagent_runner_compacts_large_tool_output(tmp_path):
+    large_output = "line\n" * 4_000
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="read-1",
+                        name="read_file",
+                        args={"path": "large.txt"},
+                    )
+                ],
+            ),
+            ChatResponse(content="done"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"read_file": lambda **kwargs: large_output},
+        tools=[
+            {
+                "name": "read_file",
+                "description": "read",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    result = asyncio.run(runner.run(role="explorer", task="read workspace"))
+
+    assert "done" in result
+    tool_message = next(
+        message
+        for message in provider.calls[1]["messages"]
+        if message["role"] == "user" and isinstance(message["content"], list)
+    )
+    content = tool_message["content"][0]["content"]
+    assert "read_file output was compacted for model context" in content
+    assert len(content) < len(large_output)
+
+
 def test_subagent_runner_returns_tool_message_for_write_without_target(tmp_path):
     called = []
     provider = FakeProvider(

@@ -163,6 +163,63 @@ Screen {
     scrollbar-size: 1 1;
 }
 
+#message-token-dialog {
+    width: 1fr;
+    height: 1fr;
+    margin: 1 2;
+    padding: 1 2;
+    border: round #3f4652;
+    background: #101216;
+}
+
+#message-token-header {
+    width: 1fr;
+    height: 3;
+    padding: 0 1;
+    color: #d7dae0;
+    background: #14171d;
+    border: round #2f3540;
+    margin-bottom: 1;
+}
+
+#message-token-split {
+    width: 1fr;
+    height: 1fr;
+    background: #101216;
+}
+
+#message-token-list {
+    width: 52;
+    height: 1fr;
+    background: #101216;
+    color: #d7dae0;
+    scrollbar-size: 1 1;
+    margin-right: 1;
+    border: round #2f3540;
+}
+
+#message-token-list:focus {
+    border: round #c9a6ff;
+}
+
+#message-token-detail {
+    width: 1fr;
+    height: 1fr;
+    color: #d7dae0;
+    background: #101216;
+    scrollbar-size: 1 1;
+    border: round #2f3540;
+    padding: 1 2;
+}
+
+#message-token-footer {
+    width: 1fr;
+    height: 1;
+    color: #7f8794;
+    background: #101216;
+    margin-top: 1;
+}
+
 #approval-title {
     width: 1fr;
     height: 1;

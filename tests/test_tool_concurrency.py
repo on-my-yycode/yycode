@@ -695,6 +695,35 @@ def test_success_empty_bash_output_uses_marker_for_model_context(tmp_path, monke
     assert empty_output not in result["messages"][0].content
 
 
+def test_large_read_file_output_is_compacted_for_model_context(tmp_path, monkeypatch):
+    large_output = "line\n" * 4_000
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return large_output
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr("agent.graph.TOOL_HANDLERS", {"read_file": lambda **kwargs: large_output})
+    monkeypatch.setattr("agent.graph.TOOLS", [_tool_def("read_file", "read_only", "safe")])
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="read_file", args={"path": "large.txt"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert result["messages"][0].name == "read_file"
+    assert result["messages"][0].additional_kwargs["context_policy"] == "compact"
+    assert "read_file output was compacted for model context" in result["messages"][0].content
+    assert len(result["messages"][0].content) < len(large_output)
+
+
 def test_tools_node_skips_verify_reminder_for_document_only_write(tmp_path, monkeypatch):
     captured = []
 
