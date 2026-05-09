@@ -14,6 +14,7 @@ from agent.runtime.tool_events import (
     format_tool_description,
     format_tool_event_metadata,
 )
+from agent.runtime.tool_output import build_tool_output_view, compact_preflight_output
 from agent.runtime.tool_registry import RuntimeToolRegistry
 from agent.runtime.workflow_guard import WorkflowGuard
 from agent.streaming import StreamEvent
@@ -51,7 +52,7 @@ class ToolExecutor:
 
             if self.registry.is_workspace_write(tc.name) and not self.workflow_guard.has_preflight():
                 output = await self.workflow_guard.run_preflight()
-                return self._tool_message(tc, output)
+                return self._tool_message(tc, compact_preflight_output(output))
 
             if self.workflow_guard.should_require_apply_patch(tc):
                 return self._tool_message(
@@ -79,16 +80,17 @@ class ToolExecutor:
                 timeout_seconds=self.registry.timeout_for(tc.name),
                 **approved_args,
             )
+            output_view = build_tool_output_view(tc.name, output, tc)
 
             logger.debug(f"Tool output: {output[:200]}...")
             logger.debug(f"End tool: {getattr(tc, 'name', 'unknown')}")
-            tool_message = self._tool_message(tc, output)
+            tool_message = self._tool_message(tc, output_view.model)
             if runner and runner.last_usage:
                 tool_message.additional_kwargs["usage"] = dict(runner.last_usage)
 
             if tc.name == "todo":
                 await self._emit_tool_result(
-                    output,
+                    output_view.display,
                     title="Task Plan",
                     detail="Updated todo items and task memory",
                     phase="planning",
@@ -96,7 +98,7 @@ class ToolExecutor:
 
             should_emit_diff = self.workflow_guard.update_after_tool(tc, output)
             if should_emit_diff:
-                await self._emit_tool_result(diff_preview_from_output(output))
+                await self._emit_tool_result(diff_preview_from_output(output_view.display))
                 await self._emit_file_changed(tc)
             return tool_message
         except Exception:
