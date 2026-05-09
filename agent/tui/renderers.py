@@ -1068,13 +1068,6 @@ def _render_active_task_as_item(task: dict[str, Any], state: TuiState) -> str:
     if action:
         lines.append(f"  [#d7ba7d]●[/] {action}")
 
-    # 第三行：时间和 tokens
-    elapsed_ms = 0
-    start_time = task.get('start_time_ms')
-    if start_time:
-        elapsed_ms = int(time.time() * 1000) - start_time
-    elapsed_str = _format_duration(elapsed_ms)
-
     usage = task.get('usage', {}) or {}
     total = usage.get('total_tokens', 0)
     input_tok = usage.get('input_tokens', 0)
@@ -1082,7 +1075,7 @@ def _render_active_task_as_item(task: dict[str, Any], state: TuiState) -> str:
 
     usage_str = f"Tokens: {_format_tokens(total)} (in: {_format_tokens(input_tok)}, out: {_format_tokens(output_tok)})"
 
-    lines.append(f"  [#7f8794]Elapsed:[/] {elapsed_str}  [#7f8794]{usage_str}[/]")
+    lines.append(f"  [#7f8794]{usage_str}[/]")
 
     return "\n".join(lines)
 

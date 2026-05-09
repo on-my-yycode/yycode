@@ -588,7 +588,7 @@ def run_tui(args: Namespace) -> None:
             self._refresh_all()
             self.query_one("#prompt-input", TextArea).disabled = True
             self.set_interval(1.0, self._refresh_status_tick)
-            self.set_interval(0.12, self._refresh_progress_tick)
+            self.set_interval(0.25, self._refresh_progress_tick)
             self.run_worker(self._initialize_session(), exclusive=True)
 
         async def on_unmount(self) -> None:
@@ -745,7 +745,7 @@ def run_tui(args: Namespace) -> None:
 
         def _refresh_status_tick(self) -> None:
             if self.runner.state.active_task.get("is_running"):
-                self._refresh_all()
+                self._refresh_status_surfaces()
 
         def _refresh_progress_tick(self) -> None:
             if self.runner.state.active_task.get("is_running"):
