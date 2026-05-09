@@ -85,6 +85,8 @@ class ToolExecutor:
             logger.debug(f"Tool output: {output[:200]}...")
             logger.debug(f"End tool: {getattr(tc, 'name', 'unknown')}")
             tool_message = self._tool_message(tc, output_view.model)
+            if output_view.context_policy != "full":
+                tool_message.additional_kwargs["context_policy"] = output_view.context_policy
             if runner and runner.last_usage:
                 tool_message.additional_kwargs["usage"] = dict(runner.last_usage)
 

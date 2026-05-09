@@ -183,6 +183,13 @@ def test_tools_node_warns_when_todo_repeats_same_incomplete_state(tmp_path):
         isinstance(message, HumanMessage) and "Task State did not change" in message.content
         for message in result["messages"]
     )
+    reminder = next(
+        message
+        for message in result["messages"]
+        if isinstance(message, HumanMessage) and "Task State did not change" in message.content
+    )
+    assert reminder.additional_kwargs["context_ephemeral"] is True
+    assert reminder.additional_kwargs["ephemeral_kind"] == "task_repeated_reminder"
 
 
 def test_todo_tool_emits_task_state_result_event(tmp_path):
@@ -602,6 +609,7 @@ def test_tools_node_compacts_write_tool_message_but_streams_full_diff(tmp_path, 
     assert apply_patch_message.name == "apply_patch"
     assert "apply_patch completed." in apply_patch_message.content
     assert "files_changed: 1" in apply_patch_message.content
+    assert apply_patch_message.additional_kwargs["context_policy"] == "compact"
     assert len(apply_patch_message.content) < len(output)
     tool_result = next(
         event
@@ -654,7 +662,37 @@ def test_git_diff_tool_message_is_compacted_for_model_context(tmp_path, monkeypa
     assert result["messages"][0].name == "git_diff"
     assert "git_diff summary:" in result["messages"][0].content
     assert "files_changed: 1" in result["messages"][0].content
+    assert result["messages"][0].additional_kwargs["context_policy"] == "compact"
     assert len(result["messages"][0].content) < len(diff)
+
+
+def test_success_empty_bash_output_uses_marker_for_model_context(tmp_path, monkeypatch):
+    empty_output = "status: success\nexit_code: 0\nstdout:\n(empty)\nstderr:\n(empty)"
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return empty_output
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr("agent.graph.TOOL_HANDLERS", {"bash": lambda **kwargs: empty_output})
+    monkeypatch.setattr("agent.graph.TOOLS", [_tool_def("bash", "process", "serial", 130)])
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="bash", args={"command": "true"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert result["messages"][0].name == "bash"
+    assert result["messages"][0].additional_kwargs["context_policy"] == "marker"
+    assert "Tool output omitted from model context" in result["messages"][0].content
+    assert empty_output not in result["messages"][0].content
 
 
 def test_tools_node_skips_verify_reminder_for_document_only_write(tmp_path, monkeypatch):

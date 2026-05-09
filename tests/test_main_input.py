@@ -5,7 +5,7 @@ import types
 
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
 from agent.session_store import FileSessionStore
 from agent.session import (
@@ -417,6 +417,65 @@ def test_session_accumulates_real_usage(tmp_path):
         "output_tokens": 4,
         "total_tokens": 24,
     }
+
+
+def test_session_prunes_ephemeral_context_after_completed_task(tmp_path):
+    session = Session(provider=FakeProvider(), workdir=tmp_path, runtime_data_dir=tmp_path / "runtime")
+    session.add_user_message("hello")
+    task_start_index = len(session.messages)
+    session.messages.extend(
+        [
+            HumanMessage(
+                content="Task State is required before you can finish this user request.",
+                additional_kwargs={
+                    "context_ephemeral": True,
+                    "ephemeral_kind": "task_guard",
+                },
+            ),
+            AIMessage(
+                content="",
+                additional_kwargs={
+                    "tool_calls_data": [
+                        ToolCall(id="todo-1", name="todo", args={"items": []}),
+                        ToolCall(id="read-1", name="read_file", args={"path": "README.md"}),
+                    ]
+                },
+            ),
+            ToolMessage(content="Task State:\n[X] done", tool_call_id="todo-1", name="todo"),
+            ToolMessage(content="readme", tool_call_id="read-1", name="read_file"),
+            HumanMessage(
+                content="Code changes were made. Run verify with the narrowest useful target.",
+                additional_kwargs={
+                    "context_ephemeral": True,
+                    "ephemeral_kind": "verify_reminder",
+                },
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+
+    session._prune_todo_artifacts(task_start_index)
+
+    assert not any(
+        isinstance(message, ToolMessage) and message.name == "todo"
+        for message in session.messages
+    )
+    assert not any(
+        getattr(message, "additional_kwargs", {}).get("context_ephemeral")
+        for message in session.messages
+    )
+    remaining_ai = next(
+        message
+        for message in session.messages
+        if isinstance(message, AIMessage)
+        and message.additional_kwargs.get("tool_calls_data")
+    )
+    tool_names = [tool_call.name for tool_call in remaining_ai.additional_kwargs["tool_calls_data"]]
+    assert tool_names == ["read_file"]
+    assert any(
+        isinstance(message, ToolMessage) and message.name == "read_file"
+        for message in session.messages
+    )
 
 
 def test_session_accumulates_usage_from_tool_messages(tmp_path):

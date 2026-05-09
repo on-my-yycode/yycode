@@ -42,7 +42,15 @@ def create_tools_node(runtime: AgentRuntimeContext):
         additional_messages = workflow_guard.after_batch_messages(tool_calls_data)
         repeated_todo_message = runtime.todo_manager.consume_repeated_incomplete_message()
         if repeated_todo_message:
-            additional_messages.append(HumanMessage(content=repeated_todo_message))
+            additional_messages.append(
+                HumanMessage(
+                    content=repeated_todo_message,
+                    additional_kwargs={
+                        "context_ephemeral": True,
+                        "ephemeral_kind": "task_repeated_reminder",
+                    },
+                )
+            )
         if (
             any(tc.name == "todo" for tc in tool_calls_data)
             and runtime.todo_manager.can_finish_task()

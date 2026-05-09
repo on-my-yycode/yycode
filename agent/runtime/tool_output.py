@@ -19,19 +19,32 @@ class ToolOutputView:
 
     display: str
     model: str
+    context_policy: str = "full"
 
 
 def build_tool_output_view(tool_name: str, raw_output: str, tc) -> ToolOutputView:
     """Return display and model-facing representations for one tool result."""
     display = raw_output or ""
     if tool_name == "git_diff":
-        return ToolOutputView(display=display, model=_compact_diff_output(display, "git_diff"))
+        return ToolOutputView(
+            display=display,
+            model=_compact_diff_output(display, "git_diff"),
+            context_policy="compact",
+        )
     if tool_name in {"apply_patch", "write_file"}:
-        return ToolOutputView(display=display, model=_compact_write_output(tool_name, display, tc))
+        return ToolOutputView(
+            display=display,
+            model=_compact_write_output(tool_name, display, tc),
+            context_policy="compact",
+        )
     if tool_name in {"bash", "verify"}:
-        return ToolOutputView(display=display, model=_compact_command_output(tool_name, display))
+        return _command_output_view(tool_name, display)
     if len(display) > MAX_MODEL_TOOL_OUTPUT_CHARS:
-        return ToolOutputView(display=display, model=_truncate_with_notice(display, MAX_MODEL_TOOL_OUTPUT_CHARS))
+        return ToolOutputView(
+            display=display,
+            model=_truncate_with_notice(display, MAX_MODEL_TOOL_OUTPUT_CHARS),
+            context_policy="compact",
+        )
     return ToolOutputView(display=display, model=display)
 
 
@@ -57,6 +70,25 @@ def compact_preflight_output(output: str) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _command_output_view(tool_name: str, output: str) -> ToolOutputView:
+    if _is_success_empty_command_output(output):
+        return ToolOutputView(
+            display=output,
+            model=(
+                "[Tool output omitted from model context; command completed successfully "
+                "with empty stdout/stderr. Full result was shown in the UI.]"
+            ),
+            context_policy="marker",
+        )
+    if len(output) > MAX_MODEL_COMMAND_OUTPUT_CHARS:
+        return ToolOutputView(
+            display=output,
+            model=_compact_command_output(tool_name, output),
+            context_policy="compact",
+        )
+    return ToolOutputView(display=output, model=output)
 
 
 def _compact_write_output(tool_name: str, output: str, tc) -> str:
@@ -125,6 +157,16 @@ def _compact_command_output(tool_name: str, output: str) -> str:
         f"omitted_chars: {max(omitted, 0)}\n\n"
         f"head:\n{head}\n\n"
         f"tail:\n{tail}"
+    )
+
+
+def _is_success_empty_command_output(output: str) -> bool:
+    normalized = output.replace("\r\n", "\n")
+    return (
+        "status: success" in normalized
+        and "exit_code: 0" in normalized
+        and "stdout:\n(empty)" in normalized
+        and "stderr:\n(empty)" in normalized
     )
 
 

@@ -15,7 +15,17 @@ def create_task_guard_node(todo_manager: TodoManager):
     async def task_guard_node(state: AgentState) -> AgentState:
         if not todo_manager.has_incomplete_task_state():
             return {"messages": []}
-        return {"messages": [HumanMessage(content=todo_manager.get_finish_blocker_message())]}
+        return {
+            "messages": [
+                HumanMessage(
+                    content=todo_manager.get_finish_blocker_message(),
+                    additional_kwargs={
+                        "context_ephemeral": True,
+                        "ephemeral_kind": "task_guard",
+                    },
+                )
+            ]
+        }
 
     return task_guard_node
 

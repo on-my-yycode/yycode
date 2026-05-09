@@ -443,6 +443,8 @@ Final answer:
             return
         preserved = self.messages[:start_index]
         for message in self.messages[start_index:]:
+            if self._is_ephemeral_context_message(message):
+                continue
             if isinstance(message, ToolMessage) and message.name == "todo":
                 continue
             if isinstance(message, AIMessage):
@@ -453,6 +455,11 @@ Final answer:
                 continue
             preserved.append(message)
         self.messages = preserved
+
+    def _is_ephemeral_context_message(self, message: BaseMessage) -> bool:
+        """Return whether a runtime-only reminder should be dropped after task completion."""
+        additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+        return bool(additional_kwargs.get("context_ephemeral"))
 
     def _without_todo_tool_calls(self, message: AIMessage) -> AIMessage | None:
         """Return an AIMessage with todo tool calls removed, or None if empty."""
