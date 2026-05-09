@@ -5,6 +5,7 @@ from argparse import Namespace
 
 from langchain_core.messages import AIMessage
 
+from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.tui.runner import AgentTuiRunner
 from agent.tui.state import TuiState
@@ -188,6 +189,34 @@ class WriteToolEndOnlySession:
         return None
 
 
+class MessageContextSession:
+    """Session stub that exposes message context operations."""
+
+    def __init__(self):
+        self.id = "sess-1"
+        self.provider = type("Provider", (), {"model": "fake-model"})()
+        self.skill_registry = type("Skills", (), {"list_skills": lambda self: []})()
+        self.system_prompt = "system"
+        self.messages = []
+        self.message_context_manager = MessageContextManager()
+        self.compressed_indexes = None
+
+    async def analyze_message_context(self):
+        return self.message_context_manager.analyze(
+            self.messages,
+            system_prompt=self.system_prompt,
+            tools=[],
+            context_window_tokens=1_000,
+        )
+
+    async def compress_message_context(self, indexes):
+        self.compressed_indexes = list(indexes)
+        return len(indexes)
+
+    async def close(self):
+        return None
+
+
 def test_submit_nowait_records_user_input_before_task_finishes():
     async def run():
         state = TuiState()
@@ -206,6 +235,22 @@ def test_submit_nowait_records_user_input_before_task_finishes():
         assert runner.current_task is not None
         assert not runner.current_task.done()
         await runner.cancel_current_task()
+
+    asyncio.run(run())
+
+
+def test_runner_delegates_message_context_methods():
+    async def run():
+        state = TuiState()
+        runner = AgentTuiRunner(Namespace(silent=False), state=state)
+        runner.session = MessageContextSession()
+
+        summary = await runner.analyze_message_context()
+        compressed = await runner.compress_message_context([1, 3])
+
+        assert summary.context_window_tokens == 1_000
+        assert compressed == 2
+        assert runner.session.compressed_indexes == [1, 3]
 
     asyncio.run(run())
 

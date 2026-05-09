@@ -14,7 +14,7 @@ from agent.session import (
     infer_context_window_tokens,
     parse_context_window_tokens,
 )
-from agent.tui.app import _completion_context
+from agent.tui.app import _completion_context, _is_message_tokens_key_event
 from main import (
     auto_approval_callback,
     build_arg_parser,
@@ -287,6 +287,12 @@ def test_tui_completion_context_ignores_plain_text_tokens():
     assert _completion_context("please use skill", (0, 10)) is None
 
 
+def test_tui_message_tokens_key_event_accepts_ctrl_m_key_or_name():
+    assert _is_message_tokens_key_event(types.SimpleNamespace(key="ctrl+m", name=""))
+    assert _is_message_tokens_key_event(types.SimpleNamespace(key="", name="ctrl+m"))
+    assert not _is_message_tokens_key_event(types.SimpleNamespace(key="m", name="m"))
+
+
 def test_format_token_count_supports_compact_units():
     assert format_token_count(987) == "987"
     assert format_token_count(1_000) == "1k"
@@ -365,6 +371,38 @@ def test_session_uses_provider_token_count_for_compression(tmp_path):
 
     compression_event = next(event for event in events if event.event_type == "context_compressed")
     assert "(900 -> 100 tokens, exact)" in compression_event.content
+
+
+def test_session_manual_message_compression_saves_and_emits_event(tmp_path):
+    events = []
+
+    async def collect_event(event):
+        events.append(event)
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        system_prompt="short",
+        context_window_tokens=1_000,
+        stream_callback=collect_event,
+        runtime_data_dir=tmp_path / "runtime",
+    )
+    session.message_context_manager.keep_recent_messages = 1
+    session.message_context_manager.min_tool_tokens = 10
+    session.add_message(ToolMessage(content="x" * 4_000, tool_call_id="call-1", name="bash"))
+    session.add_user_message("latest")
+
+    compressed = asyncio.run(session.compress_message_context([0]))
+
+    assert compressed == 1
+    assert session.messages[0].additional_kwargs["context_compressed"] is True
+    assert "manually compressed by Message Token Manager" in session.messages[0].content
+    assert any(
+        event.event_type == "context_compressed"
+        and "manually compressed 1 old tool outputs" in event.content
+        for event in events
+    )
+    assert session.message_store.load(session.id)[0].additional_kwargs["context_compressed"] is True
 
 
 def test_session_accumulates_real_usage(tmp_path):

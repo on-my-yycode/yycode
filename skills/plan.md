@@ -15,6 +15,11 @@ Produce a concrete, project-aware plan without implementing it.
 The plan may inspect the workspace using read-only tools, but it must not modify files, run
 verification, run shell commands, request approval, or perform implementation work.
 
+When the plan may involve file changes, first identify the likely affected files or directories
+and explain why each one may need changes. Return these as a concise list before implementation
+steps. If no file changes are expected or the affected files are not yet clear, state that
+explicitly.
+
 ## Allowed Actions
 
 Use lightweight read-only discovery when it helps make the plan concrete:
@@ -57,7 +62,7 @@ Use a separate planning subagent for non-trivial `/plan` requests:
 ```text
 subagent(
   role="architect",
-  task="Clarify the user's requirements and produce a planning-only solution. Do not modify files, run commands, verify, or implement. Use the provided discovery summary and identify assumptions, options, recommended approach, risks, and questions.",
+  task="Clarify the user's requirements and produce a planning-only solution. Do not modify files, run commands, verify, or implement. Use the provided discovery summary to identify likely affected files or directories, assumptions, options, recommended approach, risks, and questions.",
   context="[user goal + lightweight discovery summary + current constraints]"
 )
 ```
@@ -87,6 +92,11 @@ Return a concise plan in Chinese unless the user asks otherwise:
 
 当前理解：
 - ...
+
+预计文件改动：
+- path/to/file.py：需要修改的原因
+- path/to/other.md：需要更新的原因
+- 暂无明确文件变更：原因
 
 推荐方案：
 - ...

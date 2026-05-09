@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from argparse import Namespace
 
+from agent.message_context_manager import ContextBlockStat, MessageTokenStat
+from tools import TOOLS
+
 
 PROGRESS_TRACK_WIDTH = 18
 PROGRESS_PULSE_WIDTH = 6
@@ -53,6 +56,14 @@ def _is_changed_files_key_event(event: object) -> bool:
     return "ctrl+d" in names
 
 
+def _is_message_tokens_key_event(event: object) -> bool:
+    names = {
+        str(getattr(event, "key", "") or "").lower(),
+        str(getattr(event, "name", "") or "").lower(),
+    }
+    return "ctrl+m" in names
+
+
 def _completion_context(
     text: str,
     cursor_location: tuple[int, int],
@@ -78,6 +89,14 @@ def _indent_diff_for_panel(diff: str) -> str:
     if not diff:
         return ""
     return "\n".join(f"  {line}" if line else "" for line in diff.splitlines())
+
+
+def _format_tokens_short(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}m"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    return str(value)
 
 
 def run_tui(args: Namespace) -> None:
@@ -257,6 +276,233 @@ def run_tui(args: Namespace) -> None:
             diff_view.write(_indent_diff_for_panel(colorize_diff_for_tui(item.diff)))
             diff_view.scroll_home(animate=False)
 
+    class MessageTokenManagerScreen(ModalScreen[None]):
+        """Current session message token manager."""
+
+        BINDINGS = [
+            ("ctrl+m", "close_message_tokens", "Back"),
+            ("up", "move_selection_up", "Up"),
+            ("down", "move_selection_down", "Down"),
+            ("c", "compress_selected", "Compress selected"),
+            ("a", "compress_suggested", "Compress suggested"),
+        ]
+
+        def __init__(self, runner: AgentTuiRunner) -> None:
+            super().__init__()
+            self.runner = runner
+            self.selected_index = 0
+            self.blocks: list[ContextBlockStat] = []
+            self.stats: list[MessageTokenStat] = []
+            self.summary = None
+            self.suggestions = []
+            self.pending_compression_indexes: list[int] = []
+            self.pending_compression_action = ""
+
+        def compose(self) -> ComposeResult:
+            yield Container(
+                Static("", id="message-token-header"),
+                Horizontal(
+                    ListView(id="message-token-list"),
+                    RichLog(
+                        markup=True,
+                        wrap=True,
+                        highlight=False,
+                        auto_scroll=False,
+                        id="message-token-detail",
+                    ),
+                    id="message-token-split",
+                ),
+                id="message-token-dialog",
+            )
+
+        async def on_mount(self) -> None:
+            await self.refresh_message_tokens()
+
+        def action_close_message_tokens(self) -> None:
+            self.dismiss(None)
+
+        def action_move_selection_up(self) -> None:
+            entries = self._entries()
+            if entries:
+                self._clear_pending_compression()
+                self.selected_index = (self.selected_index - 1) % len(entries)
+                self._sync_selection()
+
+        def action_move_selection_down(self) -> None:
+            entries = self._entries()
+            if entries:
+                self._clear_pending_compression()
+                self.selected_index = (self.selected_index + 1) % len(entries)
+                self._sync_selection()
+
+        async def action_compress_selected(self) -> None:
+            entry = self._selected_entry()
+            if not isinstance(entry, MessageTokenStat) or not entry.compressible:
+                self.notify("Selected message is not compressible.", severity="warning")
+                self._clear_pending_compression()
+                return
+            await self._request_or_confirm_compression([entry.index], "selected", "C")
+
+        async def action_compress_suggested(self) -> None:
+            indexes = [index for suggestion in self.suggestions for index in suggestion.message_indexes]
+            if not indexes:
+                self.notify("No compression suggestions.", severity="information")
+                self._clear_pending_compression()
+                return
+            await self._request_or_confirm_compression(indexes, "suggested", "A")
+
+        async def _request_or_confirm_compression(
+            self,
+            indexes: list[int],
+            action: str,
+            key_hint: str,
+        ) -> None:
+            unique_indexes = sorted(set(indexes))
+            if self.pending_compression_indexes == unique_indexes and self.pending_compression_action == action:
+                compressed = await self.runner.compress_message_context(unique_indexes)
+                self.notify(f"Compressed {compressed} message(s).", severity="information")
+                self._clear_pending_compression()
+                await self.refresh_message_tokens()
+                return
+            self.pending_compression_indexes = unique_indexes
+            self.pending_compression_action = action
+            self.notify(
+                f"Press {key_hint} again to confirm compressing {len(unique_indexes)} message(s).",
+                severity="warning",
+            )
+            self._refresh_detail()
+
+        def _clear_pending_compression(self) -> None:
+            self.pending_compression_indexes = []
+            self.pending_compression_action = ""
+
+        def _pending_hint(self) -> str:
+            if not self.pending_compression_indexes:
+                return ""
+            indexes = ", ".join(str(index) for index in self.pending_compression_indexes[:6])
+            if len(self.pending_compression_indexes) > 6:
+                indexes += ", ..."
+            key_hint = "A" if self.pending_compression_action == "suggested" else "C"
+            return (
+                f"\n[#d7ba7d]Confirm compression:[/] press {key_hint} again to compact "
+                f"{len(self.pending_compression_indexes)} message(s): {indexes}."
+            )
+
+        def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+            if event.list_view.id != "message-token-list" or event.item is None:
+                return
+            self.selected_index = event.list_view.index or 0
+            self._refresh_detail()
+
+        async def refresh_message_tokens(self) -> None:
+            session = self.runner.session
+            header = self.query_one("#message-token-header", Static)
+            item_list = self.query_one("#message-token-list", ListView)
+            detail = self.query_one("#message-token-detail", RichLog)
+            if session is None:
+                header.update("[bold #c9a6ff]Message Token Manager[/] [#7f8794]Press Ctrl+M to close[/]")
+                item_list.clear()
+                detail.clear()
+                detail.write("[#7f8794]Session is not ready.[/]")
+                return
+            self.summary = await self.runner.analyze_message_context()
+            manager = session.message_context_manager
+            self.blocks = manager.context_blocks(session.system_prompt, TOOLS)
+            self.stats = manager.message_stats(session.messages)
+            self.suggestions = manager.suggest_compression(session.messages)
+            header.update(self._render_header())
+            item_list.clear()
+            for entry in self._entries():
+                item_list.append(ListItem(Label(self._entry_label(entry))))
+            self.selected_index = min(self.selected_index, max(0, len(self._entries()) - 1))
+            self._sync_selection()
+
+        def _render_header(self) -> str:
+            if self.summary is None:
+                return "[bold #c9a6ff]Message Token Manager[/] [#7f8794]Press Ctrl+M to close[/]"
+            total = _format_tokens_short(self.summary.total_tokens)
+            window = _format_tokens_short(self.summary.context_window_tokens)
+            savings = _format_tokens_short(self.summary.compression_savings_estimate)
+            pending = ""
+            if self.pending_compression_indexes:
+                pending = f" [#d7ba7d]confirm {len(self.pending_compression_indexes)}[/]"
+            return (
+                "[bold #c9a6ff]Message Token Manager[/] "
+                f"[#7f8794]Press Ctrl+M to close · C compress selected · A compress suggested[/] "
+                f"[#cfd3dc]{total}/{window}[/] [#7f8794]{self.summary.token_source} · {self.summary.pressure} · save ~{savings}[/]"
+                f"{pending}"
+            )
+
+        def _entries(self) -> list[ContextBlockStat | MessageTokenStat]:
+            return [*self.blocks, *self.stats]
+
+        def _selected_entry(self) -> ContextBlockStat | MessageTokenStat | None:
+            entries = self._entries()
+            if not entries:
+                return None
+            return entries[self.selected_index]
+
+        def _entry_label(self, entry: ContextBlockStat | MessageTokenStat) -> str:
+            if isinstance(entry, ContextBlockStat):
+                return (
+                    f"[#7f8794]block[/] [#d7dae0]{_safe_text(entry.name, 24)}[/] "
+                    f"[#7f8794]~{_format_tokens_short(entry.estimated_tokens)} protected[/]"
+                )
+            marker = "[#d7ba7d]compress[/]" if entry.compressible else f"[#7f8794]{entry.recommendation}[/]"
+            return (
+                f"[#7f8794]#{entry.index:<3}[/] [#d7dae0]{entry.role:<9}[/] "
+                f"[#cfd3dc]~{_format_tokens_short(entry.estimated_tokens):>5}[/] "
+                f"{marker} [#7f8794]{_safe_text(entry.preview, 46)}[/]"
+            )
+
+        def _sync_selection(self) -> None:
+            item_list = self.query_one("#message-token-list", ListView)
+            item_list.index = self.selected_index
+            item_list.focus()
+            self._refresh_detail()
+
+        def _refresh_detail(self) -> None:
+            detail = self.query_one("#message-token-detail", RichLog)
+            detail.clear()
+            if self.summary is not None:
+                breakdown = "  ".join(
+                    f"{key}: {_format_tokens_short(value)}"
+                    for key, value in sorted(self.summary.by_role.items())
+                )
+                detail.write(
+                    f"[bold #f0f2f5]Context[/]\n"
+                    f"  [#7f8794]tokens[/] [#cfd3dc]{_format_tokens_short(self.summary.total_tokens)}"
+                    f"/{_format_tokens_short(self.summary.context_window_tokens)}[/] "
+                    f"[#7f8794]{self.summary.token_source} · {self.summary.pressure}[/]\n"
+                    f"  [#7f8794]remaining[/] [#cfd3dc]{_format_tokens_short(self.summary.remaining_tokens)}[/]\n"
+                    f"  [#7f8794]breakdown[/] [#cfd3dc]{_safe_text(breakdown)}[/]"
+                    f"{self._pending_hint()}\n"
+                )
+            entry = self._selected_entry()
+            if entry is None:
+                detail.write("[#7f8794]No messages yet.[/]")
+                return
+            if isinstance(entry, ContextBlockStat):
+                detail.write(
+                    f"[bold #f0f2f5]{_safe_text(entry.name)}[/]\n"
+                    f"  [#7f8794]estimated tokens[/] [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]\n"
+                    f"  [#7f8794]status[/] [#cfd3dc]protected[/]\n\n"
+                    f"{_safe_text(entry.preview or '(empty)')}"
+                )
+                return
+            detail.write(
+                f"[bold #f0f2f5]Message #{entry.index}[/]\n"
+                f"  [#7f8794]role[/] [#cfd3dc]{entry.role}[/]\n"
+                f"  [#7f8794]type[/] [#cfd3dc]{entry.message_type}[/]\n"
+                f"  [#7f8794]estimated tokens[/] [#cfd3dc]{_format_tokens_short(entry.estimated_tokens)}[/]\n"
+                f"  [#7f8794]share[/] [#cfd3dc]{entry.percent:.1f}%[/]\n"
+                f"  [#7f8794]recommendation[/] [#cfd3dc]{entry.recommendation}[/]\n"
+                f"  [#7f8794]risk[/] [#cfd3dc]{entry.risk}[/]\n\n"
+                f"{_safe_text(entry.preview or '(empty)')}"
+            )
+            if entry.compressible:
+                detail.write("\n\n[#d7ba7d]Press C to compact this old tool output.[/]")
+
     class YoyoTuiApp(App[None]):
         """Main terminal UI."""
 
@@ -272,6 +518,7 @@ def run_tui(args: Namespace) -> None:
             ("ctrl+c", "cancel_task", "Cancel task"),
             ("ctrl+t", "open_task_plan", "Task plan"),
             ("ctrl+d", "open_changed_files", "Changed files"),
+            ("ctrl+m", "open_message_tokens", "Message tokens"),
             ("ctrl+enter", "submit_prompt", "Submit"),
             ("ctrl+j", "submit_prompt", "Submit"),
             ("ctrl+q", "quit", "Quit"),
@@ -361,6 +608,12 @@ def run_tui(args: Namespace) -> None:
                 event.prevent_default()
                 event.stop()
                 self.action_toggle_changed_files()
+                return
+
+            if _is_message_tokens_key_event(event):
+                event.prevent_default()
+                event.stop()
+                self.action_toggle_message_tokens()
                 return
 
             if self._completion_open:
@@ -462,6 +715,15 @@ def run_tui(args: Namespace) -> None:
                 self.pop_screen()
                 return
             self.push_screen(ChangedFilesScreen(self.runner.state))
+
+        def action_open_message_tokens(self) -> None:
+            self.action_toggle_message_tokens()
+
+        def action_toggle_message_tokens(self) -> None:
+            if isinstance(self.screen, MessageTokenManagerScreen):
+                self.pop_screen()
+                return
+            self.push_screen(MessageTokenManagerScreen(self.runner))
 
         def action_timeline_line_up(self) -> None:
             if self._completion_open:

@@ -8,6 +8,8 @@ from langchain_core.messages import BaseMessage, ToolMessage
 DEFAULT_COMPRESSION_RATIO = 0.7
 DEFAULT_KEEP_RECENT_MESSAGES = 20
 DEFAULT_MAX_TOOL_CHARS = 2_000
+AUTO_COMPRESSION_REASON = "context window usage crossed the compression threshold."
+MANUAL_COMPRESSION_REASON = "manually compressed by Message Token Manager."
 
 
 @dataclass(frozen=True)
@@ -81,20 +83,34 @@ class ContextCompressor:
         return isinstance(content, str) and len(content) > self.max_tool_chars
 
     def _trim_tool_message(self, message: ToolMessage) -> ToolMessage:
-        original_chars = len(str(message.content))
-        name = message.name or "unknown"
-        content = (
-            f"[Compressed old tool output]\n"
-            f"tool: {name}\n"
-            f"original_chars: {original_chars}\n"
-            f"reason: context window usage crossed the compression threshold."
-        )
-        trimmed = ToolMessage(
-            content=content,
-            tool_call_id=message.tool_call_id,
-            name=message.name,
-        )
-        trimmed.additional_kwargs.update(getattr(message, "additional_kwargs", {}) or {})
-        trimmed.additional_kwargs["context_compressed"] = True
-        trimmed.additional_kwargs["original_chars"] = original_chars
-        return trimmed
+        return compress_tool_message(message, reason=AUTO_COMPRESSION_REASON)
+
+
+def compress_tool_message(
+    message: ToolMessage,
+    *,
+    reason: str,
+    estimated_original_tokens: int | None = None,
+) -> ToolMessage:
+    """Return a compact marker ToolMessage while preserving tool linkage."""
+    original_chars = len(str(message.content))
+    name = message.name or "unknown"
+    lines = [
+        "[Compressed old tool output]",
+        f"tool: {name}",
+        f"original_chars: {original_chars}",
+    ]
+    if estimated_original_tokens is not None:
+        lines.append(f"estimated_original_tokens: {estimated_original_tokens}")
+    lines.append(f"reason: {reason}")
+    trimmed = ToolMessage(
+        content="\n".join(lines),
+        tool_call_id=message.tool_call_id,
+        name=message.name,
+    )
+    trimmed.additional_kwargs.update(getattr(message, "additional_kwargs", {}) or {})
+    trimmed.additional_kwargs["context_compressed"] = True
+    trimmed.additional_kwargs["original_chars"] = original_chars
+    if estimated_original_tokens is not None:
+        trimmed.additional_kwargs["estimated_original_tokens"] = estimated_original_tokens
+    return trimmed

@@ -413,10 +413,15 @@ def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     session_text = _safe_text(state.session_id if state.session_id else "(starting)", max(12, W - 10))
     restored = int(getattr(state, "restored_message_count", 0) or 0)
     restored_text = f"  [#7f8794]Restored[/] [#cfd3dc]{restored} messages[/]" if restored else ""
+    mode_text = (
+        "  [#7f8794]Mode[/] [bold #f59e0b]AUTO[/]"
+        if getattr(state, "auto_mode", False)
+        else "  [#7f8794]Mode[/] [#8fd6a3]MANUAL[/]"
+    )
     return "\n".join(
         [
             brand_line,
-            f"[#7f8794]Session[/] [#cfd3dc]{session_text}[/]{restored_text}",
+            f"[#7f8794]Session[/] [#cfd3dc]{session_text}[/]{restored_text}{mode_text}",
             f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]",
         ]
     )

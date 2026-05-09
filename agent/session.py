@@ -18,6 +18,7 @@ from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
 from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
 from agent.message_format import messages_to_provider_format
+from agent.message_context_manager import MessageContextManager, MessageContextSummary
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
 from agent.skills import SkillRegistry, parse_skill_paths
@@ -89,6 +90,7 @@ class Session:
         self.context_compressor = ContextCompressor(
             context_window_tokens=self.context_window_tokens,
         )
+        self.message_context_manager = MessageContextManager()
 
     def _resolve_skill_dirs(self, skill_dirs: Optional[Iterable[str]]) -> list[str]:
         default_dir = str(self.app_root / "skills")
@@ -289,6 +291,46 @@ Final answer:
         if exact is not None:
             return exact, True
         return self.estimate_messages_token_usage(messages), False
+
+    async def analyze_message_context(self) -> MessageContextSummary:
+        """Analyze current message token pressure for user-facing management."""
+        total_tokens, exact = await self.count_context_tokens()
+        return self.message_context_manager.analyze(
+            self.messages,
+            system_prompt=self.system_prompt,
+            tools=TOOLS,
+            context_window_tokens=self.context_window_tokens,
+            total_tokens=total_tokens,
+            token_source="exact" if exact else "estimated",
+        )
+
+    async def compress_message_context(self, indexes: list[int]) -> int:
+        """Manually compact selected old tool outputs and persist the session."""
+        if not indexes:
+            return 0
+        before = self.messages
+        after = self.message_context_manager.compress_selected(before, indexes)
+        compressed_count = sum(1 for old, new in zip(before, after) if old is not new)
+        if compressed_count == 0:
+            return 0
+        original_tokens, original_exact = await self.count_context_tokens(before)
+        self.messages = after
+        self._save_messages()
+        compressed_tokens, compressed_exact = await self.count_context_tokens(after)
+        token_source = "exact" if original_exact and compressed_exact else "estimated"
+        if self.stream_callback:
+            await self.stream_callback(
+                StreamEvent(
+                    source="main",
+                    session_id=self.id,
+                    event_type="context_compressed",
+                    content=(
+                        f"manually compressed {compressed_count} old tool outputs "
+                        f"({original_tokens} -> {compressed_tokens} tokens, {token_source})"
+                    ),
+                )
+            )
+        return compressed_count
 
     def estimate_context_window_percent(self) -> float:
         """Estimate how much of the configured context window is currently used."""

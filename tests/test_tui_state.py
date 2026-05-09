@@ -4,7 +4,12 @@ from textual.markup import to_content
 
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
-from agent.tui.renderers import render_status_text, render_task_plan_panel, render_timeline_lines
+from agent.tui.renderers import (
+    render_brand_text,
+    render_status_text,
+    render_task_plan_panel,
+    render_timeline_lines,
+)
 from agent.tui.state import TuiState
 
 
@@ -1021,6 +1026,21 @@ def test_tui_status_header_shows_completed_todo_state_after_clear():
 
     assert "Todo" in status
     assert "completed" in status
+
+
+def test_tui_status_header_shows_auto_mode_badge():
+    state = TuiState()
+    state.set_startup_info(
+        session_id="sess-1",
+        model_name="gpt-test",
+        skills_text="drawio",
+        auto_mode=True,
+    )
+
+    status = render_brand_text(state, width=120)
+
+    assert "Mode" in status
+    assert "AUTO" in status
 
 
 def test_tui_main_timeline_shows_compact_tool_and_model_updates():

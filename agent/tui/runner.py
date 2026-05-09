@@ -9,6 +9,7 @@ from argparse import Namespace
 from typing import Awaitable, Callable, Optional
 
 from agent.approval import ApprovalRequest
+from agent.message_context_manager import MessageContextSummary
 from agent.session import Session
 from agent.streaming import StreamEvent
 from tools.git_diff import git_diff
@@ -61,6 +62,7 @@ class AgentTuiRunner:
             workspace_path=str(self.session.workdir),
             context_window_tokens=self.session.context_window_tokens,
             restored_message_count=self.session.restored_message_count,
+            auto_mode=silent_mode,
             todo_manager=self.session.todo_manager,
         )
 
@@ -222,6 +224,19 @@ class AgentTuiRunner:
     def resolve_approval(self, approval_id: str, approved: bool) -> bool:
         """Resolve a pending approval decision."""
         return self.approval_adapter.resolve(approval_id, approved)
+
+    async def analyze_message_context(self) -> MessageContextSummary:
+        """Return current message token summary."""
+        if self.session is None:
+            raise RuntimeError("TUI runner has not been started")
+        return await self.session.analyze_message_context()
+
+    async def compress_message_context(self, indexes: list[int]) -> int:
+        """Compress selected old tool outputs and refresh state."""
+        if self.session is None:
+            raise RuntimeError("TUI runner has not been started")
+        compressed = await self.session.compress_message_context(indexes)
+        return compressed
 
     def _skills_text(self) -> str:
         if self.session is None:
