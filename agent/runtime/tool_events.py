@@ -88,6 +88,16 @@ def format_tool_event_metadata(tc) -> dict:
             "metadata": metadata,
         }
 
+    if tool_name.startswith("lsp_"):
+        return {
+            "title": _title_for_lsp_tool(tool_name),
+            "detail": _detail_for_lsp_args(args),
+            "phase": "semantic_navigation",
+            "tool_name": tool_name,
+            "file_paths": _file_paths_from_args(args),
+            "metadata": metadata,
+        }
+
     if tool_name in {"apply_patch", "write_file", "edit_file"}:
         return {
             "title": _title_for_write_tool(tool_name),
@@ -187,6 +197,32 @@ def _title_for_readonly_tool(tool_name: str) -> str:
         "workspace_state": "Check workspace state",
         "git_diff": "Review git diff",
     }.get(tool_name, f"Run {tool_name}")
+
+
+def _title_for_lsp_tool(tool_name: str) -> str:
+    return {
+        "lsp_document_symbols": "LSP document symbols",
+        "lsp_workspace_symbols": "LSP workspace symbols",
+        "lsp_definition": "LSP definition",
+        "lsp_references": "LSP references",
+        "lsp_hover": "LSP hover",
+        "lsp_diagnostics": "LSP diagnostics",
+    }.get(tool_name, f"LSP {tool_name.removeprefix('lsp_').replace('_', ' ')}")
+
+
+def _detail_for_lsp_args(args: dict) -> str:
+    path = args.get("path")
+    query = args.get("query")
+    line = args.get("line")
+    character = args.get("character")
+    parts: list[str] = []
+    if path:
+        parts.append(str(path))
+    if query:
+        parts.append(f"query={query}")
+    if line is not None and character is not None:
+        parts.append(f"position={line}:{character}")
+    return " · ".join(parts)
 
 
 def _title_for_write_tool(tool_name: str) -> str:

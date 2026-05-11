@@ -86,6 +86,12 @@ Important constraints:
 - Stay scoped to the assigned task and use tools only when needed.
 - You have an isolated conversation history.
 - Do not use todo planning; the parent agent owns overall task planning.
+- For semantic code navigation, prefer LSP tools when available:
+  lsp_workspace_symbols, lsp_document_symbols, lsp_definition, lsp_references,
+  lsp_hover, and lsp_diagnostics. Fall back to grep/read_file when LSP is
+  unavailable, returns no_results, or plain text search is more appropriate.
+- LSP line and character inputs are zero-based. Model-facing locations are
+  displayed as one-based file:line:character.
 - Use list_skills to discover skills and load_skill to load only the skill instructions
   you need for this task.
 - You must not delegate to another subagent.

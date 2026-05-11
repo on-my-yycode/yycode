@@ -6,11 +6,35 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from agent.message_context_manager import MessageContextSummary
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
 
 
 MAX_TIMELINE_ITEMS = 500
+
+
+@dataclass
+class GitHeader:
+    """Compact git status shown in the top panel."""
+
+    branch: str = ""
+    dirty: bool = False
+    available: bool = False
+
+
+@dataclass
+class MessageContextHeader:
+    """Compact session message context summary for the top panel."""
+
+    message_count: int = 0
+    total_tokens: int = 0
+    token_source: str = "estimated"
+    context_window_tokens: int = 0
+    remaining_tokens: int = 0
+    pressure: str = "low"
+    updated_at_ms: int | None = None
+    refreshing: bool = False
 
 
 @dataclass
@@ -34,6 +58,13 @@ class TimelineItem:
     start_time_ms: int | None = None
     is_transient: bool = False  # 标记是否为临时状态项，完成后可删除
     usage: dict[str, int] | None = None
+    render_cache_key: tuple[Any, ...] | None = None
+    rendered_text: str | None = None
+
+    def invalidate_render_cache(self) -> None:
+        """Clear cached TUI rendering for this item after mutation."""
+        self.render_cache_key = None
+        self.rendered_text = None
 
 
 @dataclass
@@ -91,6 +122,8 @@ class TuiState:
         self.workspace_path: str = ""
         self.context_window_tokens: int = 0
         self.restored_message_count: int = 0
+        self.message_context_header = MessageContextHeader()
+        self.git_header = GitHeader()
         self.auto_mode: bool = False
         self.latest_usage: dict[str, int] = {}
         self.todo_manager: TodoManager | None = None
@@ -130,9 +163,49 @@ class TuiState:
         self.workspace_path = workspace_path
         self.context_window_tokens = max(0, int(context_window_tokens or 0))
         self.restored_message_count = max(0, int(restored_message_count or 0))
+        self.message_context_header.context_window_tokens = self.context_window_tokens
+        self.message_context_header.message_count = self.restored_message_count
         self.auto_mode = bool(auto_mode)
         self.status_line = "Ready for input"
         self.todo_manager = todo_manager
+
+    def update_message_context_header(
+        self,
+        *,
+        message_count: int,
+        summary: MessageContextSummary | None = None,
+        refreshing: bool = False,
+    ) -> None:
+        """Update compact session message context metrics shown in the top panel."""
+        self.message_context_header.message_count = max(0, int(message_count or 0))
+        self.message_context_header.refreshing = bool(refreshing)
+        if summary is None:
+            return
+        self.message_context_header.total_tokens = max(0, int(summary.total_tokens or 0))
+        self.message_context_header.token_source = str(summary.token_source or "estimated")
+        self.message_context_header.context_window_tokens = max(0, int(summary.context_window_tokens or 0))
+        self.message_context_header.remaining_tokens = max(0, int(summary.remaining_tokens or 0))
+        self.message_context_header.pressure = str(summary.pressure or "low")
+        self.message_context_header.updated_at_ms = int(time.time() * 1000)
+
+    def clear_session_view(self) -> None:
+        """Clear local transcript/session view after a TUI command resets history."""
+        self.timeline = []
+        self.pending_approvals.clear()
+        self.subagents.clear()
+        self.changed_files = []
+        self.latest_changed_file_diffs = []
+        self.latest_usage = {}
+        self.message_context_header = MessageContextHeader(context_window_tokens=self.context_window_tokens)
+        self.active_phase = "planning"
+        self.status_line = "Session history cleared"
+        self.end_active_task()
+        if self.todo_manager is not None:
+            self.todo_manager.reset()
+
+    def update_git_header(self, *, branch: str = "", dirty: bool = False, available: bool = False) -> None:
+        """Update compact git status shown in the top panel."""
+        self.git_header = GitHeader(branch=branch, dirty=dirty, available=available)
 
     def has_tasks(self) -> bool:
         """Return whether there is an active task state."""
@@ -298,6 +371,7 @@ class TuiState:
         item.elapsed_ms = event.elapsed_ms if event.elapsed_ms is not None else item.elapsed_ms
         item.metadata.update(dict(event.metadata or {}))
         item.usage = event.usage or item.usage
+        item.invalidate_render_cache()
         item.start_time_ms = previous_start
         self._update_phase(item)
         self._update_status_line(item)
@@ -312,6 +386,7 @@ class TuiState:
             if item.event_type == "llm_waiting" and item.status in {"running", "retrying", "timeout", None}:
                 item.status = "completed"
                 item.title = "Model response started"
+                item.invalidate_render_cache()
                 return
             if item.event_type in {"text_delta", "tool_start", "tool_result", "tool_end", "user_message"}:
                 return
@@ -445,6 +520,7 @@ class TuiState:
         # 更新 usage
         if event.usage:
             item.usage = event.usage
+        item.invalidate_render_cache()
         self._update_phase(item)
         self._update_status_line(item)
         self._update_approvals(item)

@@ -2,6 +2,7 @@
 
 from textual.markup import to_content
 
+from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
 from agent.tui.renderers import (
@@ -11,6 +12,84 @@ from agent.tui.renderers import (
     render_timeline_lines,
 )
 from agent.tui.state import TuiState
+
+
+def test_tui_state_updates_message_context_header():
+    state = TuiState()
+    state.set_startup_info(
+        session_id="sess-1",
+        model_name="gpt-test",
+        skills_text="drawio",
+        context_window_tokens=128_000,
+        restored_message_count=3,
+    )
+    assert state.message_context_header.message_count == 3
+
+    summary = MessageContextManager().analyze(
+        [],
+        system_prompt="system prompt",
+        tools=[],
+        context_window_tokens=128_000,
+        total_tokens=32_000,
+        token_source="exact",
+    )
+    state.update_message_context_header(message_count=12, summary=summary)
+
+    assert state.message_context_header.message_count == 12
+    assert state.message_context_header.total_tokens == 32_000
+    assert state.message_context_header.token_source == "exact"
+    assert state.message_context_header.pressure == "low"
+
+
+def test_tui_brand_text_shows_message_context_summary():
+    state = TuiState()
+    state.set_startup_info(
+        session_id="sess-1",
+        model_name="gpt-test",
+        skills_text="drawio",
+        workspace_path="/tmp/yoyoagent",
+        context_window_tokens=128_000,
+        restored_message_count=3,
+    )
+    state.update_git_header(branch="master", dirty=True, available=True)
+    summary = MessageContextManager().analyze(
+        [],
+        system_prompt="system prompt",
+        tools=[],
+        context_window_tokens=128_000,
+        total_tokens=32_000,
+        token_source="exact",
+    )
+    state.update_message_context_header(message_count=12, summary=summary)
+
+    brand = render_brand_text(state, width=140)
+
+    assert "YOYOAGENT" in brand
+    assert "" in brand
+    assert "master" in brand
+    assert "±" in brand
+    assert "/tmp/yoyoagent" in brand
+    assert "session" in brand
+    assert "sess-1" in brand
+    assert "msgs" in brand
+    assert "12" in brand
+    assert "restored" in brand
+    assert "3" in brand
+    assert "Ctx" in brand
+    assert "32k/128k" in brand
+    assert "25%" in brand
+    assert "LOW" in brand
+    assert "exact" in brand
+
+
+def test_tui_state_updates_git_header():
+    state = TuiState()
+
+    state.update_git_header(branch="feature/top-panel", dirty=True, available=True)
+
+    assert state.git_header.available is True
+    assert state.git_header.branch == "feature/top-panel"
+    assert state.git_header.dirty is True
 
 
 def test_tui_state_tracks_changed_files_and_usage():
@@ -479,6 +558,79 @@ def test_tui_timeline_renders_plain_code_fence_without_language():
     to_content(transcript)
 
 
+def test_tui_timeline_uses_light_markdown_while_task_is_running():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.add_user_input("sess-1", "stream markdown")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content=(
+                "- Updated `agent/tui/renderers.py`\n"
+                "- **Tests** passed\n"
+                "```bash\n"
+                "pytest tests/test_tui_state.py -q\n"
+                "```"
+            ),
+        )
+    )
+
+    running_transcript = render_timeline_lines(state)
+
+    assert "•" in running_transcript
+    assert "`agent/tui/renderers.py`" in running_transcript
+    assert "[#9cdcfe]`agent/tui/renderers.py`[/]" not in running_transcript
+    assert "[bold #f0f2f5]Tests[/]" not in running_transcript
+    assert "[bold #dcdcaa]pytest[/]" not in running_transcript
+
+    state.end_active_task()
+    completed_transcript = render_timeline_lines(state)
+
+    assert "[#9cdcfe]`agent/tui/renderers.py`[/]" in completed_transcript
+    assert "[bold #f0f2f5]Tests[/]" in completed_transcript
+    assert "[bold #dcdcaa]pytest[/]" in completed_transcript
+    to_content(completed_transcript)
+
+
+def test_tui_timeline_reuses_render_cache_until_item_changes():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    item = state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content="hello `cache`",
+        )
+    )
+
+    first = render_timeline_lines(state)
+    first_key = item.render_cache_key
+    first_rendered = item.rendered_text
+    second = render_timeline_lines(state)
+
+    assert second == first
+    assert item.render_cache_key == first_key
+    assert item.rendered_text is first_rendered
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content=" updated",
+        )
+    )
+    assert item.render_cache_key is None
+
+    updated = render_timeline_lines(state)
+
+    assert "updated" in updated
+    assert item.render_cache_key is not None
+
+
 def test_tui_status_panel_shows_prominent_task_running_state():
     state = TuiState()
     state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
@@ -514,7 +666,7 @@ def test_tui_status_panel_shows_last_run_after_task_finishes():
     assert state.last_task["elapsed_ms"] is not None
 
 
-def test_tui_status_bar_uses_configured_context_window_and_explicit_usage_labels():
+def test_tui_status_bar_uses_explicit_usage_labels_without_context_duplication():
     state = TuiState()
     state.set_startup_info(
         session_id="sess-1",
@@ -526,8 +678,8 @@ def test_tui_status_bar_uses_configured_context_window_and_explicit_usage_labels
 
     status = render_status_text(state)
 
-    assert "Context" in status
-    assert "377/224k" in status
+    assert "Context" not in status
+    assert "377/224k" not in status
     assert "Last run" in status
     assert "0s" in status
     assert "Tokens" in status
@@ -580,6 +732,47 @@ def test_tui_timeline_shows_tool_call_and_return_details():
     assert "Tool call" not in transcript
     assert "Tool returned" not in transcript
     assert "42ms" in transcript
+
+
+def test_tui_timeline_shows_lsp_tool_usage_explicitly():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    metadata = {"args": {"path": "agent/session.py", "line": 36, "character": 6}}
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_start",
+            title="LSP definition",
+            detail="agent/session.py · position=36:6",
+            phase="semantic_navigation",
+            status="running",
+            tool_name="lsp_definition",
+            metadata=metadata,
+        )
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_end",
+            title="LSP definition",
+            detail="agent/session.py · position=36:6",
+            phase="semantic_navigation",
+            status="completed",
+            tool_name="lsp_definition",
+            elapsed_ms=18,
+            metadata=metadata,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "◇ Semantic Navigation" in transcript
+    assert "LSP definition" in transcript
+    assert "agent/session.py" in transcript
+    assert "position=36:6" in transcript
+    assert "18ms" in transcript
 
 
 def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present():
@@ -926,9 +1119,10 @@ def test_tui_status_header_uses_compact_two_column_layout():
     status = render_status_text(state, width=140)
 
     assert "YOYOAGENT" in status
-    assert "Session" in status
+    assert "session" in status
     assert "12345678-1234-5678-1234-567812345678" in status
-    assert "Dir" in status
+    assert "git -" in status
+    assert "/Users/yoyofx/Documents/github/yoyoagent" in status
     assert "Model" in status
     assert "Status" in status
     assert "┬" not in status
@@ -1039,8 +1233,10 @@ def test_tui_status_header_shows_auto_mode_badge():
 
     status = render_brand_text(state, width=120)
 
-    assert "Mode" in status
-    assert "AUTO" in status
+    assert "Mode" not in status
+    assert "AUTO" not in status
+    assert "session" in status
+    assert "sess-1" in status
 
 
 def test_tui_main_timeline_shows_compact_tool_and_model_updates():

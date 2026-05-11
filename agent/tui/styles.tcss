@@ -108,6 +108,22 @@ Screen {
     width: 1fr;
 }
 
+#help-dialog {
+    width: 1fr;
+    height: 1fr;
+    margin: 1 2;
+    padding: 1 2;
+    border: round #3f4652;
+    background: #101216;
+}
+
+#help-body {
+    width: 1fr;
+    height: 1fr;
+    color: #d7dae0;
+    background: #101216;
+}
+
 #task-plan-dialog {
     width: 1fr;
     height: 1fr;

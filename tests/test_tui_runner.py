@@ -3,11 +3,11 @@
 import asyncio
 from argparse import Namespace
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
-from agent.tui.runner import AgentTuiRunner
+from agent.tui.runner import AgentTuiRunner, _read_git_header
 from agent.tui.state import TuiState
 
 
@@ -244,15 +244,28 @@ def test_runner_delegates_message_context_methods():
         state = TuiState()
         runner = AgentTuiRunner(Namespace(silent=False), state=state)
         runner.session = MessageContextSession()
+        runner.session.messages = [HumanMessage(content="hello")]
 
         summary = await runner.analyze_message_context()
+        header_summary = await runner.refresh_message_context_header()
         compressed = await runner.compress_message_context([1, 3])
 
         assert summary.context_window_tokens == 1_000
+        assert header_summary is not None
+        assert state.message_context_header.message_count == 1
+        assert state.message_context_header.context_window_tokens == 1_000
         assert compressed == 2
         assert runner.session.compressed_indexes == [1, 3]
 
     asyncio.run(run())
+
+
+def test_read_git_header_returns_unavailable_for_non_git_dir(tmp_path):
+    header = _read_git_header(tmp_path)
+
+    assert header.available is False
+    assert header.branch == ""
+    assert header.dirty is False
 
 
 def test_submit_emits_final_response_when_provider_does_not_stream_text():

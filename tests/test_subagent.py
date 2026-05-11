@@ -83,7 +83,12 @@ def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
     assert "Do not provide a final answer while any todo item is pending or in_progress" in session.system_prompt
     assert "check workspace_state and relevant git_diff" in session.system_prompt
     assert "git_diff" in session.system_prompt
+    assert "Before the first tool call" in session.system_prompt
+    assert "state your understood intent and execution approach" in session.system_prompt
+    assert "goal, likely files or areas" in session.system_prompt
+    assert "ask for confirmation before making changes" in session.system_prompt
     assert "Use a short execution plan, usually 1-7 concrete todo items" in session.system_prompt
+    assert "explain intent and decisions" in session.system_prompt
     assert "do not expose long internal reasoning" in session.system_prompt
     assert "Use list_skills to discover available local skills" in session.system_prompt
     assert "Use explorer for investigation" in session.system_prompt
@@ -120,6 +125,9 @@ def test_subagent_prompt_is_concise_and_does_not_inherit_parent_prompt(tmp_path)
     assert "delegated coding subagent" in prompt
     assert "Do not use todo planning" in prompt
     assert "Use list_skills to discover skills" in prompt
+    assert "prefer LSP tools when available" in prompt
+    assert "lsp_document_symbols" in prompt
+    assert "zero-based" in prompt
     assert "Return only the information needed by the parent agent" in prompt
     assert "at most 5 bullets" in prompt
 

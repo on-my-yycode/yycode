@@ -83,6 +83,21 @@ def test_format_tool_event_metadata_identifies_drawio_export_commands():
     assert metadata["tool_name"] == "bash"
 
 
+def test_format_tool_event_metadata_identifies_lsp_tools():
+    tool_call = _ToolCall(
+        "lsp_definition",
+        {"path": "agent/session.py", "line": 36, "character": 6},
+    )
+
+    metadata = format_tool_event_metadata(tool_call)
+
+    assert metadata["title"] == "LSP definition"
+    assert metadata["detail"] == "agent/session.py · position=36:6"
+    assert metadata["phase"] == "semantic_navigation"
+    assert metadata["tool_name"] == "lsp_definition"
+    assert metadata["file_paths"] == ["agent/session.py"]
+
+
 def test_stream_event_serializes_waiting_metadata():
     event = StreamEvent(
         source="main",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from argparse import Namespace
 
 from agent.message_context_manager import ContextBlockStat, MessageTokenStat
+from agent.tui.commands import discover_commands
 from tools import TOOLS
 
 
@@ -79,9 +80,9 @@ def _completion_context(
     while start > 0 and not line[start - 1].isspace():
         start -= 1
     token = line[start:column]
-    if not token or token[0] not in {"/", "@"}:
+    if not token or token[0] not in {"/", "@", ":"}:
         return None
-    kind = "skill" if token[0] == "/" else "role"
+    kind = {"/": "skill", "@": "role", ":": "command"}[token[0]]
     return kind, token[1:].strip().lower(), (row, start), (row, column)
 
 
@@ -121,6 +122,34 @@ def run_tui(args: Namespace) -> None:
     )
     from .runner import AgentTuiRunner
     from .state import MAX_TIMELINE_ITEMS, PendingApproval, TuiState
+
+
+    class HelpScreen(ModalScreen[None]):
+        """Single-page TUI help viewer."""
+
+        BINDINGS = [
+            ("escape", "close_help", "Close"),
+        ]
+
+        def __init__(self, content: str) -> None:
+            super().__init__()
+            self.content = content
+
+        def compose(self) -> ComposeResult:
+            yield Container(
+                Static("", id="help-body"),
+                id="help-dialog",
+            )
+
+        def on_mount(self) -> None:
+            body = self.query_one("#help-body", Static)
+            body.update(
+                "[bold #c9a6ff]YOYOAGENT Help[/] [#7f8794]Press Esc to close[/]\n\n"
+                + self.content
+            )
+
+        def action_close_help(self) -> None:
+            self.dismiss(None)
 
 
     class TaskPlanScreen(ModalScreen[None]):
@@ -406,7 +435,9 @@ def run_tui(args: Namespace) -> None:
                 detail.clear()
                 detail.write("[#7f8794]Session is not ready.[/]")
                 return
-            self.summary = await self.runner.analyze_message_context()
+            self.summary = await self.runner.refresh_message_context_header()
+            if self.summary is None:
+                self.summary = await self.runner.analyze_message_context()
             manager = session.message_context_manager
             self.blocks = manager.context_blocks(session.system_prompt, TOOLS)
             self.stats = manager.message_stats(session.messages)
@@ -594,6 +625,7 @@ def run_tui(args: Namespace) -> None:
             self._completion_suggestions: list[tuple[str, str]] = []
             self._completion_suggestion_index = 0
             self._completion_open = False
+            self.command_registry = discover_commands()
 
         def compose(self) -> ComposeResult:
             yield Vertical(
@@ -734,6 +766,16 @@ def run_tui(args: Namespace) -> None:
             self._hide_completion()
             if text.lower() in {"q", "exit"}:
                 await self.action_quit()
+                return
+            if text.startswith(":"):
+                result = await self.runner.execute_command(text, self.command_registry, emit_result=False)
+                if result.clear_input:
+                    input_widget.load_text("")
+                if result.title == "YOYOAGENT Help":
+                    self.push_screen(HelpScreen(result.content))
+                elif result.content:
+                    self.notify(result.content, severity=result.severity)
+                self._refresh_all()
                 return
             input_widget.load_text("")
             try:
@@ -924,7 +966,12 @@ def run_tui(args: Namespace) -> None:
                 return
             kind, token, start, end = context
 
-            suggestions = self._matching_skills(token) if kind == "skill" else self._matching_roles(token)
+            if kind == "skill":
+                suggestions = self._matching_skills(token)
+            elif kind == "role":
+                suggestions = self._matching_roles(token)
+            else:
+                suggestions = self._matching_commands(token)
             if not suggestions:
                 self._hide_completion()
                 return
@@ -982,9 +1029,14 @@ def run_tui(args: Namespace) -> None:
                 rows = [(name, description) for name, description in roles if token in name]
             return rows
 
+        def _matching_commands(self, token: str) -> list[tuple[str, str]]:
+            return [(command.name, command.description) for command in self.command_registry.matching(token)]
+
         def _render_completion(self) -> str:
-            header = "skills" if self._completion_kind == "skill" else "subagents"
-            prefix = "/" if self._completion_kind == "skill" else "@"
+            headers = {"skill": "skills", "role": "subagents", "command": "commands"}
+            prefixes = {"skill": "/", "role": "@", "command": ":"}
+            header = headers.get(self._completion_kind or "", "completion")
+            prefix = prefixes.get(self._completion_kind or "", "")
             lines = [f"[#7f8794]{header}[/] [#555d6b]Up/Down select · Enter/Tab complete · Esc close[/]"]
             for index, (name, description) in enumerate(self._completion_suggestions):
                 selected = index == self._completion_suggestion_index
@@ -1008,7 +1060,8 @@ def run_tui(args: Namespace) -> None:
                 self._hide_completion()
                 return
             name = self._completion_suggestions[self._completion_suggestion_index][0]
-            prefix = "/" if self._completion_kind == "skill" else "@"
+            prefixes = {"skill": "/", "role": "@", "command": ":"}
+            prefix = prefixes.get(self._completion_kind or "", "")
             input_widget = self.query_one("#prompt-input", TextArea)
             start, end = self._completion_range
             completion = f"{prefix}{name} "

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from .state import MAX_TIMELINE_ITEMS, PendingApproval, SubagentStatus, TimelineItem, TuiState
 
@@ -84,7 +85,7 @@ def _render_progress_pulse(frame: int) -> str:
     cycle = travel * 2
     normalized = frame % cycle
     position = normalized if normalized <= travel else cycle - normalized
-    cells = [f"[#2b3038]·[/]" for _ in range(PROGRESS_TRACK_WIDTH)]
+    cells = ["[#2b3038]·[/]" for _ in range(PROGRESS_TRACK_WIDTH)]
     color_offset = frame % len(PROGRESS_COLORS)
     for index in range(scan_width):
         cell = position + index
@@ -126,6 +127,16 @@ def colorize_diff_for_tui(diff: str) -> str:
 
 def render_markdown_for_tui(markdown: str) -> str:
     """Render a small, safe Markdown subset as Rich markup for timeline text."""
+    return _render_markdown_for_tui(markdown, full=True)
+
+
+def render_markdown_light_for_tui(markdown: str) -> str:
+    """Render Markdown cheaply while the model is still streaming."""
+    return _render_markdown_for_tui(markdown, full=False)
+
+
+def _render_markdown_for_tui(markdown: str, *, full: bool) -> str:
+    """Render a small, safe Markdown subset as Rich markup for timeline text."""
     lines: list[str] = []
     in_fence = False
     fence_lang = ""
@@ -144,7 +155,8 @@ def render_markdown_for_tui(markdown: str) -> str:
             continue
 
         if in_fence:
-            lines.append(f"  {_highlight_code_line_for_tui(raw_line, fence_lang)}")
+            rendered_code = _highlight_code_line_for_tui(raw_line, fence_lang) if full else f"[#cfd3dc]{_safe_text(raw_line)}[/]"
+            lines.append(f"  {rendered_code}")
             continue
 
         if not stripped:
@@ -155,32 +167,38 @@ def render_markdown_for_tui(markdown: str) -> str:
         if heading:
             level = len(heading.group(1))
             color = "#c9a6ff" if level <= 2 else "#d7ba7d"
-            lines.append(f"[bold {color}]{_render_inline_markdown(heading.group(2))}[/]")
+            heading_text = _render_inline_markdown(heading.group(2)) if full else _safe_text(heading.group(2))
+            lines.append(f"[bold {color}]{heading_text}[/]")
             continue
 
         quote = re.match(r"^>\s?(.*)$", stripped)
         if quote:
-            lines.append(f"[#7f8794]│[/] [#aeb6c2]{_render_inline_markdown(quote.group(1))}[/]")
+            quote_text = _render_inline_markdown(quote.group(1)) if full else _safe_text(quote.group(1))
+            lines.append(f"[#7f8794]│[/] [#aeb6c2]{quote_text}[/]")
             continue
 
         task = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", stripped)
         if task:
             checked = task.group(1).lower() == "x"
             marker = "[#8fd6a3]✓[/]" if checked else "[#7f8794]○[/]"
-            lines.append(f"  {marker} {_render_inline_markdown(task.group(2))}")
+            task_text = _render_inline_markdown(task.group(2)) if full else _safe_text(task.group(2))
+            lines.append(f"  {marker} {task_text}")
             continue
 
         bullet = re.match(r"^([-*])\s+(.+)$", stripped)
         if bullet:
-            lines.append(f"  [#7f8794]•[/] {_render_inline_markdown(bullet.group(2))}")
+            bullet_text = _render_inline_markdown(bullet.group(2)) if full else _safe_text(bullet.group(2))
+            lines.append(f"  [#7f8794]•[/] {bullet_text}")
             continue
 
         numbered = re.match(r"^(\d+)[.)]\s+(.+)$", stripped)
         if numbered:
-            lines.append(f"  [#7f8794]{numbered.group(1)}.[/] {_render_inline_markdown(numbered.group(2))}")
+            numbered_text = _render_inline_markdown(numbered.group(2)) if full else _safe_text(numbered.group(2))
+            lines.append(f"  [#7f8794]{numbered.group(1)}.[/] {numbered_text}")
             continue
 
-        lines.append(f"[#d7dae0]{_render_inline_markdown(raw_line)}[/]")
+        line_text = _render_inline_markdown(raw_line) if full else _safe_text(raw_line)
+        lines.append(f"[#d7dae0]{line_text}[/]")
 
     if markdown.endswith("\n"):
         return "\n".join(lines) + "\n"
@@ -409,22 +427,65 @@ def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     )
     if state is None:
         return brand_line
-    workspace_text = _safe_text(state.workspace_path if state.workspace_path else "(not set)", max(12, W - 6))
+    workspace_text = _safe_text(state.workspace_path if state.workspace_path else "(not set)", max(12, W - 18))
     session_text = _safe_text(state.session_id if state.session_id else "(starting)", max(12, W - 10))
     restored = int(getattr(state, "restored_message_count", 0) or 0)
-    restored_text = f"  [#7f8794]Restored[/] [#cfd3dc]{restored} messages[/]" if restored else ""
-    mode_text = (
-        "  [#7f8794]Mode[/] [bold #f59e0b]AUTO[/]"
-        if getattr(state, "auto_mode", False)
-        else "  [#7f8794]Mode[/] [#8fd6a3]MANUAL[/]"
+    header = getattr(state, "message_context_header", None)
+    message_count = int(getattr(header, "message_count", 0) or 0)
+    session_line = _join_status_parts(
+        [
+            f"[#7f8794]session[/] [#cfd3dc]{session_text}[/]",
+            f"[#7f8794]msgs[/] [#cfd3dc]{message_count}[/]",
+            f"[#7f8794]restored[/] [#cfd3dc]{restored}[/]" if restored else "",
+            _render_header_context(header),
+        ]
     )
     return "\n".join(
         [
             brand_line,
-            f"[#7f8794]Session[/] [#cfd3dc]{session_text}[/]{restored_text}{mode_text}",
-            f"[#7f8794]Dir[/] [#cfd3dc]{workspace_text}[/]",
+            f"{_render_git_header(getattr(state, 'git_header', None))}   [#cfd3dc]{workspace_text}[/]",
+            session_line,
         ]
     )
+
+
+def _render_git_header(git_header) -> str:
+    """Render branch/status marker for the top panel."""
+    if git_header is None or not getattr(git_header, "available", False):
+        return "[#7f8794]git -[/]"
+    branch = _safe_text(getattr(git_header, "branch", "") or "-", 32)
+    dirty = bool(getattr(git_header, "dirty", False))
+    status = "[#facc15]±[/]" if dirty else "[#8fd6a3]✓[/]"
+    return f"[#7f8794][/] [#7dd3fc]{branch}[/] {status}"
+
+
+def _render_header_context(header) -> str:
+    """Render compact session context usage for the top panel."""
+    if header is None:
+        return "[#7f8794]Ctx[/] [#cfd3dc]calculating...[/]"
+    total = int(getattr(header, "total_tokens", 0) or 0)
+    window = int(getattr(header, "context_window_tokens", 0) or 0)
+    refreshing = bool(getattr(header, "refreshing", False))
+    if total <= 0 and refreshing:
+        return "[#7f8794]Ctx[/] [#cfd3dc]calculating...[/]"
+    if total <= 0:
+        return "[#7f8794]Ctx[/] [#cfd3dc]not measured[/]"
+    pressure = str(getattr(header, "pressure", "low") or "low")
+    pressure_color = {
+        "low": "#8fd6a3",
+        "medium": "#d7ba7d",
+        "high": "#f97316",
+        "critical": "#ff8f8f",
+    }.get(pressure, "#cfd3dc")
+    source = str(getattr(header, "token_source", "estimated") or "estimated")
+    source_text = "exact" if source == "exact" else "est"
+    if window > 0:
+        percent = min(int(total / window * 100), 100)
+        usage = f"{_format_tokens(total)}/{_format_tokens(window)} {percent}%"
+    else:
+        usage = f"{_format_tokens(total)}/-"
+    suffix = " ↻" if refreshing else ""
+    return f"[#7f8794]Ctx[/] [#cfd3dc]{usage}[/] [{pressure_color}]{pressure.upper()}[/] [#7f8794]{source_text}{suffix}[/]"
 
 
 def render_status_bar_text(
@@ -448,14 +509,6 @@ def render_status_bar_text(
     input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)
 
-    window_size = int(getattr(state, "context_window_tokens", 0) or 0)
-    used_context = int((state.latest_usage or {}).get("total_tokens", 0) or 0)
-    if window_size > 0:
-        percentage = min(int((used_context / window_size) * 100), 100)
-        context_info = f"{_format_tokens(used_context)}/{_format_tokens(window_size)} {percentage}%"
-    else:
-        context_info = f"{_format_tokens(used_context)}/- 0%"
-
     status_text = "[#8fd6a3]⏺ Ready[/]"
     elapsed_label = "Last run"
     elapsed_text = "0s"
@@ -474,7 +527,6 @@ def render_status_bar_text(
         goal_text = _safe_text(task.get("intent") or "", max(12, W - 9))
 
     model_part = f"[#7f8794]Model[/] [#cfd3dc]{model_text}[/]"
-    context_part = f"[#7f8794]Context[/] [#cfd3dc]{context_info}[/]"
     status_part = f"[#7f8794]Status[/] {status_text}"
     elapsed_part = f"[#7f8794]{elapsed_label}[/] [#cfd3dc]{elapsed_text}[/]"
     tokens_part = (
@@ -486,9 +538,8 @@ def render_status_bar_text(
     todo_reserve = 40 if todo_items else 8
 
     parts = [status_part, elapsed_part, tokens_part]
-    for optional in (context_part, model_part):
-        if _parts_visible_len([optional, *parts]) + 2 + todo_reserve <= W:
-            parts.insert(0, optional)
+    if _parts_visible_len([model_part, *parts]) + 2 + todo_reserve <= W:
+        parts.insert(0, model_part)
 
     todo_width = max(8, W - _parts_visible_len(parts) - 2)
     todo_summary = _render_todo_header_summary(state.todo_manager, todo_width)
@@ -497,7 +548,7 @@ def render_status_bar_text(
     parts.insert(1 if parts and parts[0] == status_part else len(parts), todo_summary)
 
     while _parts_visible_len(parts) > W and len(parts) > 3:
-        for candidate in (context_part, model_part, elapsed_part):
+        for candidate in (model_part, elapsed_part):
             if candidate in parts:
                 parts.remove(candidate)
                 break
@@ -682,15 +733,63 @@ def _render_timeline_blocks(state: TuiState) -> list[str]:
             continue
         elif item.event_type == "tool_end":
             if item.tool_name != "todo":
-                rendered = _render_tool_activity(None, item, role_prefix)
+                rendered = _render_cached_timeline_item(item, state, role_prefix=role_prefix)
                 if rendered:
                     blocks.append(rendered)
         else:
-            rendered = _render_timeline_item(item, state)
+            rendered = _render_cached_timeline_item(item, state)
             if rendered:
                 blocks.append(rendered)
         index += 1
     return blocks
+
+
+def _render_cached_timeline_item(
+    item: TimelineItem,
+    state: TuiState | None = None,
+    *,
+    role_prefix: str | None = None,
+) -> str | None:
+    mode = _timeline_item_render_mode(item, state)
+    key = _timeline_item_cache_key(item, mode)
+    if item.render_cache_key == key:
+        return item.rendered_text
+    rendered = (
+        _render_tool_activity(None, item, role_prefix)
+        if role_prefix is not None and item.event_type == "tool_end"
+        else _render_timeline_item(item, state, markdown_mode=mode)
+    )
+    item.render_cache_key = key
+    item.rendered_text = rendered
+    return rendered
+
+
+def _timeline_item_render_mode(item: TimelineItem, state: TuiState | None) -> str:
+    if item.event_type == "text_delta" and state and state.active_task.get("is_running"):
+        return "light"
+    return "full"
+
+
+def _timeline_item_cache_key(item: TimelineItem, mode: str) -> tuple[Any, ...]:
+    metadata_items = tuple(sorted((str(key), repr(value)) for key, value in item.metadata.items()))
+    usage_items = tuple(sorted((str(key), int(value or 0)) for key, value in (item.usage or {}).items()))
+    return (
+        mode,
+        item.event_type,
+        item.title,
+        item.detail,
+        item.phase,
+        item.status,
+        item.source,
+        item.role,
+        item.tool_name,
+        tuple(item.file_paths),
+        metadata_items,
+        item.elapsed_ms,
+        item.content,
+        item.start_time_ms,
+        usage_items,
+    )
 
 
 def _render_tool_run(items: list[TimelineItem], start_index: int) -> tuple[list[str], int]:
@@ -796,6 +895,8 @@ def _tool_activity_tree_title(
     title_text = (item.title or "").lower()
     if status == "failed":
         return _safe_text(f"Failed {item.title or tool_name or 'tool'}")
+    if tool_name.startswith("lsp_"):
+        return _safe_text(item.title or "LSP semantic lookup")
     if tool_name in {"read_file", "read_many_files"} or "read file" in title_text:
         return "Inspect file"
     if tool_name == "list_files":
@@ -830,7 +931,23 @@ def _tool_activity_tree_details(
     args = item.metadata.get("args") if isinstance(item.metadata, dict) else {}
     tool_name = item.tool_name or ""
 
-    if tool_name == "grep" or "search" in (item.title or "").lower():
+    if tool_name.startswith("lsp_"):
+        if isinstance(args, dict):
+            path = args.get("path")
+            query = args.get("query")
+            line = args.get("line")
+            character = args.get("character")
+            if path:
+                details.append(str(path))
+            if query:
+                details.append(f"query={query}")
+            if line is not None and character is not None:
+                details.append(f"position={line}:{character}")
+        if not details:
+            target = _tool_target_plain(item)
+            if target:
+                details.append(target)
+    elif tool_name == "grep" or "search" in (item.title or "").lower():
         if isinstance(args, dict):
             pattern = args.get("pattern")
             path = args.get("path")
@@ -870,6 +987,8 @@ def _tool_activity_phase(item: TimelineItem) -> str:
     command = _command_for_tool(item).lower() if tool in {"bash", "verify"} else ""
     phase = (item.phase or "").lower()
 
+    if tool.startswith("lsp_") or "semantic" in phase:
+        return "Semantic Navigation"
     if tool in {"grep"} or "search" in title:
         return "Search"
     if tool in {"apply_patch", "edit_file", "write_file"}:
@@ -1108,14 +1227,14 @@ def _role_prefix(item: TimelineItem) -> str:
     return f"[#7f8794]@{_safe_text(item.role)}[/] " if item.role and item.source == "subagent" else ""
 
 
-def _render_timeline_item(item: TimelineItem, state: TuiState | None = None) -> str:
+def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, markdown_mode: str = "full") -> str | None:
     role_prefix = _role_prefix(item)
 
     if item.event_type == "user_message":
         content = _safe_text(item.content.strip() or item.detail.strip())
         return f"[bold #f0f2f5]You[/]\n  [#d7dae0]{content}[/]"
     if item.event_type in {"text_delta"}:
-        content = render_markdown_for_tui(item.content)
+        content = render_markdown_light_for_tui(item.content) if markdown_mode == "light" else render_markdown_for_tui(item.content)
         return f"{role_prefix}{content}"
     if item.event_type == "thinking_start":
         return f"{role_prefix}[#7f8794]Thinking...[/]"

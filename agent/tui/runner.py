@@ -5,17 +5,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
+import subprocess
 from argparse import Namespace
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from agent.approval import ApprovalRequest
 from agent.message_context_manager import MessageContextSummary
 from agent.session import Session
 from agent.streaming import StreamEvent
+from agent.tui.commands import CommandRegistry
+from agent.tui.commands.base import CommandContext, CommandResult
 from tools.git_diff import git_diff
 
 from .approval import TuiApprovalAdapter
-from .state import TuiState
+from .state import GitHeader, TuiState
 
 
 StateChangeCallback = Callable[[StreamEvent], Awaitable[None]]
@@ -65,6 +69,8 @@ class AgentTuiRunner:
             auto_mode=silent_mode,
             todo_manager=self.session.todo_manager,
         )
+        await self.refresh_message_context_header()
+        await self.refresh_git_header()
 
     async def close(self) -> None:
         """Close the session and cancel in-flight work."""
@@ -123,6 +129,9 @@ class AgentTuiRunner:
         finally:
             await self._emit_changed_files_summary(start_index)
             # 任务完成时移除临时状态项并结束任务跟踪
+            if self.session is not None:
+                await self.refresh_message_context_header()
+                await self.refresh_git_header()
             self.state._remove_transient_items()
             self.state.end_active_task()
             if self.on_state_change is not None:
@@ -231,12 +240,103 @@ class AgentTuiRunner:
             raise RuntimeError("TUI runner has not been started")
         return await self.session.analyze_message_context()
 
+    async def refresh_message_context_header(self) -> MessageContextSummary | None:
+        """Refresh top-panel message count and context token summary."""
+        if self.session is None:
+            return None
+        message_count = len(getattr(self.session, "messages", []) or [])
+        self.state.update_message_context_header(message_count=message_count, refreshing=True)
+        if not hasattr(self.session, "analyze_message_context"):
+            self.state.update_message_context_header(message_count=message_count, refreshing=False)
+            return None
+        summary = await self.session.analyze_message_context()
+        self.state.update_message_context_header(message_count=message_count, summary=summary, refreshing=False)
+        return summary
+
+    async def refresh_git_header(self) -> GitHeader:
+        """Refresh compact git branch/dirty status for the top panel."""
+        workdir = getattr(self.session, "workdir", None) if self.session is not None else None
+        header = await asyncio.to_thread(_read_git_header, workdir)
+        self.state.update_git_header(branch=header.branch, dirty=header.dirty, available=header.available)
+        return header
+
     async def compress_message_context(self, indexes: list[int]) -> int:
         """Compress selected old tool outputs and refresh state."""
         if self.session is None:
             raise RuntimeError("TUI runner has not been started")
         compressed = await self.session.compress_message_context(indexes)
+        await self.refresh_message_context_header()
         return compressed
+
+    async def execute_command(
+        self,
+        command_line: str,
+        registry: CommandRegistry,
+        *,
+        emit_result: bool = True,
+    ) -> CommandResult:
+        """Execute a TUI-only command without sending it to the LLM."""
+        if self.session is None:
+            raise RuntimeError("TUI runner has not been started")
+        parsed = registry.parse(command_line)
+        if parsed is None:
+            result = CommandResult(
+                title="Unknown command",
+                content=f"Unknown command: {command_line.strip()}. Try :help.",
+                severity="warning",
+                status="warning",
+            )
+            if emit_result:
+                await self.emit_command_result(command_line, result)
+            return result
+        if parsed.command.destructive and self.current_task is not None and not self.current_task.done():
+            result = CommandResult(
+                title="Command blocked",
+                content=f"Cannot run :{parsed.command.name} while a task is running.",
+                severity="warning",
+                status="warning",
+            )
+            if emit_result:
+                await self.emit_command_result(command_line, result)
+            return result
+        ctx = CommandContext(
+            runner=self,
+            registry=registry,
+            confirmed=parsed.confirmed,
+            raw_text=parsed.raw_text,
+        )
+        result = await parsed.command.execute(ctx, parsed.args)
+        if emit_result:
+            await self.emit_command_result(parsed.raw_text, result)
+        return result
+
+    async def clear_session_history(self) -> None:
+        """Clear session messages and reset the TUI transcript view."""
+        if self.session is None:
+            raise RuntimeError("TUI runner has not been started")
+        if self.current_task is not None and not self.current_task.done():
+            raise RuntimeError("Cannot clear while a task is running")
+        self.session.clear()
+        self.state.clear_session_view()
+        await self.refresh_message_context_header()
+
+    async def emit_command_result(self, command_line: str, result: CommandResult) -> None:
+        """Append a local command result to the timeline."""
+        session_id = self.session.id if self.session is not None else self.state.session_id
+        event = StreamEvent(
+            source="tui",
+            session_id=session_id,
+            event_type="command_result",
+            title=result.title,
+            detail=command_line.strip(),
+            content=result.content,
+            status=result.status,
+            phase="planning",
+            metadata={"command": command_line.strip(), "severity": result.severity},
+        )
+        self.state.apply_event(event)
+        if self.on_state_change is not None:
+            await self.on_state_change(event)
 
     def _skills_text(self) -> str:
         if self.session is None:
@@ -249,6 +349,43 @@ class AgentTuiRunner:
             if self.state.timeline[index].event_type == "user_message":
                 return index
         return 0
+
+
+def _read_git_header(workdir: Path | str | None) -> GitHeader:
+    """Read git branch and dirty state for a workspace."""
+    if workdir is None:
+        return GitHeader()
+    cwd = Path(workdir)
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        ).stdout.strip()
+        if branch == "HEAD":
+            commit = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            ).stdout.strip()
+            branch = f"detached:{commit}" if commit else "detached"
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return GitHeader()
+    return GitHeader(branch=branch, dirty=bool(status.strip()), available=bool(branch))
 
 
 def _extract_diff_text(content: str) -> str:
