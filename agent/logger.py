@@ -63,7 +63,7 @@ def setup_logging(debug: bool = False, log_to_file: bool = False):
     if status_parts:
         print(f"\033[90m[INFO] {', '.join(status_parts)}\033[0m")
     else:
-        print(f"\033[90m[INFO] No logging configured\033[0m")
+        print("\033[90m[INFO] No logging configured\033[0m")
 
 
 def get_logger(name: str) -> logging.Logger:

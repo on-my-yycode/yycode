@@ -3,6 +3,7 @@
 import subprocess
 
 from tools import TOOL_HANDLERS, TOOLS
+from tools.workspace import Workspace
 from tools.git_diff import git_diff
 from tools.workspace_state import workspace_state
 from tools.bash import bash
@@ -86,3 +87,40 @@ def test_tools_use_explicit_workdir_even_when_cwd_differs(tmp_path, monkeypatch)
     assert "tracked.txt" in workspace_state(workdir=repo)
     assert "+changed" in git_diff(paths=["tracked.txt"], workdir=repo)
     assert str(repo) in bash("pwd", workdir=repo)
+
+
+def test_workspace_safe_path_allows_absolute_path_inside_workspace(tmp_path):
+    inside = tmp_path / "inside.txt"
+    inside.write_text("ok")
+
+    assert Workspace(tmp_path).safe_path(inside) == inside.resolve()
+
+
+def test_workspace_safe_path_rejects_symlink_escape(tmp_path):
+    outside = tmp_path / "outside"
+    workspace_root = tmp_path / "workspace"
+    outside.mkdir()
+    workspace_root.mkdir()
+    target = outside / "secret.txt"
+    target.write_text("secret")
+    link = workspace_root / "link.txt"
+    link.symlink_to(target)
+
+    result = read_file("link.txt", workdir=workspace_root)
+
+    assert result.startswith("Error:")
+    assert "Path escapes workspace" in result
+
+
+def test_workspace_safe_path_keeps_nested_workspace_paths_scoped_to_selected_root(tmp_path):
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    (outer / "outer.txt").write_text("outer")
+    (inner / "inner.txt").write_text("inner")
+
+    assert read_file("inner.txt", workdir=inner) == "inner"
+    result = read_file("../outer.txt", workdir=inner)
+
+    assert result.startswith("Error:")
+    assert "Path escapes workspace" in result

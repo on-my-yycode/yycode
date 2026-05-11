@@ -7,7 +7,7 @@ from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
-from agent.session_store import FileSessionStore
+from agent.session_store import FileSessionStore, workspace_hash
 from agent.session import (
     DOUBAO_CODE_CONTEXT_WINDOW_TOKENS,
     Session,
@@ -226,6 +226,61 @@ def test_session_resume_loads_persisted_messages(tmp_path):
 
     assert session.restored_message_count == 1
     assert session.messages[0].content == "old answer"
+
+
+def test_session_resume_corrupt_store_falls_back_to_memory_only(tmp_path):
+    workdir = tmp_path / "workspace"
+    app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
+    workdir.mkdir()
+    app_root.mkdir()
+    session_file = runtime_data_dir / "sessions" / workspace_hash(workdir) / "sess-1.json"
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text("{not-json", encoding="utf-8")
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=workdir,
+        app_root=app_root,
+        runtime_data_dir=runtime_data_dir,
+        session_id="sess-1",
+        resume=True,
+    )
+
+    assert session.messages == []
+    assert session.restored_message_count == 0
+    assert session.persist_messages is False
+    assert session.message_store is None
+    assert "not valid JSON" in session._session_persistence_warning
+
+
+def test_session_save_failure_falls_back_to_memory_only(tmp_path):
+    class FailingStore:
+        def load(self, session_id):
+            return []
+
+        def save(self, session_id, messages, metadata=None):
+            raise OSError("session directory is not writable")
+
+        def delete(self, session_id):
+            return None
+
+        def list_sessions(self):
+            return []
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        message_store=FailingStore(),
+        persist_messages=True,
+    )
+    session.messages = [HumanMessage(content="hello")]
+
+    session._save_messages()
+
+    assert session.persist_messages is False
+    assert session.message_store is None
+    assert "not writable" in session._session_persistence_warning
 
 
 def test_read_user_query_with_session_prompt_shows_context(tmp_path):

@@ -137,7 +137,8 @@ class LspManager:
         result = await client.request(method, params)
         if isinstance(result, dict):
             result = [result]
-        return [self._parse_location(item) for item in (result or [])]
+        locations = [self._parse_location(item) for item in (result or [])]
+        return [location for location in locations if location is not None]
 
     def _position_params(self, file_path: Path, line: int, character: int) -> dict[str, Any]:
         return {
@@ -157,18 +158,21 @@ class LspManager:
 
     def _parse_document_symbols(self, items: list[dict[str, Any]], file_path: Path) -> list[Symbol]:
         symbols: list[Symbol] = []
+        ignored_kinds = {"file", "module", "package", "namespace"}
 
         def visit(item: dict[str, Any], container: str | None = None) -> None:
             line, character = range_start(item)
             name = str(item.get("name", "<unknown>"))
-            symbols.append(
-                Symbol(
-                    name=name,
-                    kind=symbol_kind_name(item.get("kind")),
-                    container_name=container,
-                    location=Location(self.workspace.relative_path(file_path), line, character, name),
+            kind = symbol_kind_name(item.get("kind"))
+            if kind not in ignored_kinds:
+                symbols.append(
+                    Symbol(
+                        name=name,
+                        kind=kind,
+                        container_name=container,
+                        location=Location(self.workspace.relative_path(file_path), line, character, name),
+                    )
                 )
-            )
             for child in item.get("children") or []:
                 visit(child, name)
 
@@ -186,10 +190,13 @@ class LspManager:
             location=parsed_location,
         )
 
-    def _parse_location(self, item: dict[str, Any], name: str | None = None) -> Location:
+    def _parse_location(self, item: dict[str, Any], name: str | None = None) -> Location | None:
         uri = item.get("uri") or item.get("targetUri") or ""
         path = Path(uri_to_path(uri))
-        relative = self.workspace.relative_path(path) if path.exists() else uri
+        try:
+            relative = self.workspace.relative_path(path)
+        except ValueError:
+            return None
         line, character = range_start(item.get("range") and item or item.get("targetSelectionRange", {}) or {})
         return Location(relative, line, character, str(name) if name else None)
 

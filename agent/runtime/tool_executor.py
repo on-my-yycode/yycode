@@ -4,7 +4,7 @@ import time
 
 from langchain_core.messages import ToolMessage
 
-from agent.approval import ApprovalDenied, ApprovalTargetMissing
+from agent.approval import ApprovalTargetMissing
 from agent.logger import get_logger
 from agent.runtime.approval_service import ApprovalService
 from agent.runtime.context import AgentRuntimeContext

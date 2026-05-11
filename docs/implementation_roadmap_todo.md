@@ -43,10 +43,10 @@
 
 | 模块 | 当前状态 | 主要缺口 |
 | --- | --- | --- |
-| Message Token Manager | 首版可用 | 需要压缩确认 UI 更细、undo/备份、策略配置、更多大 session 回归 |
-| LSP | Python-only 可用 | 语言识别/多语言 registry 未实现；diagnostics 为 unsupported；workspace/symbol 依赖 server 支持 |
-| Session 持久化 | 首版可用 | 不可写目录 fallback、损坏文件恢复、并发写、恢复后预压缩未完成 |
-| workspace / workdir | 主链路可用 | 符号链接、绝对路径、嵌套 workspace、直接工具调用边界测试仍需补 |
+| Message Token Manager | 首版可用 | 已有最近一次压缩备份/撤销；仍需策略配置、多步 history、更多大 session 回归 |
+| LSP | Python-only 可用 | 已有生命周期清理、噪声符号过滤、workspace 外 location 过滤；多语言 registry 和完整 diagnostics 未实现 |
+| Session 持久化 | 首版可用 | 已有损坏文件/保存失败 memory-only fallback、列表容错、删除缺失容错和原子写；不可写 app_root 用户数据目录 fallback、并发写恢复策略仍需增强 |
+| workspace / workdir | 主链路可用 | 已补绝对路径、符号链接逃逸、嵌套 workspace、apply_patch path escape/absolute/symlink 边界测试；发行前仍需平台回归 |
 | Timeline 性能 | 已降负载 | 尚未做真正虚拟化；RichLog 全量 clear/write 仍可能成为瓶颈 |
 | 工具输出上下文治理 | 已压缩部分输出 | 中等大小 read/grep 输出仍可能占 1k-3k tokens；旧 sessions 需要清理/迁移策略 |
 | 用户意图反馈 | prompt 已约束 | 需要实际观察模型是否稳定在首个工具前输出意图，必要时做运行时 guard |
@@ -61,8 +61,20 @@
 | 本地 evals | 未实现 | 缺少 `evals/` 任务集和自动评分脚本 |
 | 多语言 LSP | 未实现 | 当前 `LspManager` 只接受 `.py`，languageId 固定 `python` |
 | LSP 启动状态提示 | 未实现 | TUI 启动时未显示 `pyright/pylsp/unavailable` |
-| LSP 生命周期清理 | 未完全收口 | 需要在 Session/TUI 退出时统一 shutdown cached managers |
 | 自动恢复最近 session | 未实现 | `--resume-latest` 仍是后续增强 |
+
+### 近期已收口事项
+
+以下事项已从待办中移除，后续只保留增强项：
+
+- LSP 生命周期清理：`Session.close()` 已调用 `shutdown_lsp_managers()`，且 shutdown 失败不会阻断 provider close。
+- LSP symbol 输出降噪：`document_symbols` 已过滤 module/file/package/namespace 等噪声符号。
+- LSP workspace 边界：definition/references 等 location 已过滤 workspace 外路径。
+- Session 容错：损坏 JSON 恢复、保存失败 memory-only fallback、列表腐坏元数据容错、删除缺失 session no-op 已有测试覆盖。
+- Session 写入：`SessionStore` 已使用临时文件 + replace 的原子写入。
+- Message Token Manager：最近一次手动压缩已支持内存备份和撤销。
+- Workspace 边界测试：已覆盖绝对路径、符号链接逃逸、嵌套 workspace 作用域和 apply_patch 路径逃逸。
+- 文档同步：`docs/code_agent_roadmap.md`、`docs/usage.md`、`docs/project_structure.md` 已补充近期实现状态。
 
 ## 路线图需要更新的地方
 
@@ -91,7 +103,7 @@
 - [ ] 增加轻量 LSP server 检测函数，不启动进程，只检测 `pyright-langserver` / `pylsp`。
 - [ ] TUI 顶部或启动 timeline 显示：`LSP Python: pyright-langserver` / `pylsp` / `unavailable`。
 - [ ] 在 `:help` 或 docs/usage 中补充 LSP 状态说明。
-- [ ] TUI/Session 关闭时调用 `shutdown_lsp_managers()`。
+- [x] TUI/Session 关闭时调用 `shutdown_lsp_managers()`。
 - [ ] 给 `workspace/symbol Method Not Found` 写明确文档：fallback 到 `grep/read_file` 属于正常降级。
 - [ ] 增加真实环境 smoke test 文档，不要求 CI 安装 language server。
 
@@ -115,7 +127,8 @@
 - [ ] 保存 session 后刷新 header context usage。
 - [ ] 增加大 session fixtures，覆盖 read/grep/write/verify/tool policy 元数据。
 - [ ] 增加“无可压缩项”的空状态。
-- [ ] 评估是否需要压缩后备份，至少在 session JSON 中保留 `original_chars` / `estimated_original_tokens`。
+- [x] 支持最近一次手动压缩的内存备份和撤销。
+- [ ] 评估是否需要在 session JSON 中保留 `original_chars` / `estimated_original_tokens`。
 
 验收：
 
@@ -131,11 +144,11 @@
 
 待办：
 
-- [ ] 更新 `docs/code_agent_roadmap.md` 的当前基础、MVP 状态和推荐下一步。
+- [x] 更新 `docs/code_agent_roadmap.md` 的当前基础、MVP 状态和推荐下一步。
 - [ ] 更新 `docs/lsp_integration_design.md`，加入当前 Python-only 实现状态与已知限制。
 - [ ] 更新 `docs/message_token_manager_design.md`，加入首版实现状态。
-- [ ] 更新 `docs/project_structure.md`，补充 `agent/lsp/`、`agent/tui/commands/`。
-- [ ] 更新 `docs/usage.md`，补充 `Ctrl+M`、`:help`、`:clear`、LSP 可见性。
+- [x] 更新 `docs/project_structure.md`，补充 `agent/lsp/`、`agent/tui/commands/`。
+- [x] 更新 `docs/usage.md`，补充 `Ctrl+M`、`:help`、`:clear`、LSP 基础说明。
 
 验收：
 
@@ -196,9 +209,9 @@
 待办：
 
 - [ ] `app_root/sessions` 不可写时 fallback 到用户数据目录，例如 `~/.yoyoagent/sessions`。
-- [ ] session JSON 损坏时给出清晰错误，不崩溃。
-- [ ] 列表命令忽略损坏文件并提示 warning。
-- [ ] 增加原子写入：临时文件 + rename。
+- [x] session JSON 损坏时给出清晰错误，不崩溃。
+- [x] 列表命令忽略损坏文件并提示 warning。
+- [x] 增加原子写入：临时文件 + rename。
 - [ ] 多进程同 session id 写入时至少避免半写文件。
 - [ ] 恢复后如 context pressure high，提示用户打开 `Ctrl+M` 或自动预压缩旧 tool outputs。
 
@@ -292,11 +305,11 @@
 
 ```text
 1. 更新主路线图和相关设计文档状态
-2. LSP 启动状态提示 + 生命周期 cleanup
+2. LSP 启动状态提示 + 真实环境 smoke 文档
 3. Message Token Manager 压缩确认和大 session 回归
 4. 工具输出压缩阈值 per-tool 收紧
 5. Timeline 增量渲染 / 可见窗口渲染
-6. Session 持久化容错和 fallback
+6. Session 持久化不可写 app_root fallback
 7. 多语言 LSP registry
 8. 长任务摘要记忆
 9. evals
@@ -320,11 +333,10 @@
 
 ## 文档更新待办
 
-- [ ] `docs/code_agent_roadmap.md`：同步当前实现状态和推荐下一步。
+- [x] `docs/code_agent_roadmap.md`：同步当前实现状态和推荐下一步。
 - [ ] `docs/lsp_integration_design.md`：补当前实现状态、限制、启动提示计划。
 - [ ] `docs/message_token_manager_design.md`：标记首版已实现，拆出增强项。
-- [ ] `docs/session_persistence_design.md`：补 fallback、损坏文件、并发写待办。
+- [ ] `docs/session_persistence_design.md`：补不可写 app_root fallback、并发写增强待办。
 - [ ] `docs/structured_event_timeline_design.md`：补 timeline cache、轻量 markdown、未来虚拟化。
-- [ ] `docs/project_structure.md`：补 `agent/lsp/`、`agent/tui/commands/`。
-- [ ] `docs/usage.md`：补 TUI command、Ctrl+M、LSP timeline 标识。
-
+- [x] `docs/project_structure.md`：补 `agent/lsp/`、`agent/tui/commands/`。
+- [x] `docs/usage.md`：补 TUI command、Ctrl+M、LSP timeline 标识。

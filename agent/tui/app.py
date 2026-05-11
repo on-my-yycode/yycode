@@ -122,6 +122,7 @@ def run_tui(args: Namespace) -> None:
     )
     from .runner import AgentTuiRunner
     from .state import MAX_TIMELINE_ITEMS, PendingApproval, TuiState
+    from .help_content import render_help_page
 
 
     class HelpScreen(ModalScreen[None]):
@@ -129,6 +130,12 @@ def run_tui(args: Namespace) -> None:
 
         BINDINGS = [
             ("escape", "close_help", "Close"),
+            ("up", "scroll_up", "Up"),
+            ("down", "scroll_down", "Down"),
+            ("pageup", "page_up", "Page up"),
+            ("pagedown", "page_down", "Page down"),
+            ("home", "scroll_home", "Top"),
+            ("end", "scroll_end", "Bottom"),
         ]
 
         def __init__(self, content: str) -> None:
@@ -137,19 +144,39 @@ def run_tui(args: Namespace) -> None:
 
         def compose(self) -> ComposeResult:
             yield Container(
-                Static("", id="help-body"),
+                RichLog(markup=True, wrap=True, highlight=False, id="help-body"),
                 id="help-dialog",
             )
 
         def on_mount(self) -> None:
-            body = self.query_one("#help-body", Static)
-            body.update(
-                "[bold #c9a6ff]YOYOAGENT Help[/] [#7f8794]Press Esc to close[/]\n\n"
-                + self.content
-            )
+            body = self.query_one("#help-body", RichLog)
+            body.write("[bold #c9a6ff]YOYOAGENT Help[/] [#7f8794]Press Esc to close[/]")
+            body.write("")
+            body.write(self.content)
 
         def action_close_help(self) -> None:
             self.dismiss(None)
+
+        def _body(self) -> RichLog:
+            return self.query_one("#help-body", RichLog)
+
+        def action_scroll_up(self) -> None:
+            self._body().scroll_up(animate=False)
+
+        def action_scroll_down(self) -> None:
+            self._body().scroll_down(animate=False)
+
+        def action_page_up(self) -> None:
+            self._body().scroll_page_up(animate=False)
+
+        def action_page_down(self) -> None:
+            self._body().scroll_page_down(animate=False)
+
+        def action_scroll_home(self) -> None:
+            self._body().scroll_home(animate=False)
+
+        def action_scroll_end(self) -> None:
+            self._body().scroll_end(animate=False)
 
 
     class TaskPlanScreen(ModalScreen[None]):
@@ -603,6 +630,7 @@ def run_tui(args: Namespace) -> None:
             ("ctrl+enter", "submit_prompt", "Submit"),
             ("ctrl+j", "submit_prompt", "Submit"),
             ("ctrl+q", "quit", "Quit"),
+            ("?", "open_help", "Help"),
             ("up", "timeline_line_up", "Timeline up"),
             ("down", "timeline_line_down", "Timeline down"),
             ("pageup", "timeline_page_up", "Scroll up"),
@@ -696,6 +724,12 @@ def run_tui(args: Namespace) -> None:
                 event.prevent_default()
                 event.stop()
                 self.action_toggle_message_tokens()
+                return
+
+            if event.key == "?" and getattr(self.focused, "id", None) != "prompt-input":
+                event.prevent_default()
+                event.stop()
+                self.action_open_help()
                 return
 
             if self._completion_open:
@@ -798,6 +832,9 @@ def run_tui(args: Namespace) -> None:
 
         def action_open_task_plan(self) -> None:
             self.push_screen(TaskPlanScreen(self.runner.state))
+
+        def action_open_help(self) -> None:
+            self.push_screen(HelpScreen(render_help_page(self.command_registry.list_commands())))
 
         def action_open_changed_files(self) -> None:
             self.action_toggle_changed_files()

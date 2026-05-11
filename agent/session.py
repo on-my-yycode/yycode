@@ -19,10 +19,11 @@ from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
 from agent.message_format import messages_to_provider_format
 from agent.message_context_manager import MessageContextManager, MessageContextSummary
+from agent.lsp import shutdown_lsp_managers
 from agent.providers.base import LLMProvider
 from agent.providers import AnthropicProvider, OpenAIProvider
 from agent.skills import SkillRegistry, parse_skill_paths
-from agent.session_store import FileSessionStore, SessionStore
+from agent.session_store import FileSessionStore, SessionStore, SessionStoreError
 from agent.context_compressor import ContextCompressor
 from agent.streaming import StreamEvent, StreamEventCallback, StreamPrinter
 from agent.todo_manager import TodoManager
@@ -70,13 +71,26 @@ class Session:
         if self.persist_messages and self.message_store is None:
             session_root = None if os.environ.get("YOYO_SESSION_DIR") else self.runtime_data_dir / "sessions"
             self.message_store = FileSessionStore(self.app_root, self.workdir, root=session_root)
-        self.messages: list[BaseMessage] = (
-            self.message_store.load(self.id)
-            if self.persist_messages and resume and self.message_store is not None
-            else []
-        )
+        self.messages: list[BaseMessage] = []
+        if self.persist_messages and resume and self.message_store is not None:
+            try:
+                self.messages = self.message_store.load(self.id)
+            except SessionStoreError as exc:
+                self.persist_messages = False
+                self.message_store = None
+                self.messages = []
+                if stream_callback:
+                    self.stream_callback = stream_callback
+                else:
+                    self.stream_callback = (stream_printer or StreamPrinter()).callback
+                # Defer normal callback initialization below by preserving the warning event.
+                self._session_persistence_warning = str(exc)
+            else:
+                self._session_persistence_warning = None
+        else:
+            self._session_persistence_warning = None
         self.restored_message_count = len(self.messages)
-        self.stream_callback = stream_callback or (stream_printer or StreamPrinter()).callback
+        self.stream_callback = getattr(self, "stream_callback", None) or stream_callback or (stream_printer or StreamPrinter()).callback
         self.approval_callback = approval_callback
         self._graph = None
         self.todo_manager = todo_manager or TodoManager()
@@ -218,6 +232,10 @@ Final answer:
     async def close(self) -> None:
         """Close the session and cleanup resources."""
         self.todo_manager.clear()
+        try:
+            await shutdown_lsp_managers()
+        except Exception as exc:
+            self._session_lsp_shutdown_warning = str(exc)
         await self.provider.close()
 
     @property
@@ -580,11 +598,16 @@ Final answer:
         """Persist canonical message history when configured."""
         if not self.persist_messages or self.message_store is None:
             return
-        self.message_store.save(
-            self.id,
-            self.messages,
-            metadata={"model": getattr(self.provider, "model", None)},
-        )
+        try:
+            self.message_store.save(
+                self.id,
+                self.messages,
+                metadata={"model": getattr(self.provider, "model", None)},
+            )
+        except (OSError, SessionStoreError) as exc:
+            self.persist_messages = False
+            self.message_store = None
+            self._session_persistence_warning = str(exc)
 
 
 def parse_context_window_tokens(value: Optional[str]) -> Optional[int]:

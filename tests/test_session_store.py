@@ -87,3 +87,44 @@ def test_file_session_store_rejects_path_escape_session_id(tmp_path):
 
     with pytest.raises(SessionStoreError):
         store.save("../bad", [HumanMessage(content="hello")])
+
+
+def test_file_session_store_corrupt_json_raises_clear_error(tmp_path):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    path = store.workspace_dir / "sess-1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(SessionStoreError, match="not valid JSON"):
+        store.load("sess-1")
+
+
+def test_file_session_store_list_sessions_skips_corrupt_metadata(tmp_path):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    store.save("good", [HumanMessage(content="hello")])
+    bad = store.workspace_dir / "bad.json"
+    bad.write_text("{not-json", encoding="utf-8")
+
+    records = store.list_sessions()
+
+    assert {record.session_id for record in records} == {"bad", "good"}
+
+
+def test_file_session_store_delete_missing_session_is_noop(tmp_path):
+    app_root = tmp_path / "app"
+    workdir = tmp_path / "workspace"
+    app_root.mkdir()
+    workdir.mkdir()
+    store = FileSessionStore(app_root=app_root, workdir=workdir)
+
+    store.delete("missing")
+
+    assert store.list_sessions() == []

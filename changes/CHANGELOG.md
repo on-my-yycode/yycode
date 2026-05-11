@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-05-11
+
+### Features
+- Add Python read-only LSP navigation tools with document/workspace symbols, definition, references, hover, diagnostics fallback, and timeline labeling for semantic navigation
+- Add Message Token Manager support for analyzing context usage, manually compressing old tool outputs, and undoing the most recent manual compression
+- Add TUI command/help improvements including `:help`, `:clear`, `?` help access, and command completion
+- Add stronger session persistence recovery for corrupt session files, save failures, missing deletes, and corrupt list metadata
+
+### Improvements
+- Reduce TUI markdown rendering cost with cached item rendering, lightweight markdown while tasks are running, and full markdown/code highlighting after completion
+- Improve workspace/workdir safety with additional absolute path, symlink escape, nested workspace, and apply_patch boundary coverage
+- Filter noisy LSP symbols and ignore workspace-external LSP locations
+- Refresh roadmap, usage, and project structure documentation to match the current implementation
+
+### Tests
+- Expand LSP, session store, workspace boundary, apply_patch safety, TUI runner, token manager, and subagent regression coverage
+
 ## [0.3.1] - 2026-05-08
 
 ### Features

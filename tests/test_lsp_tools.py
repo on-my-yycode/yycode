@@ -96,6 +96,31 @@ def test_lsp_manager_parses_symbol_information_locations(tmp_path):
     assert symbols[0].format() == "function hello sample.py:1:5 hello"
 
 
+def test_lsp_manager_filters_noisy_document_symbol_kinds(tmp_path):
+    sample = tmp_path / "sample.py"
+    sample.write_text("import os\n\ndef useful():\n    pass\n")
+    manager = LspManager(tmp_path)
+    payload = [
+        {"name": "sample", "kind": 2, "selectionRange": {"start": {"line": 0, "character": 0}}},
+        {"name": "useful", "kind": 12, "selectionRange": {"start": {"line": 2, "character": 4}}},
+    ]
+
+    symbols = manager._parse_document_symbols(payload, sample)
+
+    assert [symbol.name for symbol in symbols] == ["useful"]
+
+
+def test_lsp_manager_filters_workspace_external_locations(tmp_path):
+    manager = LspManager(tmp_path)
+    outside = tmp_path.parent / "external.py"
+    item = {
+        "uri": outside.as_uri(),
+        "range": {"start": {"line": 3, "character": 2}},
+    }
+
+    assert manager._parse_location(item) is None
+
+
 def test_lsp_diagnostics_reports_unsupported_for_empty_mvp_result(monkeypatch, tmp_path):
     (tmp_path / "sample.py").write_text("def hello():\n    return 'hi'\n")
 

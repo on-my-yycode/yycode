@@ -1,6 +1,6 @@
 [project]
 name = "yoyoagent"
-version = "0.3.1"
+version = "0.3.2"
 description = "Learning LangGraph agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -12,6 +12,19 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "textual>=0.80.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["agent*", "tools*", "utils*"]
+exclude = ["sessions*", "output*", "tests*", "examples*", "docs*", "changes*"]
+
+[tool.setuptools.data-files]
+"skills" = ["skills/*.md"]
+"skills/drawio" = ["skills/drawio/SKILL.md"]
+"skills/drawio/agents" = ["skills/drawio/agents/*"]
+"skills/drawio/assets" = ["skills/drawio/assets/*"]
+"skills/drawio/docs" = ["skills/drawio/docs/*"]
+"skills/drawio/references" = ["skills/drawio/references/*"]
+"skills/drawio/styles" = ["skills/drawio/styles/*"]
 
 [tool.ruff]
 line-length = 100

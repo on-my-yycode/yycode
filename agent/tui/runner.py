@@ -71,6 +71,19 @@ class AgentTuiRunner:
         )
         await self.refresh_message_context_header()
         await self.refresh_git_header()
+        if warning := getattr(self.session, "_session_persistence_warning", None):
+            event = StreamEvent(
+                source="tui",
+                session_id=self.session.id,
+                event_type="session_warning",
+                title="Session persistence disabled",
+                content=f"Session history is memory-only for this run: {warning}",
+                status="warning",
+                phase="planning",
+            )
+            self.state.apply_event(event)
+            if self.on_state_change is not None:
+                await self.on_state_change(event)
 
     async def close(self) -> None:
         """Close the session and cancel in-flight work."""
@@ -264,9 +277,25 @@ class AgentTuiRunner:
         """Compress selected old tool outputs and refresh state."""
         if self.session is None:
             raise RuntimeError("TUI runner has not been started")
+        self._message_context_backup = list(self.session.messages)
         compressed = await self.session.compress_message_context(indexes)
+        if compressed <= 0:
+            self._message_context_backup = None
         await self.refresh_message_context_header()
         return compressed
+
+    async def undo_message_context_compression(self) -> bool:
+        """Restore the most recent message context compression backup."""
+        if self.session is None:
+            raise RuntimeError("TUI runner has not been started")
+        backup = getattr(self, "_message_context_backup", None)
+        if not backup:
+            return False
+        self.session.messages = list(backup)
+        self.session._save_messages()
+        self._message_context_backup = None
+        await self.refresh_message_context_header()
+        return True
 
     async def execute_command(
         self,

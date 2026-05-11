@@ -141,12 +141,10 @@ class MathProblemGenerator:
         new_ratio1 = ratio1 * 2 + add_boys
         new_ratio2 = ratio2 * 2 + add_girls
 
-        simplified = False
         for i in range(min(new_ratio1, new_ratio2), 1, -1):
             if new_ratio1 % i == 0 and new_ratio2 % i == 0:
                 new_ratio1 = new_ratio1 // i
                 new_ratio2 = new_ratio2 // i
-                simplified = True
                 break
 
         return {

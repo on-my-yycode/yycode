@@ -211,7 +211,11 @@ class MessageContextSession:
 
     async def compress_message_context(self, indexes):
         self.compressed_indexes = list(indexes)
+        self.messages = [HumanMessage(content="compressed")]
         return len(indexes)
+
+    def _save_messages(self):
+        self.saved_messages = list(self.messages)
 
     async def close(self):
         return None
@@ -256,6 +260,12 @@ def test_runner_delegates_message_context_methods():
         assert state.message_context_header.context_window_tokens == 1_000
         assert compressed == 2
         assert runner.session.compressed_indexes == [1, 3]
+        assert runner.session.messages[0].content == "compressed"
+        restored = await runner.undo_message_context_compression()
+        assert restored is True
+        assert runner.session.messages[0].content == "hello"
+        assert runner.session.saved_messages[0].content == "hello"
+        assert await runner.undo_message_context_compression() is False
 
     asyncio.run(run())
 
@@ -266,6 +276,41 @@ def test_read_git_header_returns_unavailable_for_non_git_dir(tmp_path):
     assert header.available is False
     assert header.branch == ""
     assert header.dirty is False
+
+
+def test_runner_emits_session_persistence_warning_on_start(monkeypatch):
+    async def run():
+        state = TuiState()
+        events = []
+
+        async def on_state_change(event):
+            events.append(event)
+
+        runner = AgentTuiRunner(Namespace(silent=False, temp=False, session_id=None), state=state, on_state_change=on_state_change)
+        session = MessageContextSession()
+        session.workdir = "."
+        session.context_window_tokens = 1_000
+        session.restored_message_count = 0
+        session.todo_manager = None
+        session._session_persistence_warning = "session directory is not writable"
+
+        class FakeSessionFactory:
+            @staticmethod
+            def from_config(**kwargs):
+                return session
+
+        monkeypatch.setattr("agent.tui.runner.Session", FakeSessionFactory)
+        monkeypatch.setattr("agent.tui.runner._read_git_header", lambda workdir: _read_git_header(None))
+
+        await runner.start()
+
+        warnings = [item for item in state.timeline if item.event_type == "session_warning"]
+        assert len(warnings) == 1
+        assert warnings[0].title == "Session persistence disabled"
+        assert "memory-only" in warnings[0].content
+        assert events[-1].event_type == "session_warning"
+
+    asyncio.run(run())
 
 
 def test_submit_emits_final_response_when_provider_does_not_stream_text():

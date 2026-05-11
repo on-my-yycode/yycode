@@ -2,6 +2,23 @@
 
 本项目的所有重要变更都将记录在此文件中。
 
+## [0.3.2] - 2026-05-11
+
+### 新功能
+- 新增 Python 只读 LSP 语义导航工具，支持 document/workspace symbols、definition、references、hover、diagnostics fallback，并在时间流中标记语义导航活动
+- 新增 Message Token Manager 上下文分析、旧工具输出手动压缩，以及最近一次手动压缩撤销能力
+- 新增 TUI 命令与帮助体验，包括 `:help`、`:clear`、`?` 打开帮助，以及命令补全
+- 增强 session 持久化容错，覆盖损坏 session 文件、保存失败、删除缺失 session 和列表腐坏元数据场景
+
+### 改进
+- 通过 timeline item 渲染缓存、任务运行中轻量 Markdown、任务结束后完整 Markdown/代码高亮，降低 TUI Markdown 渲染成本
+- 增强 workspace/workdir 安全边界，补充绝对路径、符号链接逃逸、嵌套 workspace 和 apply_patch 边界覆盖
+- 过滤 LSP 噪声符号，并忽略 workspace 外部 LSP location
+- 刷新路线图、使用说明和项目结构文档，使其与当前实现保持一致
+
+### 测试
+- 扩展 LSP、session store、workspace 边界、apply_patch 安全、TUI runner、token manager 和 subagent 回归覆盖
+
 ## [0.3.1] - 2026-05-08
 
 ### 新功能

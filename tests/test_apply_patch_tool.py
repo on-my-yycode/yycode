@@ -198,6 +198,67 @@ def test_apply_patch_replacement_requires_path_and_old_text():
     assert result == "Error: path and old_text are required for replacement patches"
 
 
+def test_apply_patch_rejects_unified_diff_path_escape(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    patch = """diff --git a/../outside.txt b/../outside.txt
+--- a/../outside.txt
++++ b/../outside.txt
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+    result = apply_patch(patch, approved=True)
+
+    assert result == "Error: path escapes workspace: ../outside.txt"
+
+
+def test_apply_patch_rejects_absolute_path_in_unified_diff(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    absolute = tmp_path / "sample.txt"
+    patch = f"""diff --git a/{absolute} b/{absolute}
+--- {absolute}
++++ {absolute}
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+    result = apply_patch(patch, approved=True)
+
+    assert f"Error: path escapes workspace: {absolute}" in result
+
+
+def test_apply_patch_replacement_rejects_symlink_escape(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    outside = tmp_path.parent / "outside.txt"
+    outside.write_text("old\n")
+    link = tmp_path / "link.txt"
+    link.symlink_to(outside)
+
+    result = apply_patch(path="link.txt", old_text="old\n", new_text="new\n", approved=True)
+
+    assert result.startswith("Error:")
+    assert "Path escapes workspace" in result
+    assert outside.read_text() == "old\n"
+
+
+def test_apply_patch_replacement_scoped_to_nested_workspace(tmp_path):
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    (outer / "outer.txt").write_text("old\n")
+
+    result = apply_patch(path="../outer.txt", old_text="old\n", new_text="new\n", approved=True, workdir=inner)
+
+    assert result.startswith("Error:")
+    assert "Path escapes workspace" in result
+    assert (outer / "outer.txt").read_text() == "old\n"
+
+
 def test_apply_patch_replacement_requires_approval(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     monkeypatch.chdir(tmp_path)

@@ -1,6 +1,5 @@
 """Tests for hello.py module."""
 
-import pytest
 from hello import say_hello, greet_everyone
 
 

@@ -69,13 +69,27 @@ TUI 主界面默认展示紧凑 Transcript 风格时间线：
 | `Ctrl+C` | 取消当前任务 |
 | `Ctrl+T` | 打开任务计划面板；在任务计划/审批提示中也可返回或查看计划 |
 | `Ctrl+D` | 打开文件变更 / diff 面板；在该面板中也可返回主界面 |
+| `Ctrl+M` | 打开 Message Token Manager 面板，查看 token 统计与压缩建议；最近一次压缩可撤销 |
 | `Ctrl+H` | 打开历史记录浏览器 |
 | `Ctrl+Shift+C` | 复制时间线内容 |
 | `Ctrl+Q` | 退出 |
+| `?` | 打开帮助窗口（输入框聚焦时作为普通字符输入） |
 | `Up` / `Down` | 按行滚动时间线；技能补全打开时切换候选项 |
 | `PageUp` / `PageDown` | 滚动时间线 |
 | `Home` / `End` | 跳转到时间线顶部/底部 |
 | `Esc` | 聚焦输入框 |
+
+## TUI 命令与帮助
+
+输入框支持 `:` 命令补全。当前内置命令包括：
+
+| 命令 | 功能 |
+|------|------|
+| `:help` | 打开滚动式帮助窗口，按 `Esc` 关闭 |
+| `:clear` | 请求清空当前会话历史，需要再次确认 |
+| `:clear!` | 确认清空当前会话 messages 与 TUI 会话视图 |
+
+`?` 快捷键也可以在主界面打开帮助窗口（输入框聚焦时保留普通文本输入行为）。
 
 ## 审批交互
 
@@ -119,6 +133,9 @@ TUI 主界面默认展示紧凑 Transcript 风格时间线：
 | `grep` | 正则搜索文件 |
 | `list_files` | 列出工作区文件 |
 | `git_diff` / `git_show` | 查看 Git 变更 |
+| `lsp_workspace_symbols` / `lsp_document_symbols` | 使用 Python LSP 搜索 workspace/file 内符号 |
+| `lsp_definition` / `lsp_references` | 使用 Python LSP 查询定义和引用 |
+| `lsp_hover` / `lsp_diagnostics` | 使用 Python LSP 查询 hover 信息；diagnostics 当前为 MVP fallback，验证仍以 `verify` 为准 |
 | `workspace_state` | 查看工作区状态 |
 | `verify` | 运行测试/检查 |
 | `todo` | 任务状态管理 |

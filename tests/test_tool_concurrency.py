@@ -11,7 +11,8 @@ from agent.approval import ApprovalDenied, approval_request_for_tool
 from agent.runtime.workflow_guard import path_needs_code_verification
 from agent.runtime.tool_events import file_paths_for_tool_call
 from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
-from agent.graph import create_tools_node, execute_tool_calls
+from agent.graph import create_tools_node
+from agent.runtime.tool_scheduler import execute_tool_calls
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.todo_manager import TodoManager
 from tools import TOOL_HANDLERS
@@ -82,7 +83,6 @@ def test_execute_tool_calls_flushes_before_serial_tools():
         FakeToolCall("todo", "todo", {"value": "todo"}),
         FakeToolCall("read_file", "b", {"value": "b"}),
     ]
-    execution_groups = []
     current_group = []
 
     async def execute(tc):

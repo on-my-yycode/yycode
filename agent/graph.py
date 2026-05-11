@@ -16,7 +16,6 @@ from agent.nodes.task_guard_node import (
 from agent.nodes.tools_node import create_tools_node as _create_tools_node
 from agent.providers.base import LLMProvider
 from agent.runtime.context import AgentRuntimeContext, WorkflowState
-from agent.runtime.tool_scheduler import execute_tool_calls
 from agent.streaming import StreamEventCallback
 from agent.tool_retry import async_run_tool_with_retry
 from tools import TOOL_HANDLERS, TOOLS

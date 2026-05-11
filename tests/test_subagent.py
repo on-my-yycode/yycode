@@ -44,6 +44,41 @@ class FakeProvider(LLMProvider):
         return None
 
 
+def test_session_close_shuts_down_lsp_managers(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_shutdown_lsp_managers():
+        calls.append("lsp")
+
+    provider = FakeProvider([])
+    monkeypatch.setattr("agent.session.shutdown_lsp_managers", fake_shutdown_lsp_managers)
+    session = Session(provider=provider, workdir=tmp_path)
+
+    asyncio.run(session.close())
+
+    assert calls == ["lsp"]
+
+
+def test_session_close_continues_provider_close_when_lsp_shutdown_fails(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_shutdown_lsp_managers():
+        calls.append("lsp")
+        raise RuntimeError("lsp cleanup failed")
+
+    class CloseTrackingProvider(FakeProvider):
+        async def close(self):
+            calls.append("provider")
+
+    monkeypatch.setattr("agent.session.shutdown_lsp_managers", fake_shutdown_lsp_managers)
+    session = Session(provider=CloseTrackingProvider([]), workdir=tmp_path)
+
+    asyncio.run(session.close())
+
+    assert calls == ["lsp", "provider"]
+    assert session._session_lsp_shutdown_warning == "lsp cleanup failed"
+
+
 def test_subagent_tool_is_registered():
     tool_names = {tool["name"] for tool in TOOLS}
     subagent_tool = next(tool for tool in TOOLS if tool["name"] == "subagent")

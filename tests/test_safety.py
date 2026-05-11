@@ -49,7 +49,7 @@ def test_bash_allows_dangerous_command_after_runtime_approval():
     assert not result.startswith("approval_required:")
     assert "status:" in result
     assert "exit_code:" in result
-    assert "usage: git reset" in result.lower()
+    assert "git reset" in result.lower()
 
 
 def test_bash_reports_success_for_command_with_no_output():

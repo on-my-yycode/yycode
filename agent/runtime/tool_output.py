@@ -162,8 +162,8 @@ def _compact_diff_output(diff: str, label: str) -> str:
     lines.extend(["", f"first_{MAX_MODEL_DIFF_LINES}_diff_lines:", *kept_lines])
     if len(diff.splitlines()) > MAX_MODEL_DIFF_LINES:
         lines.append(
-            f"... diff truncated for model context; full output was streamed to the UI "
-            f"or can be requested again with git_diff."
+            "... diff truncated for model context; full output was streamed to the UI "
+            "or can be requested again with git_diff."
         )
     return "\n".join(lines)
 

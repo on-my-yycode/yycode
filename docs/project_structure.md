@@ -25,6 +25,18 @@ yoyoagent/
 │   ├── todo_manager.py       # 任务管理器
 │   ├── tool_retry.py         # 工具重试机制
 │   ├── streaming.py          # 流式输出处理
+│   ├── session.py             # 会话 facade：messages、graph、persistence、context/token 管理
+│   ├── session_store.py       # Session messages 文件持久化与 workspace hash 隔离
+│   ├── message_context_manager.py # 当前会话 token 统计、压缩建议和手动压缩辅助
+│   ├── lsp/                   # Python 只读 LSP client/manager/types
+│   │   ├── client.py          # stdio JSON-RPC LSP client
+│   │   ├── manager.py         # language server 检测、懒启动、symbols/definition/hover 等封装
+│   │   └── types.py           # Location/Symbol/Diagnostic 数据结构
+│   ├── tui/                   # Textual TUI、commands、panels 和状态渲染
+│   │   ├── app.py             # 主 TUI、Help/Task/Diff/Message Token modal screens
+│   │   ├── runner.py          # TUI 与 Session 的异步桥接
+│   │   ├── commands/          # `:` TUI-only 命令，每个命令一个文件
+│   │   └── help_content.py    # `:help` 单页帮助内容
 │   ├── nodes/                # LangGraph节点实现
 │   │   ├── state.py          # AgentState定义
 │   │   ├── llm_node.py       # LLM节点
