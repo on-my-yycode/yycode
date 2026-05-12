@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import re
 import subprocess
 from argparse import Namespace
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from agent.approval import ApprovalRequest
+from agent.cancellation import CancellationController, CancelResult
+from agent.change_snapshot import (
+    build_changed_files_snapshot,
+    changed_files_as_dicts,
+    extract_diff_text,
+    merge_changed_paths,
+    turn_had_successful_write,
+)
 from agent.message_context_manager import MessageContextSummary
 from agent.session import Session
 from agent.streaming import StreamEvent
@@ -45,7 +51,12 @@ class AgentTuiRunner:
         self.on_state_change = on_state_change
         self.approval_adapter = TuiApprovalAdapter()
         self.session: Session | None = None
-        self.current_task: asyncio.Task | None = None
+        self.cancel_controller = CancellationController()
+
+    @property
+    def current_task(self) -> asyncio.Task | None:
+        """Return the active task for backwards compatibility."""
+        return self.cancel_controller.current_task
 
     async def start(self) -> None:
         """Create the underlying agent session."""
@@ -130,7 +141,7 @@ class AgentTuiRunner:
         self.state.apply_event(thinking_event)
         if self.on_state_change is not None:
             await self.on_state_change(thinking_event)
-        self.current_task = asyncio.create_task(self._send_current(text))
+        self.cancel_controller.set_task(asyncio.create_task(self._send_current(text)))
 
     async def _send_current(self, text: str) -> None:
         start_index = self._latest_user_message_index()
@@ -157,7 +168,7 @@ class AgentTuiRunner:
                         title="Task finished",
                     )
                 )
-            self.current_task = None
+            self.cancel_controller.clear_task(asyncio.current_task())
 
     async def _emit_final_response_if_missing(self, response, start_index: int) -> None:
         """Show final assistant content when the provider did not stream text deltas."""
@@ -193,24 +204,25 @@ class AgentTuiRunner:
             return
         turn_items = self.state.timeline[start_index:]
         diffs = [
-            _extract_diff_text(item.content)
+            extract_diff_text(item.content)
             for item in turn_items
             if (
                 item.event_type == "tool_result"
                 and not item.metadata.get("approval_preview")
-                and _extract_diff_text(item.content)
+                and extract_diff_text(item.content)
             )
         ]
         if not diffs:
-            changed_paths = _changed_paths_from_items(turn_items)
-            if changed_paths or _turn_had_successful_write(turn_items):
+            changed_paths = merge_changed_paths(turn_items)
+            if changed_paths or turn_had_successful_write(turn_items):
                 final_diff = git_diff(paths=changed_paths or None)
                 if final_diff and not final_diff.startswith(("Error:", "No diff.")):
                     diffs.append(final_diff)
         if not diffs:
             return
         diff_text = "\n".join(diffs)
-        changed_files = _changed_files_from_diff(diff_text)
+        snapshot = build_changed_files_snapshot(diff_text, source="task")
+        changed_files = changed_files_as_dicts(snapshot)
         if not changed_files:
             return
         self.state.set_changed_file_diffs(changed_files)
@@ -228,14 +240,14 @@ class AgentTuiRunner:
         if self.on_state_change is not None:
             await self.on_state_change(event)
 
+    async def cancel_current_task_result(self) -> CancelResult:
+        """Cancel the active request and return a stable result."""
+        self.approval_adapter.cancel_pending()
+        return await self.cancel_controller.cancel()
+
     async def cancel_current_task(self) -> bool:
         """Cancel the active request, if any."""
-        if self.current_task is None or self.current_task.done():
-            return False
-        self.current_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self.current_task
-        return True
+        return (await self.cancel_current_task_result()).status == "cancelled"
 
     async def handle_stream_event(self, event: StreamEvent) -> None:
         """Update state and forward the event to the UI."""
@@ -419,120 +431,6 @@ def _read_git_header(workdir: Path | str | None) -> GitHeader:
     return GitHeader(branch=branch, dirty=bool(status.strip()), available=bool(branch))
 
 
-def _extract_diff_text(content: str) -> str:
-    """Return the unified diff portion from a tool result, if present."""
-    if not content:
-        return ""
-    lines = content.splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith(("diff --git ", "--- ")):
-            return "\n".join(lines[index:])
-    return ""
-
-
 def _changed_files_from_diff(diff: str) -> list[dict]:
     """Return per-file stats and diff sections from a unified diff blob."""
-    files: list[dict] = []
-    current: dict | None = None
-    for line in diff.splitlines():
-        if line.startswith("diff --git "):
-            if current is not None:
-                files.append(current)
-            current = {"path": _path_from_diff_header(line), "added": 0, "removed": 0, "lines": [line]}
-            continue
-        if line.startswith("--- "):
-            if current is not None and _diff_section_has_changes(current):
-                files.append(current)
-                current = {"path": _strip_diff_prefix(line[4:].split("\t", 1)[0].strip()), "added": 0, "removed": 0, "lines": [line]}
-            elif current is None:
-                current = {"path": _strip_diff_prefix(line[4:].split("\t", 1)[0].strip()), "added": 0, "removed": 0, "lines": [line]}
-            else:
-                current["lines"].append(line)
-            continue
-        if current is None:
-            continue
-        current["lines"].append(line)
-        if line.startswith("+++ "):
-            path = _strip_diff_prefix(line[4:].split("\t", 1)[0].strip())
-            if path != "/dev/null":
-                current["path"] = path
-            continue
-        if line.startswith("--- ") or line.startswith("@@") or line.startswith("index "):
-            continue
-        if line.startswith("+"):
-            current["added"] += 1
-        elif line.startswith("-"):
-            current["removed"] += 1
-    if current is not None:
-        files.append(current)
-    return _merge_changed_file_sections(files)
-
-
-def _merge_changed_file_sections(files: list[dict]) -> list[dict]:
-    """Merge repeated diff sections for the same path while preserving section content."""
-    merged: dict[str, dict] = {}
-    order: list[str] = []
-    for item in files:
-        if not item.get("added") and not item.get("removed"):
-            continue
-        path = str(item.get("path", ""))
-        if not path:
-            continue
-        if path not in merged:
-            merged[path] = {"path": path, "added": 0, "removed": 0, "diffs": []}
-            order.append(path)
-        merged_item = merged[path]
-        merged_item["added"] += int(item.get("added", 0) or 0)
-        merged_item["removed"] += int(item.get("removed", 0) or 0)
-        merged_item["diffs"].append("\n".join(item.get("lines", [])))
-    return [
-        {
-            "path": merged[path]["path"],
-            "added": merged[path]["added"],
-            "removed": merged[path]["removed"],
-            "diff": "\n\n".join(diff for diff in merged[path]["diffs"] if diff),
-        }
-        for path in order
-    ]
-
-
-def _changed_paths_from_items(items) -> list[str]:
-    paths: list[str] = []
-    for item in items:
-        if item.event_type == "file_changed":
-            candidates = list(item.file_paths)
-        elif item.event_type in {"tool_start", "tool_end"} and item.tool_name in {"apply_patch", "write_file", "edit_file"}:
-            candidates = list(item.file_paths)
-        else:
-            candidates = []
-        for path in candidates:
-            if path and path not in paths:
-                paths.append(path)
-    return paths
-
-
-def _diff_section_has_changes(section: dict) -> bool:
-    return bool(section.get("added") or section.get("removed") or any(str(line).startswith("@@") for line in section.get("lines", [])))
-
-
-def _turn_had_successful_write(items) -> bool:
-    return any(
-        item.event_type == "tool_end"
-        and item.status != "failed"
-        and item.tool_name in {"apply_patch", "write_file", "edit_file"}
-        for item in items
-    )
-
-
-def _path_from_diff_header(line: str) -> str:
-    match = re.match(r"diff --git a/(.+?) b/(.+)$", line)
-    if match:
-        return match.group(2)
-    parts = line.split()
-    return _strip_diff_prefix(parts[-1]) if parts else "file"
-
-
-def _strip_diff_prefix(path: str) -> str:
-    if path.startswith("a/") or path.startswith("b/"):
-        return path[2:]
-    return path
+    return changed_files_as_dicts(build_changed_files_snapshot(diff, source="diff"))

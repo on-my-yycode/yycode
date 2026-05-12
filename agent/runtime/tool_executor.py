@@ -4,7 +4,7 @@ import time
 
 from langchain_core.messages import ToolMessage
 
-from agent.approval import ApprovalTargetMissing
+from agent.approval import ApprovalDenied, ApprovalTargetMissing
 from agent.logger import get_logger
 from agent.runtime.approval_service import ApprovalService
 from agent.runtime.context import AgentRuntimeContext
@@ -103,9 +103,20 @@ class ToolExecutor:
                 await self._emit_tool_result(diff_preview_from_output(output_view.display))
                 await self._emit_file_changed(tc)
             return tool_message
-        except Exception:
+        except ApprovalDenied:
             status = "failed"
             raise
+        except Exception as exc:
+            status = "failed"
+            output = f"Error executing tool {tc.name}: {exc}"
+            logger.exception("Tool execution failed: %s", getattr(tc, "name", "unknown"))
+            await self._emit_tool_result(
+                output,
+                title="Tool failed",
+                detail=tc.name,
+                phase="blocked",
+            )
+            return self._tool_message(tc, output)
         finally:
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             await self._emit_tool_end(tc, status, elapsed_ms)

@@ -1052,6 +1052,55 @@ def test_tools_node_raises_approval_denied_for_rejected_write(tmp_path, monkeypa
     assert exc.value.request.action == "edit_file"
 
 
+def test_tools_node_returns_tool_message_when_tool_runner_raises(tmp_path, monkeypatch):
+    events = []
+
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        raise RuntimeError("network unavailable")
+
+    async def stream_callback(event):
+        events.append(event)
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr("agent.graph.TOOL_HANDLERS", {"web_search": lambda **kwargs: "ok"})
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [_tool_def("web_search", "read_only", "safe", 20)],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        stream_callback=stream_callback,
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="web_search", args={"query": "python"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert len(result["messages"]) == 1
+    assert isinstance(result["messages"][0], ToolMessage)
+    assert result["messages"][0].name == "web_search"
+    assert "Error executing tool web_search: network unavailable" in result["messages"][0].content
+    failed_events = [
+        event
+        for event in events
+        if event.event_type == "tool_result" and event.title == "Tool failed"
+    ]
+    assert len(failed_events) == 1
+    assert failed_events[0].detail == "web_search"
+    web_search_end = [
+        event
+        for event in events
+        if event.event_type == "tool_end" and event.tool_name == "web_search"
+    ][0]
+    assert web_search_end.status == "failed"
+
+
 def test_tools_node_requires_apply_patch_for_existing_file_write(tmp_path, monkeypatch):
     (tmp_path / "existing.py").write_text("old\n")
     captured = []

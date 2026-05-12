@@ -42,6 +42,7 @@
 | 长任务摘要记忆 | 已实现完成 | `agent/task_memory.py`、任务完成后保留摘要并清理 todo artifacts，上下文压力下合并旧 summary |
 | Timeline 可选择文本视图 | 已实现 | `Ctrl+L` 打开只读纯文本视图，`Ctrl+Shift+C` 复制输出纯文本 |
 | 本地 evals MVP | 首版已实现 | `evals/run.py`、`context_session_baseline` 本地行为基线 |
+| ACP 兼容前置能力 | 首版已实现 | `agent/plan_snapshot.py`、`change_snapshot.py`、`session_replay.py`、`cancellation.py`，以及 `Session.set_model()` |
 
 ### 部分实现，需要继续收口
 
@@ -56,7 +57,6 @@
 | 用户意图反馈 | prompt 已约束 | 需要实际观察模型是否稳定在首个工具前输出意图，必要时做运行时 guard |
 | TUI command | 首版可用 | 命令数量少，缺少 `:sessions`、`:resume`、`:messages` 等统一入口 |
 | 本地 evals | MVP 可用 | 已有 context/session baseline；完整 bugfix/feature/refactor/tests/security review eval suite 待做 |
-| ACP 兼容前置能力 | 待实现 | 先补项目内部通用能力：model 切换、plan snapshot、changed-files snapshot、session replay view model、cancel controller、approval adapter |
 
 ### 尚未实现
 
@@ -92,7 +92,7 @@
 2. LSP 不应再只作为“推荐下一步”。当前应改为“Python-only MVP 已实现，待多语言和稳定性增强”。
 3. TUI command 系统需要新增到当前基础与后续路线。
 4. Markdown 渲染性能优化需要记录到 TUI timeline 已完成项。
-5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“ACP 兼容前置能力 -> subagent runtime 统一 -> ACP stdio MVP -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
+5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“subagent runtime 统一 -> ACP stdio MVP -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
 
 ## 下一阶段建议优先级
 
@@ -100,19 +100,16 @@
 
 #### 1. ACP 兼容前置能力
 
-目标：
+状态：首版已实现。
 
-- 为后续 ACP server 先补齐 yoyoagent 项目内部通用能力。
-- 不直接做协议层，先让 TUI/CLI/未来 ACP 共用同一份状态和控制语义。
+完成内容：
 
-待办：
-
-- [ ] 单 provider model 切换：只切换当前 provider 的 `model` 字符串，不做跨 provider 切换。
-- [ ] 公共 plan snapshot：从 `TodoManager` 导出 entries/memory/updated_at。
-- [ ] 公共 changed-files/diff snapshot：从 TUI runner 抽出文件变更汇总逻辑。
-- [ ] Session replay view model：从 canonical `Session.messages` 派生可展示历史。
-- [ ] 统一 cancel controller：TUI current task 和未来 ACP prompt task 共用取消语义。
-- [ ] UI-independent approval adapter：审批请求与 TUI/ACP 展示解耦。
+- [x] 单 provider model 切换：只切换当前 provider 的 `model` 字符串，不做跨 provider 切换。
+- [x] 公共 plan snapshot：从 `TodoManager` 导出 entries/memory/updated_at。
+- [x] 公共 changed-files/diff snapshot：从 TUI runner 抽出文件变更汇总逻辑。
+- [x] Session replay view model：从 canonical `Session.messages` 派生可展示历史。
+- [x] 统一 cancel controller：TUI current task 和未来 ACP prompt task 共用取消语义。
+- [x] UI-independent approval adapter：审批请求与 TUI/ACP 展示解耦。
 
 验收：
 
@@ -360,9 +357,9 @@
 建议按以下顺序推进：
 
 ```text
-1. ACP 兼容前置能力
-2. subagent runtime 统一
-3. ACP stdio server MVP
+1. subagent runtime 统一
+2. ACP stdio server MVP
+3. ACP compatibility polish
 4. Message Token Manager 压缩确认和大 session 回归
 5. 工具输出压缩阈值 per-tool 收紧
 6. Timeline 增量渲染 / 可见窗口渲染
@@ -374,8 +371,8 @@
 
 原因：
 
-- 1 先补项目内部通用能力，后续 ACP 只做协议包装。
-- 2 能减少主/子 agent 工具执行和审批差异，为 ACP tool/approval 映射降复杂度。
+- ACP 兼容前置能力已完成，后续 ACP 可以主要做协议包装。
+- 1 能减少主/子 agent 工具执行和审批差异，为 ACP tool/approval 映射降复杂度。
 - 4-5 都是在收口当前已经实现的能力，风险低、收益直接。
 - Timeline 可选择文本视图已完成；后续 timeline 工作转向增量渲染和可见窗口渲染。
 - LSP 启动状态提示本轮从近期 P0/P1 移除，后续并入 LSP 增强整体排期。

@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from agent.plan_snapshot import PlanEntry, build_plan_snapshot
+
 from .state import MAX_TIMELINE_ITEMS, PendingApproval, SubagentStatus, TimelineItem, TuiState
 
 
@@ -580,22 +582,25 @@ def _render_todo_header_summary(todo_manager, width: int) -> str:
     width = max(8, width)
     if not todo_manager:
         return ""
-    items = getattr(todo_manager, "todo_items", []) or []
+    snapshot = build_plan_snapshot(todo_manager)
+    items = snapshot.entries
+    if snapshot.task_completed:
+        return "[#7f8794]Todo[/] [#8fd6a3]completed[/]"
     if not items:
-        if getattr(todo_manager, "task_completed", False):
+        if snapshot.task_completed:
             return "[#7f8794]Todo[/] [#8fd6a3]completed[/]"
-        if getattr(todo_manager, "task_state_started", False):
+        if snapshot.task_started:
             return "[#7f8794]Todo[/] [#8fd6a3]completed[/]"
         return "[#7f8794]Todo[/] [#cfd3dc]-[/]"
 
     total = len(items)
-    completed = len([item for item in items if item.get("status") == "completed"])
-    active = next((item for item in items if item.get("status") == "in_progress"), None)
-    pending = next((item for item in items if item.get("status") != "completed"), None)
+    completed = len([item for item in items if item.status == "completed"])
+    active = next((item for item in items if item.status == "in_progress"), None)
+    pending = next((item for item in items if item.status != "completed"), None)
     current = active or pending
     current_text = ""
     if current:
-        current_text = str(current.get("text") or current.get("id") or "")
+        current_text = current.title or current.id
 
     prefix = f"Todo {completed}/{total}"
     if current_text:
@@ -1043,8 +1048,9 @@ def _find_matching_tool_end(items: list[TimelineItem], start_index: int) -> int 
 
 def _render_todo_section(todo_manager) -> str:
     """Render the full task plan panel in a scannable dashboard style."""
-    items = list(todo_manager.todo_items or [])
-    memory = todo_manager.memory or {}
+    snapshot = build_plan_snapshot(todo_manager)
+    items = snapshot.entries
+    memory = snapshot.memory or {}
     lines: list[str] = []
 
     goal = str(memory.get("user_goal") or "").strip()
@@ -1064,7 +1070,7 @@ def _render_todo_section(todo_manager) -> str:
     return "\n".join(lines).rstrip()
 
 
-def _render_checklist_panel(items: list[dict]) -> list[str]:
+def _render_checklist_panel(items: list[PlanEntry]) -> list[str]:
     if not items:
         return [
             "[bold #c9a6ff]Status[/]",
@@ -1073,10 +1079,10 @@ def _render_checklist_panel(items: list[dict]) -> list[str]:
         ]
 
     total = len(items)
-    completed = len([item for item in items if item.get("status") == "completed"])
+    completed = len([item for item in items if item.status == "completed"])
     remaining = total - completed
     active_index = next(
-        (index for index, item in enumerate(items) if item.get("status") == "in_progress"),
+        (index for index, item in enumerate(items) if item.status == "in_progress"),
         None,
     )
     summary = f"{completed}/{total} done"
@@ -1087,9 +1093,9 @@ def _render_checklist_panel(items: list[dict]) -> list[str]:
 
     lines = ["[bold #c9a6ff]Checklist[/]", f"  [#7f8794]{summary}[/]", ""]
     for index, item in enumerate(items):
-        status = item.get("status", "pending")
-        item_id = str(item.get("id") or index + 1)
-        text = _safe_text(item.get("text", ""))
+        status = item.status
+        item_id = item.id or str(index + 1)
+        text = _safe_text(item.title)
         if status == "completed":
             marker = "[#8fd6a3]✓[/]"
             style = "#8fd6a3"

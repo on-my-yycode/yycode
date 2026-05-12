@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import re
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Literal, Optional
 
 from tools.safety import approval_required
 from tools.safety import unsafe_command_response
@@ -11,6 +11,7 @@ from tools.apply_patch import preview_apply_patch_diff
 from tools.write_file import preview_write_file_diff
 
 
+ApprovalDecisionStatus = Literal["approved", "denied", "cancelled"]
 ApprovalCallback = Callable[["ApprovalRequest"], Awaitable[bool]]
 
 
@@ -54,6 +55,26 @@ class ApprovalRequest:
         if include_diff and self.diff_preview:
             formatted = f"{formatted}\n\ndiff_preview:\n{self.diff_preview}"
         return formatted
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """UI-independent approval decision."""
+
+    status: ApprovalDecisionStatus
+
+    @property
+    def approved(self) -> bool:
+        """Return whether the request was approved."""
+        return self.status == "approved"
+
+
+async def callback_from_decider(
+    request: ApprovalRequest,
+    decider: Callable[[ApprovalRequest], Awaitable[ApprovalDecision]],
+) -> bool:
+    """Adapt a decision-oriented approval adapter to the legacy bool callback."""
+    return (await decider(request)).approved
 
 
 def approval_request_for_tool(

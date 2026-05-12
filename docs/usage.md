@@ -131,6 +131,7 @@ TUI 主界面默认展示紧凑 Transcript 风格时间线：
 | `edit_file` | 文本替换编辑；已有文件编辑优先使用 `apply_patch` |
 | `bash` | 执行 Shell 命令 |
 | `grep` | 正则搜索文件 |
+| `web_search` | 搜索网络资料；默认使用无需 API key 的 DuckDuckGo HTML/Lite best-effort provider，也可传入 SearXNG base URL |
 | `list_files` | 列出工作区文件 |
 | `git_diff` / `git_show` | 查看 Git 变更 |
 | `lsp_workspace_symbols` / `lsp_document_symbols` | 使用 Python LSP 搜索 workspace/file 内符号 |
@@ -141,5 +142,7 @@ TUI 主界面默认展示紧凑 Transcript 风格时间线：
 | `todo` | 任务状态管理 |
 | `subagent` | 委派子代理 |
 | `list_skills` / `load_skill` | 技能管理 |
+
+`web_search` 只返回搜索结果标题、URL 和摘要，不抓取网页正文。默认 DuckDuckGo HTML/Lite provider 不需要平台 API key，但属于 best-effort 网络检索，可能受站点结构变化、限流、验证码或运行环境联网限制影响；如果有自托管或可信 SearXNG 实例，可通过 `provider="searxng"` 和 `searxng_base_url` 使用。
 
 `verify` 通常只在代码文件或明确的构建/测试配置文件变更后运行。修改文档、图片、图表、资源或其它非代码文件时，系统不会要求运行项目代码测试。

@@ -15,6 +15,7 @@ from langchain_core.messages import (
 
 from agent.approval import ApprovalCallback, ApprovalDenied
 from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
+from agent.session_replay import ReplayEvent, build_session_replay
 from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
 from agent.message_format import messages_to_provider_format
@@ -273,6 +274,25 @@ Final answer:
         """Clear message history only."""
         self.messages = []
         self._save_messages()
+
+    def set_model(self, model: str) -> None:
+        """Switch the current provider model within the same provider."""
+        normalized = str(model or "").strip()
+        if not normalized:
+            raise ValueError("model must not be empty")
+        setattr(self.provider, "model", normalized)
+        self.context_window_tokens = infer_context_window_tokens(self.provider)
+        self.context_compressor = ContextCompressor(
+            context_window_tokens=self.context_window_tokens,
+            compression_ratio=self.context_compressor.compression_ratio,
+            keep_recent_messages=self.context_compressor.keep_recent_messages,
+            max_tool_chars=self.context_compressor.max_tool_chars,
+        )
+        self._graph = None
+
+    def replay_view(self) -> list[ReplayEvent]:
+        """Return a display-friendly replay view derived from canonical messages."""
+        return build_session_replay(self.messages)
 
     def add_message(self, message: BaseMessage) -> None:
         """Add a message to the history."""

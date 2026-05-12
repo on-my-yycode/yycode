@@ -21,6 +21,10 @@ yoyoagent/
 │   ├── graph.py              # LangGraph薄编排层
 │   ├── llm_retry.py          # LLM超时、心跳和重试
 │   ├── logger.py             # 调试日志
+│   ├── cancellation.py       # 共享取消控制器，供 TUI/后续 ACP 复用
+│   ├── change_snapshot.py    # 共享文件变更/diff snapshot
+│   ├── plan_snapshot.py      # 共享任务计划 snapshot
+│   ├── session_replay.py     # 从 canonical messages 派生 replay view model
 │   ├── subagent.py           # 子代理执行器
 │   ├── todo_manager.py       # 任务管理器
 │   ├── task_memory.py        # 长任务摘要记忆：从 Task State 生成可保留的任务摘要
@@ -64,6 +68,7 @@ yoyoagent/
 │   ├── read_file.py          # 文件读取
 │   ├── write_file.py         # 文件写入
 │   ├── todo.py               # 任务列表管理
+│   ├── web_search.py         # 无需 key 优先的网络搜索
 │   └── subagent.py           # 子代理工具
 │
 ├── utils/                    # 工具函数
