@@ -948,13 +948,7 @@ def _tool_activity_tree_details(
             if target:
                 details.append(target)
     elif tool_name == "grep" or "search" in (item.title or "").lower():
-        if isinstance(args, dict):
-            pattern = args.get("pattern")
-            path = args.get("path")
-            if pattern:
-                details.append(str(pattern))
-            if path:
-                details.append(str(path))
+        details.extend(_search_activity_details(item, args))
         if not details:
             target = _tool_target_plain(item)
             if target:
@@ -1274,6 +1268,8 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, 
         return f"{role_prefix}[#7f8794][usage] input={_format_tokens(input_tok)} output={_format_tokens(output_tok)} total={_format_tokens(total_tok)}[/]"
     if item.event_type == "context_compressed":
         return f"{role_prefix}[#7f8794][context] {_safe_text(item.content)}[/]"
+    if item.event_type == "context_summarized":
+        return f"{role_prefix}[#8fd6a3][context] {_safe_text(item.content)}[/]"
     if item.event_type == "llm_waiting":
         return _render_llm_waiting_item(item, role_prefix, state)
     if item.event_type == "llm_timeout":
@@ -1381,6 +1377,8 @@ def _activity_summary(
     explored_files: set[str] = set()
     edited_files: set[str] = set()
     searches = 0
+    search_terms = 0
+    search_paths: set[str] = set()
     commands = 0
     git_checks = 0
     other = 0
@@ -1393,6 +1391,10 @@ def _activity_summary(
             explored_files.update(files or [_tool_target_plain(start)])
         elif tool == "grep" or "search" in title:
             searches += 1
+            search_terms += int(start.metadata.get("term_count", 0) or 0) if isinstance(start.metadata, dict) else 0
+            path = str(start.metadata.get("path", "") or "") if isinstance(start.metadata, dict) else ""
+            if path:
+                search_paths.add(path)
         elif tool in {"apply_patch", "edit_file", "write_file"}:
             edited_files.update(files or [_tool_target_plain(start)])
         elif tool in {"bash", "verify"}:
@@ -1408,7 +1410,7 @@ def _activity_summary(
     if explored_files:
         parts.append(_plural(len([path for path in explored_files if path]), "explored {n} file", "explored {n} files"))
     if searches:
-        parts.append(_plural(searches, "{n} search", "{n} searches"))
+        parts.append(_search_summary(searches, search_terms, search_paths))
     if commands:
         parts.append(_plural(commands, "ran {n} command", "ran {n} commands"))
     if git_checks:
@@ -1421,6 +1423,50 @@ def _activity_summary(
 def _plural(count: int, singular: str, plural: str) -> str:
     template = singular if count == 1 else plural
     return template.format(n=count)
+
+
+def _search_activity_details(item: TimelineItem, args: object) -> list[str]:
+    details: list[str] = []
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    display = metadata.get("search_display")
+    if display:
+        details.append(str(display))
+    elif isinstance(args, dict):
+        path = args.get("path") or "."
+        pattern = args.get("pattern")
+        display_path = "workspace" if str(path) == "." else str(path)
+        details.append(f"Searching {display_path}")
+        if pattern:
+            details.append(f"query: {_truncate_plain(str(pattern), 80)}")
+
+    terms = metadata.get("search_terms")
+    if isinstance(terms, list) and terms:
+        term_text = ", ".join(str(term) for term in terms[:3])
+        term_count = int(metadata.get("term_count", len(terms)) or len(terms))
+        if term_count > 3:
+            term_text += "..."
+        details.append(f"terms: {term_text}")
+
+    pattern_preview = metadata.get("pattern_preview")
+    if pattern_preview and not terms:
+        details.append(f"query: {pattern_preview}")
+    return details
+
+
+def _search_summary(searches: int, term_count: int, paths: set[str]) -> str:
+    if searches > 1:
+        return _plural(searches, "ran {n} code search", "ran {n} code searches")
+    if term_count > 0:
+        path_count = len([path for path in paths if path])
+        path_text = "workspace" if paths == {"workspace"} else _plural(path_count or 1, "1 file", "{n} files")
+        return f"searched {term_count} {'keyword' if term_count == 1 else 'keywords'} in {path_text}"
+    return "ran 1 code search"
+
+
+def _truncate_plain(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
 
 
 def _render_tool_activity(

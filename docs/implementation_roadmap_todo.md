@@ -37,7 +37,11 @@
 | LSP 语义导航 MVP | Python-only 首版已实现 | `agent/lsp/*`、`tools/lsp_*`、`tests/test_lsp_tools.py` |
 | TUI command 系统 | 首版已实现 | `agent/tui/commands/*`，已有 `:help`、`:clear` |
 | Markdown timeline 性能优化 | A+B 已完成 | item render cache、运行中轻量 Markdown、结束后完整渲染 |
+| Timeline 搜索项语义化展示 | 已完成 | `grep` metadata 已提供 keywords/range/preview，TUI 不再把长 regex 作为主信息 |
 | 启动参数帮助 | 已完成基础版 | `main.py::build_arg_parser()` 包含参数和 Environment |
+| 长任务摘要记忆 | 已实现完成 | `agent/task_memory.py`、任务完成后保留摘要并清理 todo artifacts，上下文压力下合并旧 summary |
+| Timeline 可选择文本视图 | 已实现 | `Ctrl+L` 打开只读纯文本视图，`Ctrl+Shift+C` 复制输出纯文本 |
+| 本地 evals MVP | 首版已实现 | `evals/run.py`、`context_session_baseline` 本地行为基线 |
 
 ### 部分实现，需要继续收口
 
@@ -51,16 +55,16 @@
 | 工具输出上下文治理 | 已压缩部分输出 | 中等大小 read/grep 输出仍可能占 1k-3k tokens；旧 sessions 需要清理/迁移策略 |
 | 用户意图反馈 | prompt 已约束 | 需要实际观察模型是否稳定在首个工具前输出意图，必要时做运行时 guard |
 | TUI command | 首版可用 | 命令数量少，缺少 `:sessions`、`:resume`、`:messages` 等统一入口 |
+| 本地 evals | MVP 可用 | 已有 context/session baseline；完整 bugfix/feature/refactor/tests/security review eval suite 待做 |
+| ACP 兼容前置能力 | 待实现 | 先补项目内部通用能力：model 切换、plan snapshot、changed-files snapshot、session replay view model、cancel controller、approval adapter |
 
 ### 尚未实现
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
-| 长任务摘要记忆 | 未实现完整版本 | 还没有对旧 Human/AI 对话做稳定摘要压缩 |
 | Task Graph / DAG 调度 | 未实现 | 设计见 `docs/task_graph_dag_design.md` |
-| 本地 evals | 未实现 | 缺少 `evals/` 任务集和自动评分脚本 |
 | 多语言 LSP | 未实现 | 当前 `LspManager` 只接受 `.py`，languageId 固定 `python` |
-| LSP 启动状态提示 | 未实现 | TUI 启动时未显示 `pyright/pylsp/unavailable` |
+| LSP 启动状态提示 | 后续增强 | 当前先从近期 P0/P1 移除，待 subagent runtime 统一后再排期 |
 | 自动恢复最近 session | 未实现 | `--resume-latest` 仍是后续增强 |
 
 ### 近期已收口事项
@@ -74,6 +78,10 @@
 - Session 写入：`SessionStore` 已使用临时文件 + replace 的原子写入。
 - Message Token Manager：最近一次手动压缩已支持内存备份和撤销。
 - Workspace 边界测试：已覆盖绝对路径、符号链接逃逸、嵌套 workspace 作用域和 apply_patch 路径逃逸。
+- Task Summary Memory 首版：任务完成后生成确定性摘要，保留关键目标/决策/文件/验证信息，并清理 todo 工具调用和 ToolMessage。
+- 本地 evals MVP：`context_session_baseline` 已覆盖 todo artifacts 清理、summary 可恢复、工具输出压缩链路和未完成任务保留 todo artifacts。
+- Timeline 搜索项语义化：`Search code` 现在优先显示搜索范围、关键词数量、关键词预览和耗时，完整 pattern 仅保留在 metadata 中。
+- Timeline 可选择文本视图：`Ctrl+L` 打开只读纯文本 timeline，便于用户选择/复制；`Ctrl+Shift+C` 复制也使用同一纯文本转换。
 - 文档同步：`docs/code_agent_roadmap.md`、`docs/usage.md`、`docs/project_structure.md` 已补充近期实现状态。
 
 ## 路线图需要更新的地方
@@ -84,36 +92,73 @@
 2. LSP 不应再只作为“推荐下一步”。当前应改为“Python-only MVP 已实现，待多语言和稳定性增强”。
 3. TUI command 系统需要新增到当前基础与后续路线。
 4. Markdown 渲染性能优化需要记录到 TUI timeline 已完成项。
-5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“LSP/MTM 收口 -> timeline 虚拟化 -> session 容错 -> evals/DAG”。
+5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“ACP 兼容前置能力 -> subagent runtime 统一 -> ACP stdio MVP -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
 
 ## 下一阶段建议优先级
 
 ### P0：先收口当前已实现但未稳定的能力
 
-#### 1. LSP 可用性与可见性收口
+#### 1. ACP 兼容前置能力
 
 目标：
 
-- 让用户和模型都能明确知道当前 LSP 是否可用、用了哪个 server。
-- 避免 LSP 工具偶发卡住或遗留进程。
-- 把 Python-only MVP 的边界表达清楚。
+- 为后续 ACP server 先补齐 yoyoagent 项目内部通用能力。
+- 不直接做协议层，先让 TUI/CLI/未来 ACP 共用同一份状态和控制语义。
 
 待办：
 
-- [ ] 增加轻量 LSP server 检测函数，不启动进程，只检测 `pyright-langserver` / `pylsp`。
-- [ ] TUI 顶部或启动 timeline 显示：`LSP Python: pyright-langserver` / `pylsp` / `unavailable`。
-- [ ] 在 `:help` 或 docs/usage 中补充 LSP 状态说明。
-- [x] TUI/Session 关闭时调用 `shutdown_lsp_managers()`。
-- [ ] 给 `workspace/symbol Method Not Found` 写明确文档：fallback 到 `grep/read_file` 属于正常降级。
-- [ ] 增加真实环境 smoke test 文档，不要求 CI 安装 language server。
+- [ ] 单 provider model 切换：只切换当前 provider 的 `model` 字符串，不做跨 provider 切换。
+- [ ] 公共 plan snapshot：从 `TodoManager` 导出 entries/memory/updated_at。
+- [ ] 公共 changed-files/diff snapshot：从 TUI runner 抽出文件变更汇总逻辑。
+- [ ] Session replay view model：从 canonical `Session.messages` 派生可展示历史。
+- [ ] 统一 cancel controller：TUI current task 和未来 ACP prompt task 共用取消语义。
+- [ ] UI-independent approval adapter：审批请求与 TUI/ACP 展示解耦。
 
 验收：
 
-- 启动后用户能看到 LSP 状态。
-- 调用 `lsp_document_symbols` 后 timeline 出现 `Semantic Navigation`。
-- 退出 TUI 后无遗留 `pylsp` / `pyright-langserver` 进程。
+- model 切换后下一轮请求使用新 model。
+- TUI Task Plan、文件变更表格和 `Ctrl+D` 行为不回退。
+- replay view model 能识别 user/assistant/summary/tool/context。
+- cancel 结果有明确状态：`cancelled`、`not_running`、`already_finished`。
+- approval metadata 保留 action、tool、paths、reason、risk、diff preview。
 
-#### 2. Message Token Manager 收口
+#### 2. Timeline 可选择文本视图
+
+状态：已实现。
+
+完成内容：
+
+- [x] 保留 RichLog 主 timeline，不改变现有结构化事件展示。
+- [x] 增加 `Ctrl+L` 只读纯文本 timeline 视图，便于终端选择/复制。
+- [x] `Ctrl+Shift+C` 复制 timeline 时复用同一 Rich markup -> plain text 转换。
+- [x] 增加对应 TUI 样式。
+
+验收：
+
+- 主 timeline 仍保持 RichLog 彩色渲染。
+- `Ctrl+L` 可打开纯文本视图并聚焦文本区域。
+- `Ctrl+Shift+C` 输出纯文本内容，不再依赖脆弱的正则去除 Rich markup。
+
+#### 3. subagent runtime 统一
+
+目标：
+
+- 让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
+- 减少主/子 agent 工具执行、安全审批和 workspace 行为差异。
+
+待办：
+
+- [ ] 梳理当前 `SubagentRunner` 与主 `Session` runtime 初始化差异。
+- [ ] 复用主 runtime 的工具注册、审批服务和 workspace-bound 配置。
+- [ ] 保持 subagent 独立 conversation history，不引入父 agent todo ownership。
+- [ ] 增加主/子 agent 工具行为一致性测试。
+
+验收：
+
+- subagent 使用与主 agent 一致的工具 metadata、审批和 workspace 约束。
+- 现有 `@architect /plan`、`@worker`、`@tester` 委派行为保持不变。
+
+#### 3. Message Token Manager 收口
 
 目标：
 
@@ -244,23 +289,29 @@
 - `.py/.ts/.js/.go` 至少能各自走对应 languageId。
 - server 不存在时快速返回 unavailable，不阻塞任务。
 
-#### 8. 长任务摘要记忆
+#### 8. Task Summary Memory 可选体验增强
 
 目标：
 
-- 长任务超过多轮后，稳定保留关键决策，减少旧消息污染。
+- 核心长任务摘要记忆已实现完成；如后续继续投入，重点放在可视化、手动操作和模型补充体验。
+- 详细方案见 `docs/long_task_summary_memory_design.md`。
 
 待办：
 
-- [ ] 基于 Task State memory 生成任务级 summary block。
-- [ ] 压缩旧 Human/AI 对话时保留 user_goal、constraints、decisions、files_modified、test_results、open_risks。
-- [ ] 防止 summary 与 todo 结果重复进入上下文。
-- [ ] 任务完成后清理 todo artifacts，但保留最终任务摘要。
-- [ ] 增加恢复 session 后摘要仍可用的测试。
+- [x] 建立摘要前置 evals MVP：`evals/run.py` 和 `context_session_baseline`。
+- [x] 基于 Task State memory 生成确定性任务级 summary block。
+- [x] 防止 summary 与 todo 结果重复进入上下文。
+- [x] 任务完成后清理 todo artifacts，但保留最终任务摘要。
+- [x] 增加恢复 session 后摘要仍可用的测试。
+- [x] 上下文压力下合并旧 summary，避免摘要块越积越多。
+- [ ] 在 Message Token Manager 中展示 summary memory 统计。
+- [ ] 增加可选手动 summary / undo 入口。
+- [ ] 增加模型生成式摘要补充，用于解释确定性字段之外的高价值背景。
 
 验收：
 
 - 长任务上下文压缩后，agent 仍能正确说出已做、未做、风险和验证结果。
+- 可选入口不会破坏现有确定性 summary 和 provider tool call 链路。
 
 #### 9. Task Graph / DAG 调度
 
@@ -286,10 +337,15 @@
 
 - 用任务集判断 yoyoagent 是否真的变强。
 
+当前已完成：
+
+- [x] 新建 `evals/` 目录结构。
+- [x] 增加 `evals/run.py` 本地 runner。
+- [x] 增加 `context_session_baseline`，覆盖 context/session 行为基线。
+
 待办：
 
-- [ ] 新建 `evals/` 目录结构。
-- [ ] 添加 5 类任务：fix bug、add feature、refactor、add tests、security review。
+- [ ] 添加完整 5 类任务：fix bug、add feature、refactor、add tests、security review。
 - [ ] 每个任务提供 `prompt.md`、`setup.sh`、`checks.sh`。
 - [ ] 记录是否通过测试、是否满足目标、改动范围是否合理。
 - [ ] 增加人工复核报告模板。
@@ -304,24 +360,27 @@
 建议按以下顺序推进：
 
 ```text
-1. 更新主路线图和相关设计文档状态
-2. LSP 启动状态提示 + 真实环境 smoke 文档
-3. Message Token Manager 压缩确认和大 session 回归
-4. 工具输出压缩阈值 per-tool 收紧
-5. Timeline 增量渲染 / 可见窗口渲染
-6. Session 持久化不可写 app_root fallback
-7. 多语言 LSP registry
-8. 长任务摘要记忆
-9. evals
+1. ACP 兼容前置能力
+2. subagent runtime 统一
+3. ACP stdio server MVP
+4. Message Token Manager 压缩确认和大 session 回归
+5. 工具输出压缩阈值 per-tool 收紧
+6. Timeline 增量渲染 / 可见窗口渲染
+7. Session 持久化不可写 app_root fallback
+8. 多语言 LSP registry 与 LSP 增强
+9. 完整 eval suite
 10. Task Graph / DAG
 ```
 
 原因：
 
-- 1-4 都是在收口当前已经实现的能力，风险低、收益直接。
-- 5 解决用户已经观察到的长任务 TUI 卡顿问题。
-- 6 是发行版本稳定性要求。
-- 7-10 是能力扩展，适合在基础稳定后推进。
+- 1 先补项目内部通用能力，后续 ACP 只做协议包装。
+- 2 能减少主/子 agent 工具执行和审批差异，为 ACP tool/approval 映射降复杂度。
+- 4-5 都是在收口当前已经实现的能力，风险低、收益直接。
+- Timeline 可选择文本视图已完成；后续 timeline 工作转向增量渲染和可见窗口渲染。
+- LSP 启动状态提示本轮从近期 P0/P1 移除，后续并入 LSP 增强整体排期。
+- 6-7 是发行版本稳定性要求。
+- 8-10 是能力扩展，适合在基础稳定后推进。
 
 ## 当前风险清单
 

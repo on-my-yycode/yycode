@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from argparse import Namespace
 
+from rich.text import Text
+
 from agent.message_context_manager import ContextBlockStat, MessageTokenStat
 from agent.tui.commands import discover_commands
 from tools import TOOLS
@@ -38,6 +40,16 @@ def _safe_text(value: object, limit: int | None = None) -> str:
     if limit is not None and len(text) > limit:
         text = text[: max(0, limit - 3)] + "..."
     return text.replace("[", r"\[")
+
+
+def _timeline_markup_to_plain_text(content: str) -> str:
+    """Return a plain-text timeline suitable for terminal selection/copy."""
+    try:
+        return Text.from_markup(content).plain
+    except Exception:
+        import re
+
+        return re.sub(r"\[/?[^\]]*\]", "", content).replace(r"\[", "[")
 
 
 def _is_submit_key_event(event: object) -> bool:
@@ -177,6 +189,42 @@ def run_tui(args: Namespace) -> None:
 
         def action_scroll_end(self) -> None:
             self._body().scroll_end(animate=False)
+
+
+    class TimelineTextScreen(ModalScreen[None]):
+        """Selectable plain-text timeline viewer."""
+
+        BINDINGS = [
+            ("escape", "close_timeline_text", "Close"),
+            ("ctrl+l", "close_timeline_text", "Back"),
+        ]
+
+        def __init__(self, content: str) -> None:
+            super().__init__()
+            self.content = content
+
+        def compose(self) -> ComposeResult:
+            yield Container(
+                Static(
+                    "Timeline text view — select/copy with terminal or mouse. Press Esc / Ctrl+L to close.",
+                    id="timeline-text-header",
+                ),
+                TextArea(
+                    self.content,
+                    id="timeline-text-body",
+                    read_only=True,
+                    show_line_numbers=False,
+                    highlight_cursor_line=False,
+                    soft_wrap=True,
+                ),
+                id="timeline-text-dialog",
+            )
+
+        def on_mount(self) -> None:
+            self.query_one("#timeline-text-body", TextArea).focus()
+
+        def action_close_timeline_text(self) -> None:
+            self.dismiss(None)
 
 
     class TaskPlanScreen(ModalScreen[None]):
@@ -623,6 +671,7 @@ def run_tui(args: Namespace) -> None:
             ("enter", "approve_current", "Approve"),
             ("escape", "deny_current", "Deny"),
             ("ctrl+shift+c", "copy_timeline", "Copy timeline"),
+            ("ctrl+l", "open_timeline_text", "Timeline text"),
             ("ctrl+c", "cancel_task", "Cancel task"),
             ("ctrl+t", "open_task_plan", "Task plan"),
             ("ctrl+d", "open_changed_files", "Changed files"),
@@ -836,6 +885,10 @@ def run_tui(args: Namespace) -> None:
         def action_open_help(self) -> None:
             self.push_screen(HelpScreen(render_help_page(self.command_registry.list_commands())))
 
+        def action_open_timeline_text(self) -> None:
+            plain_text = _timeline_markup_to_plain_text(self._last_timeline_content)
+            self.push_screen(TimelineTextScreen(plain_text))
+
         def action_open_changed_files(self) -> None:
             self.action_toggle_changed_files()
 
@@ -908,8 +961,7 @@ def run_tui(args: Namespace) -> None:
             timeline_panel = self.query_one("#timeline-panel", RichLog)
             if timeline_content != self._last_timeline_content:
                 self._last_timeline_content = timeline_content
-                timeline_panel.clear()
-                timeline_panel.write(timeline_content)
+                self._write_timeline_content(timeline_panel, timeline_content)
                 if (
                     force_scroll_end
                     or pending_approval is not None
@@ -925,6 +977,16 @@ def run_tui(args: Namespace) -> None:
             self._refresh_input_rules()
             self._update_completion(self.query_one("#prompt-input", TextArea))
             self._maybe_show_approval_prompt()
+
+        def _write_timeline_content(self, timeline: RichLog, content: str) -> None:
+            timeline.clear()
+            try:
+                timeline.write(content)
+            except Exception:
+                from rich.markup import escape
+
+                timeline.clear()
+                timeline.write(escape(content))
 
         def _refresh_status_surfaces(self) -> None:
             content_width = max(72, self.size.width - 4)
@@ -978,12 +1040,8 @@ def run_tui(args: Namespace) -> None:
             """Copy timeline content to clipboard."""
             try:
                 import pyperclip
-                # Get the plain text version of timeline content
-                timeline_content = self._last_timeline_content
-                # Remove Rich markup tags for cleaner copy
-                import re
-                clean_content = re.sub(r'\[/?[^\]]*\]', '', timeline_content)
-                pyperclip.copy(clean_content)
+
+                pyperclip.copy(_timeline_markup_to_plain_text(self._last_timeline_content))
                 self.notify("Timeline copied to clipboard!", severity="information")
             except ImportError:
                 self.notify("pyperclip not installed. Install with: pip install pyperclip", severity="warning")

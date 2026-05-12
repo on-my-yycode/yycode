@@ -34,14 +34,17 @@
 - Session messages 持久化与恢复首版：默认保存 messages，支持 `-r` 恢复、`-s` 列表、`-x` 删除、`-t` 临时会话。
 - subagent 显式 skill 委派：`subagent` 工具支持 `skills` 参数，`@architect /plan ...` 可将 skill 隔离加载到 subagent 上下文。
 - TUI 输入补全：支持 `/skill`、正文中间 `/skill`、`@role` subagent 角色补全。
+- 长任务摘要记忆首版：任务完成后保存确定性 Task Summary Memory，并清理 todo artifacts，降低后续上下文污染。
+- 本地 evals MVP：已有 `evals/run.py` 和 `context_session_baseline`，用于验证 context/session 基线。
+- Timeline 搜索项语义化展示：`grep`/搜索类工具优先显示搜索范围、关键词数量、关键词预览和耗时。
 
 主要欠缺：
 
 - LSP / Message Token Manager 已有首版；后续欠缺主要是完整 diagnostics、配置化阈值、多步历史和模型生成式摘要等增强。
-- 长任务摘要记忆。
-- 更高级的上下文压缩策略，例如对较早对话做摘要压缩。
 - 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
-- 本地 evals。
+- 完整本地 eval suite，例如 bugfix、feature、refactor、tests、security review 任务集。
+- subagent runtime 统一，减少主/子 agent 工具执行、审批和 runtime 行为差异。
+- ACP 兼容前置能力：单 provider 模型切换、公共 plan snapshot、公共 changed-files/diff snapshot、session replay view model、统一 cancel controller、UI-independent approval adapter。
 
 ## MVP 实现状态
 
@@ -61,8 +64,11 @@
 - TUI 审批 UI 已实现：时间流中先展示完整 diff preview，底部输入区展示内联审批提示，用户可以用 `Y`/`Enter` 批准或 `N`/`Esc` 拒绝。
 - 写入审批已补充目标文件校验：如果文件编辑请求无法识别目标文件，不弹出审批，也不阻塞整轮任务；系统会把可修正的工具结果返回给模型，让模型用明确路径或合法 diff 重试。
 - 文件操作卡片功能已移除，当前 timeline 保持结构化工具活动聚合；文件修改结果主要通过最终文件变更摘要和 `Ctrl+D` diff 面板查看。
-- `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
+- `Ctrl+T` 任务计划面板、`Ctrl+D` 文件变更/diff 面板已实现；`Ctrl+L` 可打开可选择/复制的纯文本 timeline 视图；任务结束后会输出文件变更摘要，支持查看按文件拆分的 diff。
 - 会话历史治理已实现基础版：任务正常完成后裁剪内部 todo 工具调用和工具结果，减少下一个任务被旧 Task State 污染。
+- 长任务摘要记忆首版已实现：任务完成后写入结构化摘要，保留目标、约束、文件、决策、验证和风险等关键信息，再清理 todo artifacts。
+- 本地 evals MVP 已实现：`context_session_baseline` 覆盖任务摘要、todo artifacts 裁剪、恢复 session 后 summary 可用和工具输出压缩链路。
+- Timeline 搜索项语义化展示已实现：长 regex 不再作为主展示内容，完整 pattern 仍保留在 metadata 中。
 - Workspace / workdir 统一已完成主要收口：命令入口支持位置参数 workspace，workspace-bound 工具使用 runtime 注入的 `workdir`，subagent 继承父 workdir。
 - Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 - subagent 显式 skill 委派首版已实现，详见 [Subagent 显式 Skill 委派设计](subagent_explicit_skill_design.md)。
@@ -89,8 +95,9 @@
 8. Workspace / Workdir 统一
 9. Session messages 持久化与恢复
 10. Message Token Manager
-11. 任务依赖图 / DAG 调度
-12. evals
+11. ACP 兼容前置能力
+12. 任务依赖图 / DAG 调度
+13. evals
 ```
 
 其中 MVP 建议先做前 4 项。
@@ -417,13 +424,13 @@ dependency_graph(path)
 
 ## Phase 6: 上下文任务摘要
 
-状态：部分实现。
+状态：已实现完成，可选体验增强待定。
 
-当前已实现旧工具输出轻度压缩，以及任务正常完成后的内部 todo 工具调用裁剪。尚未实现对较早 Human/AI 对话的摘要压缩，也尚未在压缩摘要中稳定保留完整任务级记忆。
+当前已实现旧工具输出轻度压缩、任务正常完成后的内部 todo 工具调用裁剪，以及确定性的 Task Summary Memory。任务完成后会保留任务级摘要，再清理 todo artifacts，避免下一个任务被旧 Task State 重复污染；在上下文压力下也支持旧 summary 合并并保留最新/recent messages。核心长任务摘要记忆能力已完成，后续如果继续投入，应定位为可选体验或模型增强，例如 Message Token Manager 手动 summary 入口、summary undo、UI 统计展示和模型生成式补充。详细方案见 [长任务摘要记忆设计](long_task_summary_memory_design.md)。
 
 ### 背景
 
-当前上下文压缩只压缩旧工具输出。长任务还需要保留任务级摘要，避免丢失关键决策。
+当前上下文压缩已能压缩旧工具输出，并在任务结束后保存确定性任务摘要。长任务摘要记忆核心链路已经完成；后续如有需要，重点不再是补齐核心摘要能力，而是优化可视化、手动操作、撤销和模型补充体验。
 
 ### 摘要内容
 
@@ -440,9 +447,10 @@ next_steps
 
 ### 触发时机
 
-- 上下文超过阈值。
-- 完成一个大的 todo 阶段。
-- subagent 返回大量信息后。
+- 已实现：正常任务完成后生成任务级摘要。
+- 已实现：上下文压力下合并旧 summary，并保留最新/recent messages。
+- 可选增强：在 Message Token Manager 中提供手动 summary / undo 入口。
+- 可选增强：用模型生成式摘要补充确定性字段之外的说明。
 
 ### 风险
 
@@ -736,9 +744,13 @@ agent/session_store.py
 
 ## Phase 8: Evals
 
+状态：MVP 已实现，完整 suite 待做。
+
 ### 目标
 
 建立本地评测集，判断 code agent 是否真的变强。
+
+当前已有 `evals/run.py` 和 `context_session_baseline`，用于在上下文治理和 session 持久化相关改动前后做确定性基线检查。
 
 ### 建议目录
 
@@ -771,7 +783,55 @@ expected.patch 可选
 
 ### 估算
 
-工作量：中，约 `1-2 天`。
+MVP 已完成。完整 bugfix/feature/refactor/tests/security review suite 工作量：中，约 `1-2 天`。
+
+## Phase 8.5: ACP 兼容前置能力
+
+状态：待实现。详细协议调研见 [ACP 调研与 yoyoagent 实现方案](acp_research_and_implementation_plan.md)。
+
+### 背景
+
+ACP 最终需要把 yoyoagent 作为编辑器外部 agent 暴露出去。但在实现协议适配前，应先补齐一组项目内部通用能力，让 TUI、CLI、后续 ACP server 共享同一份状态和控制语义，而不是在 ACP 层重复实现。
+
+该阶段不直接实现 ACP JSON-RPC server，目标是先把 yoyoagent 自身抽象收口。
+
+### 目标
+
+- 支持单 provider 下的模型字符串切换。
+- 提供标准化 plan snapshot，供 TUI/ACP/日志复用。
+- 提供标准化 changed-files/diff snapshot，避免文件变更逻辑只存在于 TUI runner。
+- 提供 session replay view model，让外部 UI 能恢复展示历史。
+- 提供统一 cancel controller，TUI/CLI/ACP 共用取消语义。
+- 抽象 UI-independent approval adapter，TUI/ACP 都能挂接同一审批请求。
+
+### 待办
+
+1. 单 provider model 切换：`Session` 提供 `set_model(model: str)` 或等价 API，更新 provider model 后重建 graph，重新推断 context window，TUI header 能显示新模型。
+2. 公共 plan snapshot：从 `TodoManager` 导出稳定结构，包含 entries、memory、updated_at，TUI Task Plan 和后续 ACP plan update 复用。
+3. 公共 changed-files/diff snapshot：把任务结束文件变更 summary 从 TUI runner 抽到非 TUI 层，TUI `Ctrl+D` 和后续 ACP file locations 复用。
+4. Session replay view model：从 canonical `Session.messages` 派生可展示历史，识别 user/assistant/summary/tool/context，不新增第二份持久化 truth。
+5. 统一 cancel controller：TUI current task 和后续 ACP prompt task 共用取消语义，返回 `cancelled`、`not_running`、`already_finished`。
+6. UI-independent approval adapter：把审批决策抽象为 `approved`、`denied`、`cancelled`，保留 action、tool、paths、reason、risk、diff preview。
+
+### 验收标准
+
+- 不引入 ACP server，也能通过单元测试验证上述公共能力。
+- TUI 现有行为不回退。
+- 新 snapshot 不依赖 Rich/Textual。
+- changed-files 逻辑从 TUI runner 抽出后，现有文件变更摘要和 `Ctrl+D` 仍可用。
+- model 切换后下一轮请求使用新 model。
+- cancel 在 TUI 中保持原行为，并为外部 runner 留出复用入口。
+
+### 后续与 ACP 的映射
+
+| 项目内部能力 | 后续 ACP 映射 |
+| --- | --- |
+| model switch | `session/set_model` 或 model config option |
+| plan snapshot | `session/update` plan |
+| changed-files snapshot | `tool_call_update` locations/content |
+| replay view model | `session/load` replay |
+| cancel controller | `session/cancel` |
+| approval adapter | `session/request_permission` |
 
 ## 当前待办优先级
 
@@ -779,18 +839,19 @@ P0-P2 收口后，近期待办更新为：
 
 ### P1
 
-1. 长任务摘要记忆：对较早 Human/AI 对话做摘要压缩，稳定保留 goal、constraints、files、decisions、test results、risks 和 next steps。
-2. 本地 evals MVP：建立 `evals/tasks/*`，覆盖 bugfix、feature、tests、security review 等核心任务。
-3. subagent runtime 统一：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
+1. ACP 兼容前置能力：先补 yoyoagent 内部通用能力，包括 model 切换、plan snapshot、changed-files snapshot、session replay view model、cancel controller 和 approval adapter。
+2. subagent runtime 统一：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
 
 ### P2
 
+3. ACP stdio server MVP：在内部能力收口后实现 `initialize/session/new/session/prompt/approval/cancel/load`。
 4. LSP 增强：完整 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
-5. Message Token Manager 后续：多步 operation history、配置化阈值、模型生成式摘要压缩。
+5. Message Token Manager 后续：多步 operation history、配置化阈值和模型生成式摘要压缩。
 
 ### P3
 
-6. DAG / task dependency graph：任务依赖图、复杂并发调度和后台 subagent 编排。
+7. 完整本地 eval suite：建立 `evals/tasks/*`，覆盖 bugfix、feature、refactor、tests、security review 等核心任务。
+8. DAG / task dependency graph：任务依赖图、复杂并发调度和后台 subagent 编排。
 
 近期明确暂缓：Help modal 额外手动微调，`:messages`/`:plan`/`:diff` 等新 TUI 命令，以及 Message Token Manager 多步 history/config 的立即实现。
 
@@ -809,7 +870,7 @@ P0-P2 收口后，近期待办更新为：
 8. 基础上下文治理
 ```
 
-MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版和 TUI 命令/帮助都已进入可用状态。后续重点转为长任务记忆、evals、subagent runtime 统一和 DAG 调度。
+MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版、TUI 命令/帮助、长任务摘要记忆首版和本地 evals MVP 都已进入可用状态。后续重点转为 ACP 兼容前置能力、subagent runtime 统一、ACP stdio MVP、完整 eval suite 和 DAG 调度。
 
 MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 
@@ -821,12 +882,13 @@ MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 
 当前推荐按增强阶段推进：
 
-1. **长任务摘要记忆**：对较早 Human/AI 对话做摘要压缩，稳定保留 goal、constraints、files、decisions、test results、risks 和 next steps。
-2. **本地 evals MVP**：建立 `evals/tasks/*`，覆盖 bugfix、feature、tests、security review 等核心任务，形成回归基线。
-3. **subagent runtime 统一**：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService，减少主/子 agent 行为差异。
+1. **ACP 兼容前置能力**：先做项目内部能力，不直接做协议层。顺序为 model 切换、plan snapshot、changed-files snapshot、session replay view model、cancel controller、approval adapter。
+2. **subagent runtime 统一**：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService，减少主/子 agent 行为差异。
+3. **ACP stdio server MVP**：实现 `initialize/session/new/session/prompt`，再补 approval、cancel 和 session/load replay。
 4. **LSP 增强**：在只读 MVP 基础上继续完善 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
 5. **Message Token Manager 增强**：在最近一次 undo 基础上继续做多步 operation history、配置化阈值和模型生成式摘要压缩。
-6. **DAG / task dependency graph**：实现任务依赖图、复杂并发调度和后台 subagent 编排。
+6. **完整本地 eval suite**：在 `context_session_baseline` 之外增加 bugfix、feature、refactor、tests、security review 任务集。
+7. **DAG / task dependency graph**：实现任务依赖图、复杂并发调度和后台 subagent 编排。
 
 已丢弃/暂缓的近期项：
 

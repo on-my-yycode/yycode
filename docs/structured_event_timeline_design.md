@@ -166,7 +166,7 @@ Display:
 Input:
 
 ```json
-{"pattern": "tool_result", "path": "agent", "after_context": 3}
+{"pattern": "_render_task_state_summary|_activity_line|_detail_line", "path": "agent/tui/renderers.py", "after_context": 3}
 ```
 
 Display:
@@ -174,12 +174,16 @@ Display:
 ```json
 {
   "title": "Search code",
-  "detail": "Searching agent for tool_result",
+  "detail": "Searching agent/tui/renderers.py · 3 keywords",
   "phase": "exploring",
   "tool_name": "grep",
-  "file_paths": ["agent"]
+  "file_paths": ["agent/tui/renderers.py"],
+  "terms": ["_render_task_state_summary", "_activity_line", "_detail_line"],
+  "pattern_preview": "_render_task_state_summary|_activity_line|_detail_line"
 }
 ```
+
+搜索类工具已采用语义优先展示：时间流主信息显示搜索范围、关键词数量、关键词预览和耗时；完整原始 pattern 仍保留在 metadata 中，供调试或后续展开视图使用。
 
 ### apply_patch
 
@@ -653,8 +657,8 @@ Example:
 
 ```text
 ├─ Search code
-│  key_up|history|prompt
-│  agent tests
+│  Searching agent/tui/renderers.py · 8 keywords
+│  terms: render_task_state_summary, activity_line, detail_line...
 │  34ms
 ```
 
@@ -667,6 +671,8 @@ Running example:
 ```
 
 The renderer should derive these titles in the TUI layer where possible, using existing structured event fields first and existing content parsing only as a fallback.
+
+Timeline 主视图目前仍基于 RichLog，适合结构化渲染但不支持直接选择文字。后续可新增只读文本视图作为复制入口：主视图继续负责实时展示，文本视图负责可选择、可复制和长内容检索。
 
 ### Usage Rendering
 

@@ -140,6 +140,31 @@ Screen {
     background: #101216;
 }
 
+#timeline-text-dialog {
+    width: 1fr;
+    height: 1fr;
+    margin: 1 2;
+    padding: 1 2;
+    border: round #3f4652;
+    background: #101216;
+}
+
+#timeline-text-header {
+    width: 1fr;
+    height: 1;
+    color: #7f8794;
+    background: #101216;
+    margin-bottom: 1;
+}
+
+#timeline-text-body {
+    width: 1fr;
+    height: 1fr;
+    color: #d7dae0;
+    background: #101216;
+    scrollbar-size: 1 1;
+}
+
 #changed-files-dialog {
     width: 1fr;
     height: 1fr;

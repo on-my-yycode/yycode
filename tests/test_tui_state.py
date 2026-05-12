@@ -1,10 +1,13 @@
 """Tests for TUI state updates."""
 
+from rich.text import Text
 from textual.markup import to_content
 
+from agent.runtime.tool_events import format_tool_event_metadata
 from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
+from agent.tui.app import _timeline_markup_to_plain_text
 from agent.tui.renderers import (
     render_brand_text,
     render_status_text,
@@ -12,6 +15,53 @@ from agent.tui.renderers import (
     render_timeline_lines,
 )
 from agent.tui.state import TuiState
+
+
+def test_timeline_markup_to_plain_text_keeps_dynamic_brackets():
+    content = "[#7f8794]\\[latest] showing[/] [#d7dae0]1-24[/] [bold]events[/]"
+
+    plain = _timeline_markup_to_plain_text(content)
+
+    assert "[latest] showing" in plain
+    assert "1-24" in plain
+    assert "events" in plain
+    assert "[#7f8794]" not in plain
+
+
+def test_timeline_markup_is_parseable_for_bracket_heavy_content():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="text_delta",
+            content="[Task Summary Memory]\ncovered_messages: 1129-1141\n[latest] should be escaped",
+        )
+    )
+
+    rendered = render_timeline_lines(state, header_mode="main")
+
+    Text.from_markup(rendered)
+
+
+def test_timeline_renders_context_summarized_event():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="context_summarized",
+            content="Task summary saved for messages 1-6",
+        )
+    )
+
+    rendered = render_timeline_lines(state, header_mode="main")
+
+    assert "[context]" in rendered
+    assert "Task summary saved" in rendered
+    Text.from_markup(rendered)
 
 
 def test_tui_state_updates_message_context_header():
@@ -1377,3 +1427,83 @@ def test_tui_timeline_formats_load_skill_input_readably():
     plain = to_content(transcript).plain
     assert "Input names=plan, code_workflow" in plain
     assert "\\['plan'" not in transcript
+
+
+def test_tui_timeline_renders_grep_search_semantically():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="plan")
+    state.add_user_input("sess-1", "find timeline renderer")
+    pattern = (
+        "_render_task_state_summary|_activity_line|_detail_line|_status_badge|"
+        "_render_files_changed_table|colorize_diff_for_tui|_indent_block"
+    )
+    metadata = {
+        "args": {"pattern": pattern, "path": "agent/tui/renderers.py"},
+        "search_display": "Searching agent/tui/renderers.py · 7 keywords",
+        "pattern_preview": "_render_task_state_summary|_activity_line|_detail_line|_status_badge...",
+        "search_terms": [
+            "_render_task_state_summary",
+            "_activity_line",
+            "_detail_line",
+            "_status_badge",
+            "_render_files_changed_table",
+        ],
+        "term_count": 7,
+        "path": "agent/tui/renderers.py",
+    }
+
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_start",
+            title="Search code",
+            detail="Searching agent/tui/renderers.py · 7 keywords",
+            status="running",
+            tool_name="grep",
+            file_paths=["agent/tui/renderers.py"],
+            metadata=metadata,
+        )
+    )
+    state.apply_event(
+        StreamEvent(
+            source="main",
+            session_id="sess-1",
+            event_type="tool_end",
+            title="Search code",
+            detail="Searching agent/tui/renderers.py · 7 keywords",
+            status="completed",
+            tool_name="grep",
+            file_paths=["agent/tui/renderers.py"],
+            metadata=metadata,
+            elapsed_ms=2,
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+    plain = to_content(transcript).plain
+
+    assert "searched 7 keywords in 1 file" in plain
+    assert "Searching agent/tui/renderers.py · 7 keywords" in plain
+    assert "terms: _render_task_state_summary, _activity_line, _detail_line..." in plain
+    assert "2ms" in plain
+    assert pattern not in plain
+    assert state.active_task["current_action"] == "Searching code..."
+
+
+def test_grep_tool_event_metadata_preserves_raw_pattern_and_adds_ui_summary():
+    class ToolCall:
+        name = "grep"
+        args = {
+            "pattern": "alpha|beta|gamma|delta",
+            "path": ".",
+        }
+
+    event = format_tool_event_metadata(ToolCall())
+    metadata = event["metadata"]
+
+    assert metadata["args"]["pattern"] == "alpha|beta|gamma|delta"
+    assert metadata["path"] == "workspace"
+    assert metadata["term_count"] == 4
+    assert metadata["search_terms"] == ["alpha", "beta", "gamma", "delta"]
+    assert event["detail"] == "Searching workspace · 4 keywords"

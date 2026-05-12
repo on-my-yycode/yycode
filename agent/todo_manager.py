@@ -26,6 +26,7 @@ class TodoManager:
         self.consecutive_non_todo_rounds: int = 0
         self.task_state_started: bool = False
         self.task_completed: bool = False
+        self.completed_items: List[Dict[str, Any]] = []
         self.last_incomplete_signature: Optional[tuple] = None
         self.repeated_incomplete_updates: int = 0
 
@@ -50,7 +51,7 @@ class TodoManager:
     def get_task_state(self) -> Dict[str, Any]:
         """Get the complete task state."""
         return {
-            "items": list(self.todo_items),
+            "items": list(self.todo_items or self.completed_items),
             "memory": self.get_memory(),
         }
 
@@ -126,6 +127,7 @@ class TodoManager:
     def _clear_on_completion(self) -> None:
         """Clear todo list when all items are completed."""
         logger.info("All tasks completed! Todo list has been cleared.")
+        self.completed_items = list(self.todo_items)
         self.todo_items = []
         self.task_completed = True
         self.consecutive_non_todo_rounds = 0
@@ -137,6 +139,7 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.completed_items = []
         self.last_incomplete_signature = None
         self.repeated_incomplete_updates = 0
 
@@ -147,6 +150,7 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.completed_items = []
         self.last_incomplete_signature = None
         self.repeated_incomplete_updates = 0
 
@@ -159,6 +163,7 @@ class TodoManager:
         self.consecutive_non_todo_rounds = 0
         self.task_state_started = False
         self.task_completed = False
+        self.completed_items = []
         self.last_incomplete_signature = None
         self.repeated_incomplete_updates = 0
 

@@ -221,6 +221,18 @@ class MessageContextSession:
         return None
 
 
+class RefreshTrackingSession(MessageContextSession):
+    """Session stub that changes messages before emitting a context event."""
+
+    def __init__(self):
+        super().__init__()
+        self.refresh_calls = 0
+
+    async def analyze_message_context(self):
+        self.refresh_calls += 1
+        return await super().analyze_message_context()
+
+
 def test_submit_nowait_records_user_input_before_task_finishes():
     async def run():
         state = TuiState()
@@ -239,6 +251,38 @@ def test_submit_nowait_records_user_input_before_task_finishes():
         assert runner.current_task is not None
         assert not runner.current_task.done()
         await runner.cancel_current_task()
+
+    asyncio.run(run())
+
+
+def test_runner_refreshes_message_context_header_on_context_events():
+    async def run():
+        state = TuiState()
+        events = []
+
+        async def on_state_change(event):
+            events.append(event)
+
+        runner = AgentTuiRunner(Namespace(silent=False), state=state, on_state_change=on_state_change)
+        session = RefreshTrackingSession()
+        session.messages = [HumanMessage(content="before"), HumanMessage(content="after compression")]
+        runner.session = session
+        state.set_startup_info(session_id="sess-1", model_name="fake-model", skills_text="(none)")
+
+        session.messages = [HumanMessage(content="after compression")]
+        await runner.handle_stream_event(
+            StreamEvent(
+                source="main",
+                session_id="sess-1",
+                event_type="context_summarized",
+                content="merged completed task history (900 -> 120 tokens, estimated)",
+            )
+        )
+
+        assert state.message_context_header.message_count == 1
+        assert state.message_context_header.context_window_tokens == 1_000
+        assert session.refresh_calls == 1
+        assert events[-1].event_type == "context_summarized"
 
     asyncio.run(run())
 

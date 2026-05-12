@@ -7,6 +7,7 @@ from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from agent.context_compressor import ContextCompressor
+from agent.task_memory import is_task_summary_memory
 from agent.session_store import FileSessionStore, workspace_hash
 from agent.session import (
     DOUBAO_CODE_CONTEXT_WINDOW_TOKENS,
@@ -531,6 +532,156 @@ def test_session_prunes_ephemeral_context_after_completed_task(tmp_path):
         isinstance(message, ToolMessage) and message.name == "read_file"
         for message in session.messages
     )
+
+
+def test_session_adds_summary_memory_before_pruning_completed_task(tmp_path):
+    events = []
+
+    async def capture_event(event):
+        events.append(event)
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        runtime_data_dir=tmp_path / "runtime",
+        stream_callback=capture_event,
+    )
+
+    asyncio.run(session.send("hello"))
+
+    summaries = [message for message in session.messages if is_task_summary_memory(message)]
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert "## Current Plan" in summary.content
+    assert "Handle test request" in summary.content
+    assert not any(
+        isinstance(message, ToolMessage) and message.name == "todo"
+        for message in session.messages
+    )
+    assert any(event.event_type == "context_summarized" for event in events)
+
+
+def test_session_collapses_completed_task_history_to_summary_memory(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        runtime_data_dir=tmp_path / "runtime",
+    )
+
+    asyncio.run(session.send("hello"))
+
+    assert len(session.messages) == 2
+    assert isinstance(session.messages[0], HumanMessage)
+    assert session.messages[0].content == "hello"
+    assert is_task_summary_memory(session.messages[1])
+    assert not any(isinstance(message, AIMessage) for message in session.messages)
+    assert not any(isinstance(message, ToolMessage) for message in session.messages)
+
+
+def test_session_persists_summary_memory(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        runtime_data_dir=tmp_path / "runtime",
+    )
+
+    asyncio.run(session.send("hello"))
+
+    restored = session.message_store.load(session.id)
+    summaries = [message for message in restored if is_task_summary_memory(message)]
+    assert len(summaries) == 1
+    assert summaries[0].additional_kwargs["summary_memory"] is True
+
+
+def test_session_merges_old_task_summaries_when_context_remains_high(tmp_path):
+    events = []
+
+    async def capture_event(event):
+        events.append(event)
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        context_window_tokens=400,
+        runtime_data_dir=tmp_path / "runtime",
+        stream_callback=capture_event,
+    )
+    session.context_compressor.keep_recent_messages = 2
+    session.context_compressor.compression_ratio = 0.2
+    builder = session.task_summary_memory_builder
+    first = builder.build(
+        [HumanMessage(content="task one"), AIMessage(content="done")],
+        start_index=0,
+        task_state={
+            "items": [{"id": "1", "text": "task one", "status": "completed"}],
+            "memory": {
+                "user_goal": "task one",
+                "files_modified": ["one.py"],
+            },
+        },
+    ).to_message()
+    second = builder.build(
+        [HumanMessage(content="task two"), AIMessage(content="done")],
+        start_index=0,
+        task_state={
+            "items": [{"id": "1", "text": "task two", "status": "completed"}],
+            "memory": {
+                "user_goal": "task two",
+                "files_modified": ["two.py"],
+            },
+        },
+    ).to_message()
+    session.messages = [
+        HumanMessage(content="task one"),
+        first,
+        HumanMessage(content="task two"),
+        second,
+        HumanMessage(content="latest request"),
+        AIMessage(content="latest response"),
+    ]
+
+    asyncio.run(session._merge_old_task_summary_context_if_needed())
+
+    assert len(session.messages) == 3
+    assert is_task_summary_memory(session.messages[0])
+    assert "source: automatic_merge" in session.messages[0].content
+    assert "- task one" in session.messages[0].content
+    assert "- task two" in session.messages[0].content
+    assert "- one.py" in session.messages[0].content
+    assert "- two.py" in session.messages[0].content
+    assert session.messages[1].content == "latest request"
+    assert session.messages[2].content == "latest response"
+    assert any(
+        event.event_type == "context_summarized"
+        and "merged completed task history" in event.content
+        for event in events
+    )
+
+
+def test_session_does_not_merge_raw_tool_chain_without_summary(tmp_path):
+    session = Session(
+        provider=FakeProvider(),
+        workdir=tmp_path,
+        context_window_tokens=400,
+        runtime_data_dir=tmp_path / "runtime",
+    )
+    session.context_compressor.keep_recent_messages = 1
+    session.context_compressor.compression_ratio = 0.2
+    session.messages = [
+        HumanMessage(content="old task"),
+        AIMessage(
+            content="",
+            tool_calls=[{"id": "read-1", "name": "read_file", "args": {"path": "README.md"}}],
+        ),
+        ToolMessage(content="readme" * 200, tool_call_id="read-1", name="read_file"),
+        HumanMessage(content="latest request"),
+    ]
+
+    before = list(session.messages)
+
+    asyncio.run(session._merge_old_task_summary_context_if_needed())
+
+    assert session.messages == before
 
 
 def test_session_accumulates_usage_from_tool_messages(tmp_path):

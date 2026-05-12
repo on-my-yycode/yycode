@@ -26,6 +26,11 @@ from agent.skills import SkillRegistry, parse_skill_paths
 from agent.session_store import FileSessionStore, SessionStore, SessionStoreError
 from agent.context_compressor import ContextCompressor
 from agent.streaming import StreamEvent, StreamEventCallback, StreamPrinter
+from agent.task_memory import (
+    TaskSummaryMemoryBuilder,
+    build_merged_task_summary_memory,
+    is_task_summary_memory,
+)
 from agent.todo_manager import TodoManager
 from tools import TOOLS
 
@@ -105,6 +110,7 @@ class Session:
             context_window_tokens=self.context_window_tokens,
         )
         self.message_context_manager = MessageContextManager()
+        self.task_summary_memory_builder = TaskSummaryMemoryBuilder()
 
     def _resolve_skill_dirs(self, skill_dirs: Optional[Iterable[str]]) -> list[str]:
         default_dir = str(self.app_root / "skills")
@@ -407,13 +413,17 @@ Final answer:
             self.messages.append(self._approval_denied_message(exc))
         except LLMCallError as exc:
             self.messages.append(self._llm_failed_message(exc))
+        terminal_msg = self.messages[-1] if self.messages else None
+        new_messages_for_usage = self.messages[previous_message_count:]
         if completed_normally:
+            summary_message = await self._summarize_completed_task_context(task_start_index)
             self._prune_todo_artifacts(task_start_index)
+            if summary_message is not None:
+                self._collapse_completed_task_context(task_start_index)
         self._save_messages()
-        last_msg = self.messages[-1] if self.messages else None
-        self.last_usage = self._extract_usage_from_message(last_msg)
-        self._accumulate_usage_from_messages(self.messages[previous_message_count:])
-        return last_msg
+        self.last_usage = self._extract_usage_from_message(terminal_msg)
+        self._accumulate_usage_from_messages(new_messages_for_usage)
+        return terminal_msg
 
     async def send_stream(self, content: str) -> AsyncGenerator[str, None]:
         """Send a user message and stream response text."""
@@ -431,14 +441,18 @@ Final answer:
             self.messages.append(self._approval_denied_message(exc))
         except LLMCallError as exc:
             self.messages.append(self._llm_failed_message(exc))
+        terminal_msg = self.messages[-1] if self.messages else None
+        new_messages_for_usage = self.messages[previous_message_count:]
         if completed_normally:
+            summary_message = await self._summarize_completed_task_context(task_start_index)
             self._prune_todo_artifacts(task_start_index)
+            if summary_message is not None:
+                self._collapse_completed_task_context(task_start_index)
         self._save_messages()
-        last_msg = self.messages[-1] if self.messages else None
-        self.last_usage = self._extract_usage_from_message(last_msg)
-        self._accumulate_usage_from_messages(self.messages[previous_message_count:])
-        if last_msg and hasattr(last_msg, "content"):
-            yield last_msg.content
+        self.last_usage = self._extract_usage_from_message(terminal_msg)
+        self._accumulate_usage_from_messages(new_messages_for_usage)
+        if terminal_msg and hasattr(terminal_msg, "content"):
+            yield terminal_msg.content
 
     def _approval_denied_message(self, exc: ApprovalDenied) -> AIMessage:
         """Create a terminal assistant message when the user denies approval."""
@@ -477,8 +491,59 @@ Final answer:
             preserved.append(message)
         self.messages = preserved
 
+    async def _summarize_completed_task_context(self, start_index: int) -> BaseMessage | None:
+        """Append deterministic task summary memory for a completed task."""
+        task_state = self.todo_manager.get_task_state()
+        if not self.task_summary_memory_builder.should_summarize(
+            self.messages,
+            start_index=start_index,
+            task_state=task_state,
+        ):
+            return None
+        summary = self.task_summary_memory_builder.build(
+            self.messages,
+            start_index=start_index,
+            task_state=task_state,
+        )
+        summary_message = summary.to_message()
+        self.messages.append(summary_message)
+        if self.stream_callback:
+            await self.stream_callback(
+                StreamEvent(
+                    source="main",
+                    session_id=self.id,
+                    event_type="context_summarized",
+                    content=(
+                        f"Task summary saved for messages "
+                        f"{summary.covered_start_index}-{summary.covered_end_index}"
+                    ),
+                    metadata={
+                        "covered_start_index": summary.covered_start_index,
+                        "covered_end_index": summary.covered_end_index,
+                    },
+                )
+            )
+        return summary_message
+
+    def _collapse_completed_task_context(self, start_index: int) -> None:
+        """Replace completed task execution history with its summary memory."""
+        if start_index >= len(self.messages):
+            return
+        preserved = self.messages[:start_index]
+        summaries = [
+            message
+            for message in self.messages[start_index:]
+            if is_task_summary_memory(message)
+        ]
+        if not summaries:
+            return
+        preserved.extend(summaries)
+        self.messages = preserved
+
     def _is_ephemeral_context_message(self, message: BaseMessage) -> bool:
         """Return whether a runtime-only reminder should be dropped after task completion."""
+        if is_task_summary_memory(message):
+            return False
         additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
         return bool(additional_kwargs.get("context_ephemeral"))
 
@@ -593,6 +658,75 @@ Final answer:
                     ),
                 )
             )
+        await self._merge_old_task_summary_context_if_needed()
+
+    async def _merge_old_task_summary_context_if_needed(self) -> None:
+        """Merge old completed-task summaries when context pressure remains high."""
+        original_tokens, original_exact = await self.count_context_tokens()
+        if original_tokens < self.context_compressor.threshold_tokens:
+            return
+        merge_end = self._task_summary_merge_end_index()
+        if merge_end is None:
+            return
+        before = self.messages
+        merged_summary = build_merged_task_summary_memory(
+            before[: merge_end + 1],
+            covered_start_index=0,
+            covered_end_index=merge_end,
+        ).to_message()
+        after = [merged_summary, *before[merge_end + 1:]]
+        compressed_tokens = self.estimate_messages_token_usage(after)
+        if compressed_tokens >= original_tokens:
+            return
+        self.messages = after
+        exact_after, compressed_exact = await self.count_context_tokens(after)
+        token_source = "exact" if original_exact and compressed_exact else "estimated"
+        final_tokens = exact_after if compressed_exact else compressed_tokens
+        if self.stream_callback:
+            await self.stream_callback(
+                StreamEvent(
+                    source="main",
+                    session_id=self.id,
+                    event_type="context_summarized",
+                    content=(
+                        f"merged completed task history "
+                        f"({original_tokens} -> {final_tokens} tokens, {token_source})"
+                    ),
+                    metadata={
+                        "covered_start_index": 0,
+                        "covered_end_index": merge_end,
+                        "merged_messages": merge_end + 1,
+                    },
+                )
+            )
+
+    def _task_summary_merge_end_index(self) -> int | None:
+        """Return the inclusive prefix end that is safe to merge, if any."""
+        recent_cutoff = max(len(self.messages) - self.context_compressor.keep_recent_messages, 0)
+        latest_user_index = self._latest_user_message_index()
+        hard_limit = recent_cutoff
+        if latest_user_index is not None:
+            hard_limit = min(hard_limit, latest_user_index)
+        if hard_limit <= 0:
+            return None
+
+        last_summary_index: int | None = None
+        summary_count = 0
+        for index, message in enumerate(self.messages[:hard_limit]):
+            if is_task_summary_memory(message):
+                last_summary_index = index
+                summary_count += 1
+        if last_summary_index is None:
+            return None
+        if summary_count < 2 and last_summary_index + 1 >= hard_limit:
+            return None
+        return last_summary_index
+
+    def _latest_user_message_index(self) -> int | None:
+        for index in range(len(self.messages) - 1, -1, -1):
+            if isinstance(self.messages[index], HumanMessage):
+                return index
+        return None
 
     def _save_messages(self) -> None:
         """Persist canonical message history when configured."""

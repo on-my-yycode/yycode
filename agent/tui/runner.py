@@ -240,6 +240,8 @@ class AgentTuiRunner:
     async def handle_stream_event(self, event: StreamEvent) -> None:
         """Update state and forward the event to the UI."""
         self.state.apply_event(event)
+        if event.event_type in {"context_compressed", "context_summarized"}:
+            await self.refresh_message_context_header()
         if self.on_state_change is not None:
             await self.on_state_change(event)
 

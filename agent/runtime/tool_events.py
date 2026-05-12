@@ -69,9 +69,11 @@ def format_tool_event_metadata(tc) -> dict:
     if tool_name == "grep":
         pattern = args.get("pattern", "")
         path = args.get("path", ".")
+        search_metadata = _grep_search_metadata(pattern, path)
+        metadata.update(search_metadata)
         return {
             "title": "Search code",
-            "detail": f"Searching {path} for {pattern}",
+            "detail": search_metadata["search_display"],
             "phase": "exploring",
             "tool_name": tool_name,
             "file_paths": [path],
@@ -239,6 +241,66 @@ def _detail_for_path_args(args: dict) -> str:
         return ", ".join(paths)
     command = args.get("command")
     return str(command or "")
+
+
+def _grep_search_metadata(pattern: object, path: object) -> dict:
+    pattern_text = str(pattern or "")
+    path_text = str(path or ".")
+    display_path = "workspace" if path_text == "." else path_text
+    terms = _grep_search_terms(pattern_text)
+    term_count = len(terms)
+    keyword_label = _keyword_label(term_count)
+    return {
+        "search_display": f"Searching {display_path} · {keyword_label}",
+        "pattern_preview": _truncate(pattern_text, 80),
+        "search_terms": terms[:5],
+        "term_count": term_count,
+        "path": display_path,
+    }
+
+
+def _grep_search_terms(pattern: str) -> list[str]:
+    if not pattern:
+        return []
+    raw_parts = pattern.split("|") if "|" in pattern else [pattern]
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_parts:
+        term = _clean_regex_term(raw)
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+    if not terms and pattern.strip():
+        return ["regex query"]
+    return terms
+
+
+def _clean_regex_term(raw: str) -> str:
+    term = raw.strip()
+    term = term.strip("()")
+    term = term.replace("\\_", "_").replace("\\-", "-").replace("\\.", ".")
+    term = term.replace("\\/", "/").replace("\\:", ":")
+    term = re.sub(r"\\b|\\B|\\A|\\Z", "", term)
+    if re.search(r"[\[\]\{\}\+\*\?\^\$]", term):
+        return "regex query"
+    term = re.sub(r"\\(.)", r"\1", term)
+    term = term.strip()
+    return _truncate(term, 48) if term else ""
+
+
+def _keyword_label(count: int) -> str:
+    if count <= 0:
+        return "regex query"
+    if count == 1:
+        return "1 keyword"
+    return f"{count} keywords"
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
 
 
 def _file_paths_from_args(args: dict) -> list[str]:

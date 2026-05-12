@@ -297,7 +297,7 @@ class TuiState:
 
         # 只有 text_delta 和 thinking_delta 能合并，其他都新建条目
         # 确保所有信息都显示在时间线上
-        always_new = {"usage", "context_compressed", "llm_timeout", "llm_retry", "llm_error", "file_changed", "files_changed_summary", "llm_waiting", "tool_start", "tool_end", "tool_result", "thinking_start", "thinking_end", "user_message", "agent_thinking"}
+        always_new = {"usage", "context_compressed", "context_summarized", "llm_timeout", "llm_retry", "llm_error", "file_changed", "files_changed_summary", "llm_waiting", "tool_start", "tool_end", "tool_result", "thinking_start", "thinking_end", "user_message", "agent_thinking"}
         existing = None
         if event.event_type == "text_delta" and self.timeline and self.timeline[-1].event_type == "text_delta":
             existing = self.timeline[-1] if self.timeline[-1].session_id == event.session_id else None
@@ -400,7 +400,10 @@ class TuiState:
         if event.event_type == "thinking_start":
             self.active_task['current_action'] = "Thinking..."
         elif event.event_type == "tool_start":
-            self.active_task['current_action'] = "Running tool"
+            if event.tool_name == "grep":
+                self.active_task['current_action'] = "Searching code..."
+            else:
+                self.active_task['current_action'] = "Running tool"
         elif event.event_type == "llm_waiting":
             self.active_task['current_action'] = "Waiting for model..."
         elif event.event_type == "text_delta":
@@ -483,6 +486,7 @@ class TuiState:
             "tool_result": "Tool result",
             "usage": "Usage updated",
             "context_compressed": "Context compressed",
+            "context_summarized": "Context summarized",
             "llm_waiting": "Waiting for model response",
             "llm_timeout": "Model request timed out",
             "llm_retry": "Retrying model request",

@@ -23,6 +23,7 @@ yoyoagent/
 │   ├── logger.py             # 调试日志
 │   ├── subagent.py           # 子代理执行器
 │   ├── todo_manager.py       # 任务管理器
+│   ├── task_memory.py        # 长任务摘要记忆：从 Task State 生成可保留的任务摘要
 │   ├── tool_retry.py         # 工具重试机制
 │   ├── streaming.py          # 流式输出处理
 │   ├── session.py             # 会话 facade：messages、graph、persistence、context/token 管理
@@ -80,6 +81,11 @@ yoyoagent/
 │   ├── test_hello.py         # 单元测试
 │   └── test_utils.py         # 单元测试
 │
+├── evals/                    # 本地行为评估基线，用于 context/session 等核心行为回归
+│   ├── run.py                # eval runner
+│   ├── common.py             # eval helper 和 fake provider
+│   └── tasks/                # 具体 eval 任务，当前包含 context_session_baseline
+│
 └── docs/                     # 文档目录
     ├── usage.md                              # 日常启动、会话、TUI、审批、技能和工具使用说明
     ├── project_structure.md                  # 项目结构、模块职责、工作流和扩展建议（本文档）
@@ -89,6 +95,7 @@ yoyoagent/
     ├── full_tui_design.md                    # Textual TUI 完整界面与交互设计
     ├── tui_flow_analysis.md                  # TUI 输入、事件流、渲染和审批流程分析
     ├── context_compression_design.md         # 长会话上下文压缩触发、裁剪和摘要策略
+    ├── long_task_summary_memory_design.md    # 长任务摘要记忆、触发策略、压缩边界和实现阶段
     ├── session_persistence_design.md         # Session messages 保存、恢复、列表、删除和临时会话设计
     ├── structured_event_timeline_design.md   # 结构化事件时间线的数据模型和 UI 演进方案
     ├── task_graph_dag_design.md              # 复杂任务 DAG 调度、依赖关系和状态管理设计

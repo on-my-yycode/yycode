@@ -148,6 +148,8 @@ class ConsoleStreamRenderer:
             self._print_usage(event)
         elif event.event_type == "context_compressed":
             self._print_context_compressed(event)
+        elif event.event_type == "context_summarized":
+            self._print_context_summarized(event)
         elif event.event_type in ["llm_waiting", "llm_timeout", "llm_retry", "llm_error"]:
             self._print_llm_status(event)
 
@@ -204,6 +206,12 @@ class ConsoleStreamRenderer:
         self.first_line = False
 
     def _print_context_compressed(self, event: StreamEvent) -> None:
+        if not self.first_line:
+            print()
+        print(f"\033[90m[context] {event.content}\033[0m", flush=True)
+        self.first_line = False
+
+    def _print_context_summarized(self, event: StreamEvent) -> None:
         if not self.first_line:
             print()
         print(f"\033[90m[context] {event.content}\033[0m", flush=True)
