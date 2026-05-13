@@ -12,6 +12,8 @@ python main.py ~/project       # 指定工作区目录启动
 python main.py -a              # 自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
+python main.py --acp           # 启动 ACP stdio server
+python main.py acp             # 同上，便于作为子命令使用
 python main.py -s              # 列出当前工作区可恢复的 sessions
 python main.py -r abc          # 恢复同一工作区下指定 session 的历史 messages
 python main.py -x abc          # 删除同一工作区下指定 session
@@ -50,6 +52,18 @@ YOYO_AUTO_APPROVE=true python main.py
 默认技能目录是 `{app_root}/skills`。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
+
+## ACP stdio server
+
+Yoyo Agent 可以作为 Agent Client Protocol stdio server 启动，供 Zed 等 ACP client 连接：
+
+```bash
+yoyoagent --acp
+# 或
+yoyoagent acp
+```
+
+首版支持 `initialize`、`session/new`、`session/load`、`session/prompt`、`session/cancel`，并把内部 `StreamEvent` 转为 `session/update`。写文件或高风险命令仍复用 yoyoagent runtime approval，并通过 `session/request_permission` 请求 client 审批。ACP 模式下 stdout 只输出 JSON-RPC 消息，日志和诊断信息写 stderr。
 
 ## TUI 快捷键
 

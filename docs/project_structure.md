@@ -21,6 +21,7 @@ yoyoagent/
 │   ├── graph.py              # LangGraph薄编排层
 │   ├── llm_retry.py          # LLM超时、心跳和重试
 │   ├── logger.py             # 调试日志
+│   ├── acp/                  # Agent Client Protocol stdio server 与协议适配层
 │   ├── cancellation.py       # 共享取消控制器，供 TUI/后续 ACP 复用
 │   ├── change_snapshot.py    # 共享文件变更/diff snapshot
 │   ├── plan_snapshot.py      # 共享任务计划 snapshot

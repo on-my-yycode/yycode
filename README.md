@@ -89,6 +89,8 @@ python main.py ~/project       # 指定工作区目录启动
 python main.py -a              # 自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
+python main.py --acp           # 启动 ACP stdio server
+python main.py acp             # 同上，便于作为子命令使用
 python main.py -s              # 列出当前工作区可恢复的 sessions
 python main.py -r abc          # 恢复指定 session 的历史 messages
 python main.py -x abc          # 删除指定 session

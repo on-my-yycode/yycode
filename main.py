@@ -214,6 +214,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 Examples:
   yoyoagent
   yoyoagent ~/project
+  yoyoagent --acp
+  yoyoagent acp
   yoyoagent -s
   yoyoagent -r bugfix-123
   yoyoagent -x bugfix-123
@@ -256,6 +258,11 @@ Environment:
         "--debug",
         action="store_true",
         help="Enable debug logging to console.",
+    )
+    parser.add_argument(
+        "--acp",
+        action="store_true",
+        help="Run the Agent Client Protocol stdio server.",
     )
     parser.add_argument(
         "--log-file",
@@ -367,6 +374,12 @@ def main() -> None:
     """Parse startup args and launch the TUI on the main thread."""
     parser = build_arg_parser()
     args = parser.parse_args()
+    if args.acp or args.workdir == "acp":
+        load_dotenv(override=True)
+        from agent.acp.server import main as acp_main
+
+        acp_main()
+        return
     args.workdir = resolve_startup_workdir(args.workdir)
     args.session_id = args.resume
 

@@ -37,6 +37,7 @@
 - 长任务摘要记忆首版：任务完成后保存确定性 Task Summary Memory，并清理 todo artifacts，降低后续上下文污染。
 - 本地 evals MVP：已有 `evals/run.py` 和 `context_session_baseline`，用于验证 context/session 基线。
 - Timeline 搜索项语义化展示：`grep`/搜索类工具优先显示搜索范围、关键词数量、关键词预览和耗时。
+- ACP stdio server MVP：`--acp` / `acp` 启动，支持 initialize/session/new/load/prompt/cancel/update/request_permission。
 
 主要欠缺：
 
@@ -44,7 +45,8 @@
 - 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
 - 完整本地 eval suite，例如 bugfix、feature、refactor、tests、security review 任务集。
 - subagent runtime 统一，减少主/子 agent 工具执行、审批和 runtime 行为差异。
-- ACP 兼容前置能力首版：单 provider 模型切换、公共 plan snapshot、公共 changed-files/diff snapshot、session replay view model、统一 cancel controller、UI-independent approval adapter。
+- Git worktree 任务隔离执行模式：为每个执行任务提供独立工作目录/分支，支撑安全回滚、任务审查和未来同 Project 多任务并发。
+- ACP 兼容后续打磨：根据首个真实 ACP client 兼容测试补齐 replay 细节、file locations、commands/modes 和 schema 字段差异。
 
 ## MVP 实现状态
 
@@ -846,13 +848,14 @@ P0-P2 收口后，近期待办更新为：
 ### P1
 
 1. subagent runtime 统一：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
+2. Git worktree 任务隔离执行模式：支持为任务创建独立 worktree/branch，在隔离工作区执行、收集 diff，并由用户决定合并或丢弃。
 
 ### P2
 
-2. ACP stdio server MVP：基于已完成的内部兼容能力实现 `initialize/session/new/session/prompt/approval/cancel/load`。
 3. ACP compatibility polish：根据首个 ACP client 兼容测试补齐 replay 细节、file locations 和 command/mode 暴露。
-4. LSP 增强：完整 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
-5. Message Token Manager 后续：多步 operation history、配置化阈值和模型生成式摘要压缩。
+4. ACP 单进程多 session 硬化：当前 `AcpSessionManager` 已按 `sessionId` 管理多个 session；后续补同 session prompt 串行 guard、LSP 生命周期隔离和多 session 并发回归。
+5. LSP 增强：完整 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
+6. Message Token Manager 后续：多步 operation history、配置化阈值和模型生成式摘要压缩。
 
 ### P3
 
@@ -876,7 +879,7 @@ P0-P2 收口后，近期待办更新为：
 8. 基础上下文治理
 ```
 
-MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版、TUI 命令/帮助、长任务摘要记忆首版、本地 evals MVP 和 ACP 兼容前置能力都已进入可用状态。后续重点转为 subagent runtime 统一、ACP stdio MVP、完整 eval suite 和 DAG 调度。
+MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版、TUI 命令/帮助、长任务摘要记忆首版、本地 evals MVP、ACP 兼容前置能力和 ACP stdio server MVP 都已进入可用状态。后续重点转为 subagent runtime 统一、ACP compatibility polish、完整 eval suite 和 DAG 调度。
 
 MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 
@@ -889,12 +892,13 @@ MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 当前推荐按增强阶段推进：
 
 1. **subagent runtime 统一**：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService，减少主/子 agent 行为差异。
-2. **ACP stdio server MVP**：基于已完成的兼容前置能力，实现 `initialize/session/new/session/prompt`，再补 approval、cancel 和 session/load replay。
+2. **Git worktree 任务隔离执行模式**：为任务创建独立 worktree/branch，在隔离目录中执行，完成后提供 diff、合并/丢弃建议，降低主工作区污染和回滚风险。
 3. **ACP compatibility polish**：根据 Zed/ACP client 兼容测试补齐 replay 细节、file locations 和 command/mode 暴露。
-4. **LSP 增强**：在只读 MVP 基础上继续完善 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
-5. **Message Token Manager 增强**：在最近一次 undo 基础上继续做多步 operation history、配置化阈值和模型生成式摘要压缩。
-6. **完整本地 eval suite**：在 `context_session_baseline` 之外增加 bugfix、feature、refactor、tests、security review 任务集。
-7. **DAG / task dependency graph**：实现任务依赖图、复杂并发调度和后台 subagent 编排。
+4. **ACP 单进程多 session 硬化**：当前 ACP server 结构上能创建和路由多个 session，但要成为 yoyohub 可依赖的稳定底座，还需要补同 session prompt 串行 guard、LSP manager 生命周期隔离，以及关闭/取消/并发场景回归。
+5. **LSP 增强**：在只读 MVP 基础上继续完善 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
+6. **Message Token Manager 增强**：在最近一次 undo 基础上继续做多步 operation history、配置化阈值和模型生成式摘要压缩。
+7. **完整本地 eval suite**：在 `context_session_baseline` 之外增加 bugfix、feature、refactor、tests、security review 任务集。
+8. **DAG / task dependency graph**：实现任务依赖图、复杂并发调度和后台 subagent 编排。
 
 已丢弃/暂缓的近期项：
 

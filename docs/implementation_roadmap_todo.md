@@ -43,6 +43,7 @@
 | Timeline 可选择文本视图 | 已实现 | `Ctrl+L` 打开只读纯文本视图，`Ctrl+Shift+C` 复制输出纯文本 |
 | 本地 evals MVP | 首版已实现 | `evals/run.py`、`context_session_baseline` 本地行为基线 |
 | ACP 兼容前置能力 | 首版已实现 | `agent/plan_snapshot.py`、`change_snapshot.py`、`session_replay.py`、`cancellation.py`，以及 `Session.set_model()` |
+| ACP stdio server MVP | 首版已实现 | `agent/acp/*`，支持 initialize/session/new/load/prompt/cancel/update/request_permission |
 
 ### 部分实现，需要继续收口
 
@@ -52,10 +53,12 @@
 | LSP | Python-only 可用 | 已有生命周期清理、噪声符号过滤、workspace 外 location 过滤；多语言 registry 和完整 diagnostics 未实现 |
 | Session 持久化 | 首版可用 | 已有损坏文件/保存失败 memory-only fallback、列表容错、删除缺失容错和原子写；不可写 app_root 用户数据目录 fallback、并发写恢复策略仍需增强 |
 | workspace / workdir | 主链路可用 | 已补绝对路径、符号链接逃逸、嵌套 workspace、apply_patch path escape/absolute/symlink 边界测试；发行前仍需平台回归 |
+| Git worktree 任务隔离 | 未实现，优先级上调 | 需要支持任务专属 worktree/branch、隔离执行、diff 收集、合并/丢弃建议和清理策略 |
 | Timeline 性能 | 已降负载 | 尚未做真正虚拟化；RichLog 全量 clear/write 仍可能成为瓶颈 |
 | 工具输出上下文治理 | 已压缩部分输出 | 中等大小 read/grep 输出仍可能占 1k-3k tokens；旧 sessions 需要清理/迁移策略 |
 | 用户意图反馈 | prompt 已约束 | 需要实际观察模型是否稳定在首个工具前输出意图，必要时做运行时 guard |
 | TUI command | 首版可用 | 命令数量少，缺少 `:sessions`、`:resume`、`:messages` 等统一入口 |
+| ACP 多 session | 结构支持，待硬化 | `AcpSessionManager` 已可在单进程保存多个 session；仍需同 session prompt 串行 guard、LSP 生命周期隔离和并发回归 |
 | 本地 evals | MVP 可用 | 已有 context/session baseline；完整 bugfix/feature/refactor/tests/security review eval suite 待做 |
 
 ### 尚未实现
@@ -92,7 +95,7 @@
 2. LSP 不应再只作为“推荐下一步”。当前应改为“Python-only MVP 已实现，待多语言和稳定性增强”。
 3. TUI command 系统需要新增到当前基础与后续路线。
 4. Markdown 渲染性能优化需要记录到 TUI timeline 已完成项。
-5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“subagent runtime 统一 -> ACP stdio MVP -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
+5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“subagent runtime 统一 -> Git worktree 任务隔离 -> ACP compatibility polish -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
 
 ## 下一阶段建议优先级
 
@@ -111,6 +114,13 @@
 - [x] 统一 cancel controller：TUI current task 和未来 ACP prompt task 共用取消语义。
 - [x] UI-independent approval adapter：审批请求与 TUI/ACP 展示解耦。
 
+后续硬化：
+
+- [ ] ACP 单进程多 session：保留当前 `sessionId -> Session` 管理结构，补齐稳定性边界。
+- [ ] 为同一个 ACP session 增加 prompt 串行 guard，避免并发请求同时修改 `messages`、`todo_manager` 或 graph 状态。
+- [ ] 调整 LSP manager 生命周期，避免关闭一个 session 时全局 shutdown 影响同进程其它 session。
+- [ ] 增加多 session 并发回归：不同 session 可并行执行；同 session 第二个 prompt 应排队或返回明确 busy 状态。
+
 验收：
 
 - model 切换后下一轮请求使用新 model。
@@ -118,8 +128,37 @@
 - replay view model 能识别 user/assistant/summary/tool/context。
 - cancel 结果有明确状态：`cancelled`、`not_running`、`already_finished`。
 - approval metadata 保留 action、tool、paths、reason、risk、diff preview。
+- ACP 单进程多 session 下，关闭一个 session 不影响其它 session 的 LSP/执行状态。
 
-#### 2. Timeline 可选择文本视图
+#### 2. Git worktree 任务隔离执行模式
+
+状态：未实现，优先级上调。
+
+目标：
+
+- 为 yoyoagent 提供可选的任务隔离执行目录，降低主工作区污染风险。
+- 支撑 yoyohub 后续“任务不满意可丢弃/回滚”和“同 Project 多任务并发”的产品能力。
+- 在不静默修改用户当前分支、不自动 merge 的前提下，提供清晰的 diff、合并和清理语义。
+
+建议范围：
+
+- [ ] 检测当前 workdir 是否为 Git 仓库，并读取当前 branch / HEAD / dirty 状态。
+- [ ] 创建任务专属 worktree 和 branch，例如 `yoyoagent/task-<id>` 或外部传入名称。
+- [ ] 让 Session/runtime 可以在 worktree path 中执行，同时保留原始 project workdir 引用。
+- [ ] 执行结束后收集 worktree 相对原始 HEAD 的 changed files / diff / patch。
+- [ ] 提供清理策略：保留 worktree、删除 worktree、删除临时 branch。
+- [ ] 明确不默认自动 merge、不默认 stash、不默认 reset 用户主工作区。
+- [ ] ACP/session metadata 暴露 worktree 信息，供 yoyohub 展示和后续合并/丢弃流程使用。
+
+验收：
+
+- Git 项目可为一次任务创建独立 worktree 并在其中运行工具。
+- 主 workdir 未被 agent 执行过程直接修改。
+- 任务结束能得到 worktree diff 和 changed files。
+- 放弃任务时可以安全清理 worktree，不影响主工作区。
+- 非 Git 项目或 worktree 创建失败时，有清晰 fallback/错误。
+
+#### 3. Timeline 可选择文本视图
 
 状态：已实现。
 
@@ -358,22 +397,25 @@
 
 ```text
 1. subagent runtime 统一
-2. ACP stdio server MVP
+2. Git worktree 任务隔离执行模式
 3. ACP compatibility polish
-4. Message Token Manager 压缩确认和大 session 回归
-5. 工具输出压缩阈值 per-tool 收紧
-6. Timeline 增量渲染 / 可见窗口渲染
-7. Session 持久化不可写 app_root fallback
-8. 多语言 LSP registry 与 LSP 增强
-9. 完整 eval suite
-10. Task Graph / DAG
+4. ACP 单进程多 session 硬化
+5. Message Token Manager 压缩确认和大 session 回归
+6. 工具输出压缩阈值 per-tool 收紧
+7. Timeline 增量渲染 / 可见窗口渲染
+8. Session 持久化不可写 app_root fallback
+9. 多语言 LSP registry 与 LSP 增强
+10. 完整 eval suite
+11. Task Graph / DAG
 ```
 
 原因：
 
-- ACP 兼容前置能力已完成，后续 ACP 可以主要做协议包装。
+- ACP 兼容前置能力与 stdio server MVP 已完成，后续重点转为真实 client 兼容打磨。
 - 1 能减少主/子 agent 工具执行和审批差异，为 ACP tool/approval 映射降复杂度。
-- 4-5 都是在收口当前已经实现的能力，风险低、收益直接。
+- 2 直接支撑 yoyohub 的任务隔离、回滚、审查和未来同 Project 多任务并发能力，应提前排期。
+- 4 是 yoyohub 等外部 client 复用同一个 ACP 进程时的稳定性前提；当前结构已支持多 session，但并发和 LSP 生命周期还需要硬化。
+- 5-6 都是在收口当前已经实现的能力，风险低、收益直接。
 - Timeline 可选择文本视图已完成；后续 timeline 工作转向增量渲染和可见窗口渲染。
 - LSP 启动状态提示本轮从近期 P0/P1 移除，后续并入 LSP 增强整体排期。
 - 6-7 是发行版本稳定性要求。
