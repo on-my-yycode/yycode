@@ -34,6 +34,7 @@ class AcpServer:
         stdin: TextIO | None = None,
         stdout: TextIO | None = None,
         stderr: TextIO | None = None,
+        auto_approve: bool = False,
     ) -> None:
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
@@ -41,7 +42,7 @@ class AcpServer:
         self._write_lock = asyncio.Lock()
         self._next_id = 1
         self._pending: dict[str | int, asyncio.Future] = {}
-        self.sessions = AcpSessionManager(self.notify, self.request_client)
+        self.sessions = AcpSessionManager(self.notify, self.request_client, auto_approve=auto_approve)
 
     async def serve(self) -> None:
         """Run the stdio read loop until EOF."""
@@ -182,16 +183,15 @@ def _project_version() -> str:
         return ""
 
 
-async def run_stdio_server() -> None:
+async def run_stdio_server(*, auto_approve: bool = False) -> None:
     """Run the ACP stdio server."""
-    await AcpServer().serve()
+    await AcpServer(auto_approve=auto_approve).serve()
 
 
-def main() -> None:
+def main(*, auto_approve: bool = False) -> None:
     """Synchronous entrypoint for python -m agent.acp.server."""
-    asyncio.run(run_stdio_server())
+    asyncio.run(run_stdio_server(auto_approve=auto_approve))
 
 
 if __name__ == "__main__":
     main()
-

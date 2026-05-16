@@ -7,27 +7,26 @@ from typing import Callable, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
-from agent.approval import (
-    ApprovalCallback,
-    ApprovalDenied,
-    ApprovalTargetMissing,
-    approval_cache_key,
-    approval_request_for_tool,
-)
+from agent.approval import ApprovalCallback, ApprovalTargetMissing
 from agent.llm_retry import chat_with_retry
+from agent.logger import get_logger
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import LLMProvider
+from agent.runtime.approval_service import ApprovalService
+from agent.runtime.context import AgentRuntimeContext, WorkflowState
 from agent.runtime.tool_output import build_tool_output_view
-from agent.runtime.workspace_tools import WORKSPACE_BOUND_TOOLS
+from agent.runtime.tool_scheduler import execute_tool_calls
 from agent.skills import LoadedSkill, SkillRegistry
 from agent.streaming import StreamEvent, StreamEventCallback, make_provider_stream_callback
-from agent.tool_retry import async_run_tool_with_retry
+from agent.todo_manager import TodoManager
 from tools import TOOLS
 
 
-DEFAULT_MAX_TURNS = 20
+DEFAULT_MAX_TURNS = 30
 MAX_OUTPUT_CHARS = 20_000
 SUBAGENT_TOOL_TIMEOUT_SECONDS = 3600  # 1 hour for subagent tools
+SUBAGENT_TOOL_RETRIES = 2
+logger = get_logger(__name__)
 
 
 ROLE_PROMPTS = {
@@ -146,6 +145,7 @@ class SubagentRunner:
         self.app_root = app_root
         self.parent_system_prompt = parent_system_prompt
         self.parent_session_id = parent_session_id
+        self.skill_dirs = skill_dirs
         self.skill_registry = SkillRegistry(workdir, skill_dirs)
         self.skill_catalog_prompt = self.skill_registry.format_skill_catalog_prompt()
         self.list_skills_handler = lambda: self.skill_registry.format_skill_list()
@@ -153,7 +153,7 @@ class SubagentRunner:
         self.stream_callback = stream_callback
         self.approval_callback = approval_callback
         self.last_usage: Optional[dict[str, int]] = None
-        self.approved_write_keys: set[tuple[str, str, str]] = set()
+        self.workflow_state = WorkflowState()
         self._active_session_id: Optional[str] = None
         self._active_role: Optional[str] = None
         self.tool_handlers = {
@@ -185,7 +185,7 @@ class SubagentRunner:
             "output_tokens": 0,
             "total_tokens": 0,
         }
-        self.approved_write_keys = set()
+        self.workflow_state = WorkflowState()
         session_id = str(uuid.uuid4())
         self._active_session_id = session_id
         self._active_role = role
@@ -254,23 +254,8 @@ class SubagentRunner:
                     hit_turn_limit = False
                     break
 
-                for tc in response.tool_calls:
-                    if tc.name == "list_skills":
-                        handler = self.list_skills_handler
-                    elif tc.name == "load_skill":
-                        handler = self.load_skill_handler
-                    else:
-                        handler = self.tool_handlers.get(tc.name)
-                    output = await self._run_tool(handler, tc.name, **tc.args)
-                    output_view = build_tool_output_view(tc.name, output, tc)
-                    tool_message = ToolMessage(
-                        content=output_view.model,
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                    )
-                    if output_view.context_policy != "full":
-                        tool_message.additional_kwargs["context_policy"] = output_view.context_policy
-                    messages.append(tool_message)
+                tool_messages = await self._run_tool_calls(response.tool_calls, session_id, role)
+                messages.extend(tool_messages)
         except Exception:
             await self._emit_subagent_finished(
                 session_id,
@@ -284,7 +269,18 @@ class SubagentRunner:
             self._active_role = None
             raise
 
-        final_content = self._last_ai_content(messages)
+        if hit_turn_limit:
+            try:
+                await self._synthesize_after_turn_limit(
+                    messages,
+                    system_prompt,
+                    provider_stream_callback,
+                    session_id,
+                    role,
+                )
+            except Exception as exc:
+                logger.debug("Subagent turn-limit synthesis failed; falling back to tool output: %s", exc)
+        final_content = self._final_content(messages)
         status = "hit_turn_limit" if hit_turn_limit else "completed"
         await self._emit_subagent_finished(
             session_id,
@@ -299,43 +295,131 @@ class SubagentRunner:
         self._active_role = None
         return result
 
-    async def _run_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
-        if tool_name in WORKSPACE_BOUND_TOOLS:
-            kwargs.setdefault("workdir", self.workdir)
+    async def _run_tool_calls(self, tool_calls, session_id: str, role: str) -> list[ToolMessage]:
+        """Execute subagent tool calls through shared runtime registry/scheduler/approval."""
+        from agent.runtime.tool_registry import RuntimeToolRegistry
+
+        runtime = AgentRuntimeContext(
+            provider=self.provider,
+            system_prompt=self.parent_system_prompt,
+            todo_manager=TodoManager(),
+            workdir=self.workdir,
+            session_id=session_id,
+            source="subagent",
+            role=role,
+            parent_session_id=self.parent_session_id,
+            skill_dirs=self.skill_dirs,
+            app_root=self.app_root,
+            stream_callback=self.stream_callback,
+            approval_callback=self.approval_callback,
+            tools=self.tools,
+            tool_handlers=self.tool_handlers,
+            workflow_state=self.workflow_state,
+            run_tool=self._run_runtime_tool,
+        )
+        registry = RuntimeToolRegistry(runtime)
+        approval_service = ApprovalService(
+            self.approval_callback,
+            self.workflow_state,
+            self.stream_callback,
+            session_id,
+            source="subagent",
+            role=role,
+            parent_session_id=self.parent_session_id,
+            workdir=self.workdir,
+        )
+
+        async def execute(tc) -> ToolMessage:
+            return await self._execute_tool_call(tc, registry, approval_service)
+
+        return await execute_tool_calls(tool_calls, execute, registry.can_run_concurrently)
+
+    async def _execute_tool_call(
+        self,
+        tc,
+        registry,
+        approval_service: ApprovalService,
+    ) -> ToolMessage:
+        handler = registry.resolve(tc.name)
         try:
-            request = approval_request_for_tool(tool_name, kwargs, workdir=self.workdir)
+            approved_args = await approval_service.approve(tc.name, tc.args or {})
         except ApprovalTargetMissing as exc:
-            await self._emit_tool_blocked(tool_name, str(exc))
-            return str(exc)
-        if request is not None:
-            cache_key = approval_cache_key(request)
-            if cache_key in self.approved_write_keys:
-                return await async_run_tool_with_retry(
-                    handler,
-                    tool_name,
-                    max_retries=2,
-                    timeout_seconds=SUBAGENT_TOOL_TIMEOUT_SECONDS,
-                    **{**kwargs, "approved": True},
-                )
-            if self.approval_callback is None:
-                await self._emit_approval_required(request)
-                await self._emit_approval_resolved(request, "denied")
-                raise ApprovalDenied(request)
-            await self._emit_approval_required(request)
-            approved = await self.approval_callback(request)
-            if not approved:
-                await self._emit_approval_resolved(request, "denied")
-                raise ApprovalDenied(request)
-            self.approved_write_keys.add(cache_key)
-            kwargs = {**kwargs, "approved": True}
-            await self._emit_approval_resolved(request, "approved")
+            await self._emit_tool_blocked(tc.name, str(exc))
+            return self._tool_message(tc, str(exc))
+        output = await self._run_runtime_tool(
+            handler,
+            tc.name,
+            max_retries=SUBAGENT_TOOL_RETRIES,
+            timeout_seconds=registry.timeout_for(tc.name),
+            **approved_args,
+        )
+        output_view = build_tool_output_view(tc.name, output, tc)
+        tool_message = self._tool_message(tc, output_view.model)
+        if output_view.context_policy != "full":
+            tool_message.additional_kwargs["context_policy"] = output_view.context_policy
+        return tool_message
+
+    async def _run_runtime_tool(self, handler: Optional[Callable], tool_name: str, **kwargs) -> str:
+        from agent.tool_retry import async_run_tool_with_retry
+
         return await async_run_tool_with_retry(
             handler,
             tool_name,
-            max_retries=2,
-            timeout_seconds=SUBAGENT_TOOL_TIMEOUT_SECONDS,
+            max_retries=kwargs.pop("max_retries", SUBAGENT_TOOL_RETRIES),
+            timeout_seconds=kwargs.pop("timeout_seconds", SUBAGENT_TOOL_TIMEOUT_SECONDS),
             **kwargs,
         )
+
+    def _tool_message(self, tc, output: str) -> ToolMessage:
+        return ToolMessage(content=output, tool_call_id=tc.id, name=tc.name)
+
+    async def _synthesize_after_turn_limit(
+        self,
+        messages: list[BaseMessage],
+        system_prompt: str,
+        provider_stream_callback,
+        session_id: str,
+        role: str,
+    ) -> None:
+        """Ask for a final no-tool summary after the delegated tool budget is exhausted."""
+        messages.append(
+            HumanMessage(
+                content=(
+                    "You have reached the delegated tool-turn limit. Do not call any tools. "
+                    "Based only on the information already gathered in this subagent conversation, "
+                    "return a concise final summary for the parent agent. Include key findings, "
+                    "evidence, and any remaining uncertainty."
+                )
+            )
+        )
+        response = await chat_with_retry(
+            self.provider,
+            messages=messages_to_provider_format(messages),
+            tools=[],
+            system_prompt=system_prompt,
+            stream_callback=provider_stream_callback,
+            event_callback=self.stream_callback,
+            source="subagent",
+            session_id=session_id,
+            role=role,
+            parent_session_id=self.parent_session_id,
+        )
+        self._accumulate_usage(response.usage)
+        if self.stream_callback and response.usage:
+            await self.stream_callback(
+                StreamEvent(
+                    source="subagent",
+                    session_id=session_id,
+                    role=role,
+                    parent_session_id=self.parent_session_id,
+                    event_type="usage",
+                    usage=response.usage,
+                )
+            )
+        ai_msg = AIMessage(content=response.content)
+        if response.content_blocks:
+            ai_msg.additional_kwargs["provider_blocks"] = response.content_blocks
+        messages.append(ai_msg)
 
     async def _emit_tool_blocked(self, tool_name: str, content: str) -> None:
         if self.stream_callback is None:
@@ -416,12 +500,30 @@ class SubagentRunner:
                 return str(msg.content or "")
         return ""
 
+    def _final_content(self, messages: list[BaseMessage]) -> str:
+        content = self._last_ai_content(messages).strip()
+        if content:
+            return content
+        tool_outputs = [
+            str(msg.content or "").strip()
+            for msg in messages
+            if isinstance(msg, ToolMessage) and str(msg.content or "").strip()
+        ]
+        if not tool_outputs:
+            return "Subagent stopped without producing a final text response."
+        recent_outputs = tool_outputs[-3:]
+        return (
+            "Subagent stopped without producing a final text response. "
+            "Recent tool output is included so the parent can continue:\n\n"
+            + "\n\n---\n\n".join(recent_outputs)
+        )
+
     def _normalize_max_turns(self, max_turns: int) -> int:
         try:
             max_turns = int(max_turns)
         except (TypeError, ValueError):
             max_turns = DEFAULT_MAX_TURNS
-        return min(max(max_turns, 1), 20)
+        return min(max(max_turns, 1), DEFAULT_MAX_TURNS)
 
     def _accumulate_usage(self, usage: Optional[dict[str, int]]) -> None:
         """Accumulate real provider usage across the subagent run."""

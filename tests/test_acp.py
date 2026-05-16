@@ -222,3 +222,38 @@ def test_acp_session_manager_new_prompt_cancel_and_load(tmp_path, monkeypatch):
         for method, params in notifications
         if method == "session/update"
     )
+
+
+def test_acp_session_manager_auto_approve_skips_permission_request(tmp_path, monkeypatch):
+    requests = []
+
+    async def notify(_method, _params):
+        return None
+
+    async def request_client(method, params):
+        requests.append((method, params))
+        return {"optionId": "reject"}
+
+    manager = AcpSessionManager(notify, request_client, auto_approve=True)
+
+    def fake_create_session(cwd: Path, *, session_id=None, resume=False):
+        return FakeSession(cwd, session_id=session_id or "fake-session", resume=resume)
+
+    monkeypatch.setattr(manager, "_create_session", fake_create_session)
+
+    new_result = asyncio.run(manager.new_session({"cwd": str(tmp_path)}))
+    managed = manager.sessions[new_result["sessionId"]]
+    approved = asyncio.run(
+        managed.session.approval_callback(
+            ApprovalRequest(
+                action="edit_file",
+                tool_name="apply_patch",
+                reason="edits files",
+                risk="may overwrite work",
+                path="agent/session.py",
+            )
+        )
+    )
+
+    assert approved is True
+    assert requests == []

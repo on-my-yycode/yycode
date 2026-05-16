@@ -376,9 +376,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.acp or args.workdir == "acp":
         load_dotenv(override=True)
+        auto_approve = args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
         from agent.acp.server import main as acp_main
 
-        acp_main()
+        acp_main(auto_approve=auto_approve)
         return
     args.workdir = resolve_startup_workdir(args.workdir)
     args.session_id = args.resume

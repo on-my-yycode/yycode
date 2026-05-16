@@ -133,8 +133,10 @@ class ToolExecutor:
             return
         await self.runtime.stream_callback(
             StreamEvent(
-                source="main",
+                source=self.runtime.source,
                 session_id=self.runtime.session_id,
+                role=self.runtime.role,
+                parent_session_id=self.runtime.parent_session_id,
                 event_type="tool_start",
                 content=format_tool_description(tc),
                 status="running",
@@ -147,8 +149,10 @@ class ToolExecutor:
             return
         await self.runtime.stream_callback(
             StreamEvent(
-                source="main",
+                source=self.runtime.source,
                 session_id=self.runtime.session_id,
+                role=self.runtime.role,
+                parent_session_id=self.runtime.parent_session_id,
                 event_type="tool_end",
                 content=tc.name,
                 status=status,
@@ -169,8 +173,10 @@ class ToolExecutor:
             return
         await self.runtime.stream_callback(
             StreamEvent(
-                source="main",
+                source=self.runtime.source,
                 session_id=self.runtime.session_id,
+                role=self.runtime.role,
+                parent_session_id=self.runtime.parent_session_id,
                 event_type="tool_result",
                 content=content,
                 title=title,
@@ -185,8 +191,10 @@ class ToolExecutor:
         file_paths = file_paths_for_tool_call(tc)
         await self.runtime.stream_callback(
             StreamEvent(
-                source="main",
+                source=self.runtime.source,
                 session_id=self.runtime.session_id,
+                role=self.runtime.role,
+                parent_session_id=self.runtime.parent_session_id,
                 event_type="file_changed",
                 content=", ".join(file_paths),
                 title="File changed",

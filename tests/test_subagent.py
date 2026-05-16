@@ -11,6 +11,7 @@ from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.session import Session
 from agent.streaming import StreamEvent
 from agent.subagent import (
+    DEFAULT_MAX_TURNS,
     ROLE_PROMPTS,
     SubagentRunner,
     build_subagent_system_prompt,
@@ -100,7 +101,22 @@ def test_subagent_tool_is_registered():
         "max_turns",
         "skills",
     }
+    assert "Defaults to 30" in subagent_tool["input_schema"]["properties"]["max_turns"]["description"]
     assert subagent_tool["input_schema"]["properties"]["skills"]["items"]["type"] == "string"
+
+
+def test_subagent_default_max_turns_is_30(tmp_path):
+    runner = SubagentRunner(
+        provider=FakeProvider([]),
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={},
+        tools=TOOLS,
+    )
+
+    assert DEFAULT_MAX_TURNS == 30
+    assert runner._normalize_max_turns(None) == 30
+    assert runner._normalize_max_turns(99) == 30
 
 
 def test_main_agent_prompt_describes_subagent_boundaries(tmp_path):
@@ -465,6 +481,80 @@ def test_subagent_runner_compacts_large_tool_output(tmp_path):
     content = tool_message["content"][0]["content"]
     assert "read_file output was compacted for model context" in content
     assert len(content) < len(large_output)
+
+
+def test_subagent_runner_returns_recent_tool_output_when_no_final_summary(tmp_path):
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="read-1",
+                        name="read_file",
+                        args={"path": "notes.txt"},
+                    )
+                ],
+            )
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"read_file": lambda **kwargs: "important architecture notes"},
+        tools=[
+            {
+                "name": "read_file",
+                "description": "read",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    result = asyncio.run(runner.run(role="architect", task="read workspace", max_turns=1))
+
+    assert "status: hit_turn_limit" in result
+    assert "Subagent stopped without producing a final text response" in result
+    assert "important architecture notes" in result
+
+
+def test_subagent_runner_synthesizes_summary_after_turn_limit(tmp_path):
+    provider = FakeProvider(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="read-1",
+                        name="read_file",
+                        args={"path": "notes.txt"},
+                    )
+                ],
+            ),
+            ChatResponse(content="final summary from gathered notes"),
+        ]
+    )
+    runner = SubagentRunner(
+        provider=provider,
+        workdir=tmp_path,
+        parent_system_prompt="parent prompt",
+        tool_handlers={"read_file": lambda **kwargs: "important architecture notes"},
+        tools=[
+            {
+                "name": "read_file",
+                "description": "read",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            }
+        ],
+    )
+
+    result = asyncio.run(runner.run(role="architect", task="read workspace", max_turns=1))
+
+    assert "status: hit_turn_limit" in result
+    assert "final summary from gathered notes" in result
+    assert provider.calls[1]["tools"] == []
+    assert "Do not call any tools" in provider.calls[1]["messages"][-1]["content"]
 
 
 def test_subagent_runner_returns_tool_message_for_write_without_target(tmp_path):

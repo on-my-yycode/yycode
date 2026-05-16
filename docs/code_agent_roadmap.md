@@ -44,7 +44,6 @@
 - LSP / Message Token Manager 已有首版；后续欠缺主要是完整 diagnostics、配置化阈值、多步历史和模型生成式摘要等增强。
 - 任务依赖图 / DAG 调度，设计见 [Task Graph DAG 调度设计](task_graph_dag_design.md)。
 - 完整本地 eval suite，例如 bugfix、feature、refactor、tests、security review 任务集。
-- subagent runtime 统一，减少主/子 agent 工具执行、审批和 runtime 行为差异。
 - Git worktree 任务隔离执行模式：为每个执行任务提供独立工作目录/分支，支撑安全回滚、任务审查和未来同 Project 多任务并发。
 - ACP 兼容后续打磨：根据首个真实 ACP client 兼容测试补齐 replay 细节、file locations、commands/modes 和 schema 字段差异。
 
@@ -72,6 +71,7 @@
 - 本地 evals MVP 已实现：`context_session_baseline` 覆盖任务摘要、todo artifacts 裁剪、恢复 session 后 summary 可用和工具输出压缩链路。
 - Timeline 搜索项语义化展示已实现：长 regex 不再作为主展示内容，完整 pattern 仍保留在 metadata 中。
 - Workspace / workdir 统一已完成主要收口：命令入口支持位置参数 workspace，workspace-bound 工具使用 runtime 注入的 `workdir`，subagent 继承父 workdir。
+- subagent runtime 统一已完成：SubagentRunner 复用 runtime tool registry、ToolExecutor 路径和 ApprovalService，保持主/子 agent 工具 metadata、审批和 workspace 约束一致。
 - Session messages 持久化与恢复首版已实现，详见 [Session Messages 持久化与恢复设计](session_persistence_design.md)。
 - subagent 显式 skill 委派首版已实现，详见 [Subagent 显式 Skill 委派设计](subagent_explicit_skill_design.md)。
 - TUI 已支持 `@role` 补全，以及在已有正文中按光标 token 触发 `/skill` 补全。

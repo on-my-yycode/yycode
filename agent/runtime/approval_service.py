@@ -23,6 +23,8 @@ class ApprovalService:
         stream_callback: StreamEventCallback | None = None,
         session_id: str = "",
         source: str = "main",
+        role: str | None = None,
+        parent_session_id: str | None = None,
         workdir: Path | str | None = None,
     ):
         self.approval_callback = approval_callback
@@ -30,6 +32,8 @@ class ApprovalService:
         self.stream_callback = stream_callback
         self.session_id = session_id
         self.source = source
+        self.role = role
+        self.parent_session_id = parent_session_id
         self.workdir = workdir
 
     async def approve(self, tool_name: str, args: dict | None) -> dict:
@@ -68,6 +72,8 @@ class ApprovalService:
             StreamEvent(
                 source=self.source,
                 session_id=self.session_id,
+                role=self.role,
+                parent_session_id=self.parent_session_id,
                 event_type="approval_required",
                 content=request.format(include_diff=False),
                 title=_approval_title(request, "Approve"),
@@ -87,6 +93,8 @@ class ApprovalService:
             StreamEvent(
                 source=self.source,
                 session_id=self.session_id,
+                role=self.role,
+                parent_session_id=self.parent_session_id,
                 event_type="tool_result",
                 content=request.diff_preview,
                 title="Review diff before approval",
@@ -110,6 +118,8 @@ class ApprovalService:
             StreamEvent(
                 source=self.source,
                 session_id=self.session_id,
+                role=self.role,
+                parent_session_id=self.parent_session_id,
                 event_type="approval_resolved",
                 content=status,
                 title=_approval_title(request, _approval_status_label(status)),

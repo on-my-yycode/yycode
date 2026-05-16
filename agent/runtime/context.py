@@ -30,6 +30,9 @@ class AgentRuntimeContext:
     todo_manager: TodoManager
     workdir: Path
     session_id: str
+    source: str = "main"
+    role: str | None = None
+    parent_session_id: str | None = None
     skill_dirs: list[str] | None = None
     app_root: Path | None = None
     stream_callback: Optional[StreamEventCallback] = None

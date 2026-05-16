@@ -25,6 +25,11 @@ Notifier = Callable[[str, dict[str, Any]], Awaitable[None]]
 Requester = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
+async def auto_approval_callback(_request: Any) -> bool:
+    """Approve runtime approval requests without asking the ACP client."""
+    return True
+
+
 @dataclass
 class AcpManagedSession:
     """Runtime state for one ACP session."""
@@ -37,9 +42,10 @@ class AcpManagedSession:
 class AcpSessionManager:
     """Create, load, run, and cancel ACP-backed yoyoagent sessions."""
 
-    def __init__(self, notify: Notifier, request: Requester):
+    def __init__(self, notify: Notifier, request: Requester, *, auto_approve: bool = False):
         self.notify = notify
         self.request = request
+        self.auto_approve = auto_approve
         self.sessions: dict[str, AcpManagedSession] = {}
 
     async def new_session(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -107,7 +113,7 @@ class AcpSessionManager:
             self.request,
             workdir=session.workdir,
         )
-        session.approval_callback = approval.callback
+        session.approval_callback = auto_approval_callback if self.auto_approve else approval.callback
         session.stream_callback = self._stream_callback(session)
         session._graph = None
         return AcpManagedSession(session=session, approval_adapter=approval)
@@ -185,4 +191,3 @@ def _session_id_from_params(params: dict[str, Any]) -> str:
     if not session_id:
         raise ValueError("sessionId is required")
     return str(session_id)
-

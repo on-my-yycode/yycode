@@ -30,7 +30,7 @@ subagent_tool = {
             },
             "max_turns": {
                 "type": "integer",
-                "description": "Optional recursion limit for the subagent run. Defaults to 8.",
+                "description": "Optional recursion limit for the subagent run. Defaults to 30.",
             },
             "skills": {
                 "type": "array",
@@ -50,7 +50,7 @@ def subagent(
     role: str,
     task: str,
     context: str = "",
-    max_turns: int = 8,
+    max_turns: int = 30,
     skills: list[str] | None = None,
 ) -> str:
     """Dummy subagent handler - should be bound by the graph at runtime."""
