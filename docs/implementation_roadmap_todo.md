@@ -67,7 +67,7 @@
 | --- | --- | --- |
 | Task Graph / DAG 调度 | 未实现 | 设计见 `docs/task_graph_dag_design.md` |
 | 多语言 LSP | 未实现 | 当前 `LspManager` 只接受 `.py`，languageId 固定 `python` |
-| LSP 启动状态提示 | 后续增强 | 当前先从近期 P0/P1 移除，待 subagent runtime 统一后再排期 |
+| LSP 启动状态提示 | 后续增强 | 当前先从近期 P0/P1 移除，后续按 LSP 可见性/稳定性增强统一排期 |
 | 自动恢复最近 session | 未实现 | `--resume-latest` 仍是后续增强 |
 
 ### 近期已收口事项
@@ -95,7 +95,7 @@
 2. LSP 不应再只作为“推荐下一步”。当前应改为“Python-only MVP 已实现，待多语言和稳定性增强”。
 3. TUI command 系统需要新增到当前基础与后续路线。
 4. Markdown 渲染性能优化需要记录到 TUI timeline 已完成项。
-5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“subagent runtime 统一 -> Git worktree 任务隔离 -> ACP compatibility polish -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
+5. 推荐下一步顺序需要从“workspace -> Message Token Manager -> LSP”更新为“Git worktree 任务隔离 -> ACP compatibility polish -> ACP 多 session 硬化 -> LSP 增强 -> MTM 收口 -> 完整 eval suite / DAG”。
 
 ## 下一阶段建议优先级
 
@@ -116,8 +116,13 @@
 
 后续硬化：
 
+- [ ] ACP/yoyohub contract fixtures：固化 `initialize`、`session/new`、`available_commands_update`、`session/load`、idle `session/cancel` 的已通过样例。
+- [ ] 补充 prompt/tool/permission/running cancel/multi-turn 的 JSON-RPC fixture 和回归测试。
+- [ ] 明确 `session/new` 对 `mode` / `temporary` 等 client 扩展字段的长期兼容策略：默认容忍未知字段，但不作为核心执行语义。
 - [ ] ACP 单进程多 session：保留当前 `sessionId -> Session` 管理结构，补齐稳定性边界。
 - [ ] 为同一个 ACP session 增加 prompt 串行 guard，避免并发请求同时修改 `messages`、`todo_manager` 或 graph 状态。
+- [ ] 硬化 pending approval 下的 cancel/client disconnect 清理语义，并评估 permission timeout。
+- [ ] 打磨 tool/update schema：保持 stable `toolCallId`，保留 kind/status/content/rawInput/rawOutput/locations，优先输出 cwd-relative path。
 - [ ] 调整 LSP manager 生命周期，避免关闭一个 session 时全局 shutdown 影响同进程其它 session。
 - [ ] 增加多 session 并发回归：不同 session 可并行执行；同 session 第二个 prompt 应排队或返回明确 busy 状态。
 
@@ -177,24 +182,22 @@
 
 #### 3. subagent runtime 统一
 
-目标：
+状态：已实现。
 
-- 让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
-- 减少主/子 agent 工具执行、安全审批和 workspace 行为差异。
+完成内容：
 
-待办：
-
-- [ ] 梳理当前 `SubagentRunner` 与主 `Session` runtime 初始化差异。
-- [ ] 复用主 runtime 的工具注册、审批服务和 workspace-bound 配置。
-- [ ] 保持 subagent 独立 conversation history，不引入父 agent todo ownership。
-- [ ] 增加主/子 agent 工具行为一致性测试。
+- [x] `SubagentRunner` 复用 runtime tool registry 和 ToolExecutor 执行路径。
+- [x] 子 agent 复用 ApprovalService，审批事件和 `approved=true` 注入行为与主 agent 一致。
+- [x] workspace-bound 工具继承父 workdir/runtime context。
+- [x] 保持 subagent 独立 conversation history，并过滤 subagent/todo，避免递归委派和 todo ownership 混淆。
+- [x] 增加 runtime approval、workdir 注入和工具输出压缩等一致性测试。
 
 验收：
 
 - subagent 使用与主 agent 一致的工具 metadata、审批和 workspace 约束。
 - 现有 `@architect /plan`、`@worker`、`@tester` 委派行为保持不变。
 
-#### 3. Message Token Manager 收口
+#### 4. Message Token Manager 收口
 
 目标：
 
@@ -396,10 +399,10 @@
 建议按以下顺序推进：
 
 ```text
-1. subagent runtime 统一
-2. Git worktree 任务隔离执行模式
-3. ACP compatibility polish
-4. ACP 单进程多 session 硬化
+1. Git worktree 任务隔离执行模式
+2. ACP/yoyohub contract fixtures 与兼容矩阵
+3. ACP 同 session prompt 串行 guard + 多 session 硬化
+4. ACP permission/cancel 边界与 tool/update schema polish
 5. Message Token Manager 压缩确认和大 session 回归
 6. 工具输出压缩阈值 per-tool 收紧
 7. Timeline 增量渲染 / 可见窗口渲染
@@ -411,15 +414,15 @@
 
 原因：
 
-- ACP 兼容前置能力与 stdio server MVP 已完成，后续重点转为真实 client 兼容打磨。
-- 1 能减少主/子 agent 工具执行和审批差异，为 ACP tool/approval 映射降复杂度。
-- 2 直接支撑 yoyohub 的任务隔离、回滚、审查和未来同 Project 多任务并发能力，应提前排期。
-- 4 是 yoyohub 等外部 client 复用同一个 ACP 进程时的稳定性前提；当前结构已支持多 session，但并发和 LSP 生命周期还需要硬化。
-- 5-6 都是在收口当前已经实现的能力，风险低、收益直接。
+- ACP 兼容前置能力与 stdio server MVP 已完成，后续重点转为基于 yoyohub 真实报告的 contract fixtures、兼容矩阵和边界硬化。
+- 1 直接支撑 yoyohub 的任务隔离、回滚、审查和未来同 Project 多任务并发能力，应提前排期。
+- 2 能把已经通过的 `initialize/session/new/load/cancel` 样例沉淀为回归基线，并为 prompt/tool/permission 后续测试提供 fixture 框架。
+- 3 是 yoyohub 等外部 client 复用同一个 ACP 进程时的稳定性前提；当前结构已支持多 session，但同 session 并发、LSP 生命周期还需要硬化。
+- 4 收口外部 UI 最容易感知的问题：pending approval cancel、permission timeout、toolCallId 稳定性和 cwd-relative locations。
+- 5-7 都是在收口当前已经实现的能力，风险低、收益直接。
 - Timeline 可选择文本视图已完成；后续 timeline 工作转向增量渲染和可见窗口渲染。
 - LSP 启动状态提示本轮从近期 P0/P1 移除，后续并入 LSP 增强整体排期。
-- 6-7 是发行版本稳定性要求。
-- 8-10 是能力扩展，适合在基础稳定后推进。
+- 8-11 是发行稳定性和能力扩展，适合在 ACP/yoyohub 基线稳定后推进。
 
 ## 当前风险清单
 

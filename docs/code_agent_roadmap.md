@@ -847,13 +847,13 @@ P0-P2 收口后，近期待办更新为：
 
 ### P1
 
-1. subagent runtime 统一：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService。
-2. Git worktree 任务隔离执行模式：支持为任务创建独立 worktree/branch，在隔离工作区执行、收集 diff，并由用户决定合并或丢弃。
+1. Git worktree 任务隔离执行模式：支持为任务创建独立 worktree/branch，在隔离工作区执行、收集 diff，并由用户决定合并或丢弃。
 
 ### P2
 
-3. ACP compatibility polish：根据首个 ACP client 兼容测试补齐 replay 细节、file locations 和 command/mode 暴露。
-4. ACP 单进程多 session 硬化：当前 `AcpSessionManager` 已按 `sessionId` 管理多个 session；后续补同 session prompt 串行 guard、LSP 生命周期隔离和多 session 并发回归。
+2. ACP/yoyohub contract fixtures 与兼容矩阵：把 yoyohub 已通过的 `initialize`、`session/new`、`available_commands_update`、`session/load`、idle `session/cancel` 样例沉淀为回归测试，并继续补 prompt/tool/permission/running cancel/multi-turn fixture。
+3. ACP 同 session prompt 串行 guard + 多 session 硬化：当前 `AcpSessionManager` 已按 `sessionId` 管理多个 session；后续补同 session busy/排队语义、LSP 生命周期隔离和多 session 并发回归。
+4. ACP permission/cancel 边界与 tool/update schema polish：明确 pending approval cancel/client disconnect 清理、permission timeout、stable `toolCallId`、cwd-relative locations 和 `session/new` 扩展字段兼容策略。
 5. LSP 增强：完整 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
 6. Message Token Manager 后续：多步 operation history、配置化阈值和模型生成式摘要压缩。
 
@@ -879,7 +879,7 @@ P0-P2 收口后，近期待办更新为：
 8. 基础上下文治理
 ```
 
-MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版、TUI 命令/帮助、长任务摘要记忆首版、本地 evals MVP、ACP 兼容前置能力和 ACP stdio server MVP 都已进入可用状态。后续重点转为 subagent runtime 统一、ACP compatibility polish、完整 eval suite 和 DAG 调度。
+MVP 已完成。P0-P2 收口后，workspace/workdir、Session persistence、LSP 只读 MVP、Message Token Manager 首版、TUI 命令/帮助、长任务摘要记忆首版、本地 evals MVP、subagent runtime 统一、ACP 兼容前置能力和 ACP stdio server MVP 都已进入可用状态。后续重点转为 Git worktree 任务隔离、ACP compatibility polish、完整 eval suite 和 DAG 调度。
 
 MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 
@@ -891,10 +891,10 @@ MVP 完成后，yoyoagent 已具备更完整的代码任务闭环：
 
 当前推荐按增强阶段推进：
 
-1. **subagent runtime 统一**：让 subagent 复用主 runtime 的 ToolRegistry、ToolExecutor 和 ApprovalService，减少主/子 agent 行为差异。
-2. **Git worktree 任务隔离执行模式**：为任务创建独立 worktree/branch，在隔离目录中执行，完成后提供 diff、合并/丢弃建议，降低主工作区污染和回滚风险。
-3. **ACP compatibility polish**：根据 Zed/ACP client 兼容测试补齐 replay 细节、file locations 和 command/mode 暴露。
-4. **ACP 单进程多 session 硬化**：当前 ACP server 结构上能创建和路由多个 session，但要成为 yoyohub 可依赖的稳定底座，还需要补同 session prompt 串行 guard、LSP manager 生命周期隔离，以及关闭/取消/并发场景回归。
+1. **Git worktree 任务隔离执行模式**：为任务创建独立 worktree/branch，在隔离目录中执行，完成后提供 diff、合并/丢弃建议，降低主工作区污染和回滚风险。
+2. **ACP/yoyohub contract fixtures 与兼容矩阵**：把 yoyohub 已通过的 initialize/session/new/load/cancel 样例沉淀为回归基线，并继续补 prompt/tool/permission/running cancel/multi-turn fixture。
+3. **ACP 同 session prompt 串行 guard + 多 session 硬化**：当前 ACP server 结构上能创建和路由多个 session，但要成为 yoyohub 可依赖的稳定底座，还需要补同 session busy/排队语义、LSP manager 生命周期隔离，以及关闭/取消/并发场景回归。
+4. **ACP permission/cancel 边界与 tool/update schema polish**：明确 pending approval cancel/client disconnect 清理、permission timeout、stable toolCallId、cwd-relative locations 和 `session/new` 扩展字段兼容策略。
 5. **LSP 增强**：在只读 MVP 基础上继续完善 diagnostics、references/definition 去重、输出 limit、多 workspace cleanup 和多语言 registry。
 6. **Message Token Manager 增强**：在最近一次 undo 基础上继续做多步 operation history、配置化阈值和模型生成式摘要压缩。
 7. **完整本地 eval suite**：在 `context_session_baseline` 之外增加 bugfix、feature、refactor、tests、security review 任务集。

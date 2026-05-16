@@ -180,19 +180,18 @@ START → [LLM节点] ──(有工具调用)──→ [Tools节点] ──→ [
 
 ## 当前架构的问题
 
-### 1. Subagent 执行链仍可进一步复用
-- 主 agent 工具执行已拆到 runtime 层
-- subagent 仍有一部分自有工具循环和审批逻辑
-- 后续可继续迁移到 RuntimeToolRegistry / ToolExecutor
-
-### 2. 更复杂的异步 DAG 尚未实现
+### 1. 更复杂的异步 DAG 尚未实现
 - 当前工具调度支持批次并发
 - 还不是完整 task graph / dependency graph
 - 后续可在 ToolScheduler 基础上扩展依赖关系
 
+### 2. Git worktree 任务隔离尚未实现
+- 当前 runtime 已统一 workspace/workdir 约束
+- 后续可为单个任务创建独立 worktree/branch，降低主工作区污染风险
+
 ## 扩展建议
 
-1. **继续统一 subagent 工具执行链** - 复用 ApprovalService 和 ToolExecutor
+1. **实现 Git worktree 任务隔离执行模式** - 支持任务级独立工作区、diff 收集和清理/合并语义
 2. **实现任务依赖图调度** - 在 ToolScheduler 基础上支持 DAG
-3. **增加状态持久化** - 支持对话历史保存和加载
+3. **补齐完整本地 eval suite** - 覆盖 bugfix、feature、refactor、tests、security review
 4. **添加指标监控** - 监控 token 使用、响应时间等

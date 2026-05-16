@@ -65,6 +65,8 @@ yoyoagent acp
 
 首版支持 `initialize`、`session/new`、`session/load`、`session/prompt`、`session/cancel`，并把内部 `StreamEvent` 转为 `session/update`。写文件或高风险命令仍复用 yoyoagent runtime approval，并通过 `session/request_permission` 请求 client 审批。ACP 模式下 stdout 只输出 JSON-RPC 消息，日志和诊断信息写 stderr。
 
+与外部 `yoyohub` 的 ACP 对接请按 [ACP 与 yoyohub 对接要求](acp_yoyohub_integration_requirements.md) 填写兼容性报告、日志和问题清单。
+
 ## TUI 快捷键
 
 TUI 主界面默认展示紧凑 Transcript 风格时间线：
