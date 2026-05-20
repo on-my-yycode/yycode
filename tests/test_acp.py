@@ -132,6 +132,25 @@ def test_stream_event_to_updates_maps_text_and_tool_events(tmp_path):
     assert tool_updates[0]["rawInput"] == {"pattern": "Session"}
 
 
+def test_stream_event_to_updates_does_not_send_context_events_to_acp_client():
+    assert stream_event_to_updates(
+        StreamEvent(
+            source="main",
+            session_id="s",
+            event_type="context_summarized",
+            content="Task summary saved for messages 1-6",
+        )
+    ) == []
+    assert stream_event_to_updates(
+        StreamEvent(
+            source="main",
+            session_id="s",
+            event_type="context_compressed",
+            content="compressed 1 old tool output",
+        )
+    ) == []
+
+
 def test_replay_event_to_updates_uses_session_replay(tmp_path):
     session = Session(
         provider=FakeProvider(),

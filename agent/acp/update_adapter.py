@@ -64,7 +64,9 @@ def stream_event_to_updates(event: StreamEvent, *, workdir: Path | None = None) 
                 },
             )
         ]
-    if event.event_type in {"context_compressed", "context_summarized", "session_warning"}:
+    if event.event_type in {"context_compressed", "context_summarized"}:
+        return []
+    if event.event_type == "session_warning":
         return [_update("agent_message_chunk", {"content": f"\n[{event.title or 'context'}] {event.content}\n"})]
     if event.event_type == "usage":
         return [_update("usage", {"usage": event.usage or {}, "_meta": {"yoyo": event.to_dict()}})]
@@ -188,4 +190,3 @@ def _locations(paths: list[str] | None, workdir: Path | None) -> list[dict[str, 
             location["path"] = str((workdir / path).resolve())
         locations.append(location)
     return locations
-
