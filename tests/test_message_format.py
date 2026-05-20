@@ -123,3 +123,67 @@ def test_messages_to_provider_format_prefers_provider_blocks_for_assistant_histo
             ],
         }
     ]
+
+
+def test_messages_to_provider_format_preserves_reasoning_content_outside_content_blocks():
+    assistant = AIMessage(content="visible")
+    assistant.additional_kwargs["provider_blocks"] = [
+        {"type": "reasoning_content", "reasoning_content": "hidden reasoning"},
+        {"type": "text", "text": "visible"},
+    ]
+
+    formatted = messages_to_provider_format([assistant])
+
+    assert formatted == [
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "visible"}],
+            "reasoning_content": "hidden reasoning",
+        }
+    ]
+
+
+def test_messages_to_provider_format_preserves_reasoning_content_with_tool_calls():
+    assistant = AIMessage(content="")
+    assistant.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="call_123", name="read_file", args={"path": "main.py"})
+    ]
+    assistant.additional_kwargs["provider_blocks"] = [
+        {"type": "reasoning_content", "reasoning_content": "need a file"},
+    ]
+
+    formatted = messages_to_provider_format([assistant])
+
+    assert formatted == [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "call_123", "name": "read_file", "input": {"path": "main.py"}},
+            ],
+            "reasoning_content": "need a file",
+        }
+    ]
+
+
+def test_messages_to_provider_format_merges_provider_text_with_tool_calls():
+    assistant = AIMessage(content="fallback")
+    assistant.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="call_123", name="read_file", args={"path": "main.py"})
+    ]
+    assistant.additional_kwargs["provider_blocks"] = [
+        {"type": "reasoning_content", "reasoning_content": "need a file"},
+        {"type": "text", "text": "I'll inspect it."},
+    ]
+
+    formatted = messages_to_provider_format([assistant])
+
+    assert formatted == [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "I'll inspect it."},
+                {"type": "tool_use", "id": "call_123", "name": "read_file", "input": {"path": "main.py"}},
+            ],
+            "reasoning_content": "need a file",
+        }
+    ]

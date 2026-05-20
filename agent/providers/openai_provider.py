@@ -74,9 +74,16 @@ class OpenAIProvider(LLMProvider):
                     }
                     if tool_calls:
                         assistant_msg["tool_calls"] = tool_calls
+                    reasoning_content = msg.get("reasoning_content")
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
                     openai_messages.append(assistant_msg)
                 else:
-                    openai_messages.append({"role": "assistant", "content": content})
+                    assistant_msg = {"role": "assistant", "content": content}
+                    reasoning_content = msg.get("reasoning_content")
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
+                    openai_messages.append(assistant_msg)
 
         return openai_messages
 
@@ -110,6 +117,7 @@ class OpenAIProvider(LLMProvider):
 
         current_text = ""
         tool_calls_data = []
+        reasoning_content = None
         usage = None
 
         if stream_callback:
@@ -131,6 +139,10 @@ class OpenAIProvider(LLMProvider):
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
+
+                delta_reasoning = getattr(delta, "reasoning_content", None)
+                if delta_reasoning:
+                    reasoning_content = (reasoning_content or "") + delta_reasoning
 
                 if delta.content:
                     current_text += delta.content
@@ -160,6 +172,7 @@ class OpenAIProvider(LLMProvider):
             )
             usage = self._extract_usage(getattr(response, "usage", None))
             choice = response.choices[0]
+            reasoning_content = getattr(choice.message, "reasoning_content", None)
             if choice.message.content:
                 current_text = choice.message.content
             if choice.message.tool_calls:
@@ -186,6 +199,7 @@ class OpenAIProvider(LLMProvider):
         return ChatResponse(
             content=current_text,
             tool_calls=tool_calls,
+            content_blocks=_openai_content_blocks(current_text, reasoning_content),
             raw_response=None,
             usage=usage,
         )
@@ -254,3 +268,12 @@ class OpenAIProvider(LLMProvider):
             "output_tokens": output_tokens or 0,
             "total_tokens": total_tokens or 0,
         }
+
+
+def _openai_content_blocks(content: str, reasoning_content: Optional[str]) -> Optional[list[dict[str, Any]]]:
+    blocks: list[dict[str, Any]] = []
+    if reasoning_content:
+        blocks.append({"type": "reasoning_content", "reasoning_content": reasoning_content})
+    if content:
+        blocks.append({"type": "text", "text": content})
+    return blocks or None
