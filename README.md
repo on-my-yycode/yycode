@@ -4,6 +4,86 @@
 
 一个基于 LangGraph 的智能编程助手，支持多 LLM 提供商。
 
+## 快速开始
+
+### 1. 获取代码并安装依赖
+
+```bash
+git clone <your-repo-url>
+cd yoyoagent
+
+# 推荐：使用 uv 创建环境并安装依赖
+uv sync
+
+# 或使用 pip 安装为可编辑包
+pip install -e .
+```
+
+> 需要 Python 3.10 或更高版本。依赖声明在 `pyproject.toml` 中，包含 TUI、LLM Provider、LangGraph 和 dotenv 支持。
+
+### 2. 配置模型
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，填入你的 LLM Provider、API Key 和模型名称：
+
+```dotenv
+PROVIDER=openai
+API_KEY=your-api-key
+API_BASE=https://api.openai.com/v1
+AI_MODEL=gpt-4o
+```
+
+常用配置：
+
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `PROVIDER` | LLM 提供商，支持 `anthropic` 或 `openai` | `openai` |
+| `API_KEY` | 对应提供商的 API 密钥 | `your-api-key` |
+| `API_BASE` | 可选，自定义 API Base/Base URL | `https://api.openai.com/v1` |
+| `AI_MODEL` | 模型名称 | `gpt-4o` |
+
+不要把真实 API Key 提交到仓库；本地私密配置只放在 `.env`。
+
+### 3. 启动 TUI
+
+```bash
+# 在当前目录启动，默认把当前目录作为被操作工作区
+uv run python main.py
+
+# 指定要让 agent 操作的项目目录
+uv run python main.py ~/project
+
+# 如果使用 pip 安装，也可以直接运行
+python main.py ~/project
+```
+
+启动后会进入终端 TUI。你可以直接输入需求，例如：
+
+```text
+阅读这个项目并总结结构
+修复测试失败的问题
+给 README 增加安装说明
+```
+
+### 4. 常用运行方式
+
+```bash
+uv run python main.py -a              # 自动批准高风险操作
+uv run python main.py --debug         # 输出调试日志
+uv run python main.py --log-file      # 写入 agent_debug.log
+uv run python main.py -s              # 查看当前工作区可恢复的 sessions
+uv run python main.py -r <session-id> # 恢复指定 session
+uv run python main.py -x <session-id> # 删除指定 session
+uv run python main.py -t              # 临时会话，不保存 messages
+uv run python main.py --acp           # 启动 ACP stdio server
+uv run python main.py acp             # 同上，便于作为子命令使用
+```
+
+更多 TUI 快捷键、内置工具和会话说明见 [使用说明](docs/usage.md)。
+
 ## 功能特性
 
 - 🖥️ **TUI 终端界面** - 基于 Textual 的现代终端 UI，支持紧凑 Transcript 风格时间线、工具活动摘要、审批弹窗和历史浏览
@@ -23,17 +103,7 @@
 - **更清晰的模型输出**：主时间线中的模型文本采用对话式 Transcript 风格展示，不再重复显示固定助手名称，阅读更接近常见代码代理体验。
 - **独立使用说明**：常用启动命令、TUI 快捷键和内置工具清单已整理到 [使用说明](docs/usage.md)，README 保留概览与入口信息。
 
-## 快速开始
-
-### 安装依赖
-
-```bash
-# 使用 uv
-uv sync
-
-# 或使用 pip
-pip install -e .
-```
+## 配置参考
 
 ### 依赖说明
 
@@ -49,14 +119,7 @@ pip install -e .
 
 > 以上依赖均声明在 `pyproject.toml` 中，`pip install -e .` 会一次性安装所有依赖。
 
-### 配置环境
-
-```bash
-cp .env.example .env
-# 编辑 .env 文件，配置你的提供商、API 密钥、API Base 和模型
-```
-
-常用环境变量：
+### 环境变量
 
 | 变量 | 说明 | 默认值/示例 |
 |------|------|-------------|
@@ -81,7 +144,7 @@ cp .env.example .env
 
 > 请勿把真实 API 密钥提交到仓库；建议在 `.env` 中只保存本地私密配置。`.env.example` 也应使用占位符（如 `API_KEY=your-api-key`），避免提交真实或专属密钥。
 
-### 运行
+### 完整命令参考
 
 ```bash
 python main.py                 # 默认以当前目录作为工作区启动 TUI

@@ -22,8 +22,8 @@
 
 **文件**: `.env.example` 第 6 行
 ```
-API_KEY=35781816-e659-4381-b6b3-b9fd50445e77
-API_BASE=https://ark.cn-beijing.volces.com/api/coding
+API_KEY=<example-api-key>
+API_BASE=<example-api-base>
 ```
 
 **发现**:
