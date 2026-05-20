@@ -6,22 +6,50 @@
 
 ## 快速开始
 
-### 1. 获取代码并安装依赖
+### 1. 准备环境
+
+Yoyo Agent 需要 Python 3.10 或更高版本：
+
+```bash
+python --version
+```
+
+推荐使用 `uv` 管理 Python 环境和依赖。如果本机还没有 `uv`，可以按官方安装方式安装：
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+安装后重新打开终端，确认命令可用：
+
+```bash
+uv --version
+```
+
+如果你不想使用 `uv`，也可以使用 Python 自带的 `venv` + `pip`，见下一步的备选命令。
+
+### 2. 获取代码并安装依赖
 
 ```bash
 git clone <your-repo-url>
 cd yoyoagent
 
-# 推荐：使用 uv 创建环境并安装依赖
+# 推荐：使用 uv 创建虚拟环境并安装依赖
 uv sync
 
-# 或使用 pip 安装为可编辑包
+# 备选：使用 venv + pip
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-> 需要 Python 3.10 或更高版本。依赖声明在 `pyproject.toml` 中，包含 TUI、LLM Provider、LangGraph 和 dotenv 支持。
+> 依赖声明在 `pyproject.toml` 中，包含 TUI、LLM Provider、LangGraph 和 dotenv 支持。
 
-### 2. 配置模型
+### 3. 配置模型
 
 ```bash
 cp .env.example .env
@@ -47,7 +75,7 @@ AI_MODEL=gpt-4o
 
 不要把真实 API Key 提交到仓库；本地私密配置只放在 `.env`。
 
-### 3. 启动 TUI
+### 4. 启动 TUI
 
 ```bash
 # 在当前目录启动，默认把当前目录作为被操作工作区
@@ -68,7 +96,7 @@ python main.py ~/project
 给 README 增加安装说明
 ```
 
-### 4. 常用运行方式
+### 5. 常用运行方式
 
 ```bash
 uv run python main.py -a              # 自动批准高风险操作
