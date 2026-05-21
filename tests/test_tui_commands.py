@@ -2,11 +2,12 @@
 
 import asyncio
 from argparse import Namespace
+from types import SimpleNamespace
 
 from langchain_core.messages import HumanMessage
 
 from agent.message_context_manager import MessageContextManager
-from agent.tui.app import _completion_context
+from agent.tui.app import _completion_context, _debug_tui_key_event
 from agent.tui.commands import CommandRegistry, discover_commands
 from agent.tui.commands.clear import COMMAND as CLEAR_COMMAND
 from agent.tui.commands.help import COMMAND as HELP_COMMAND
@@ -70,6 +71,38 @@ def test_completion_context_detects_colon_commands():
     assert context is not None
     assert context[0] == "command"
     assert context[1] == "cl"
+
+
+def test_tui_key_debug_disabled_by_default(tmp_path, monkeypatch):
+    log_path = tmp_path / "keys.log"
+    monkeypatch.delenv("YOYO_TUI_DEBUG_KEYS", raising=False)
+    monkeypatch.setenv("YOYO_TUI_DEBUG_KEYS_FILE", str(log_path))
+
+    _debug_tui_key_event(
+        SimpleNamespace(key="a", name="a", character="a", aliases=["a"]),
+        SimpleNamespace(id="prompt-input"),
+        "received",
+    )
+
+    assert not log_path.exists()
+
+
+def test_tui_key_debug_writes_key_event(tmp_path, monkeypatch):
+    log_path = tmp_path / "keys.log"
+    monkeypatch.setenv("YOYO_TUI_DEBUG_KEYS", "1")
+    monkeypatch.setenv("YOYO_TUI_DEBUG_KEYS_FILE", str(log_path))
+
+    _debug_tui_key_event(
+        SimpleNamespace(key="unknown", name="unknown", character="你", aliases=["unknown"]),
+        SimpleNamespace(id="prompt-input"),
+        "received",
+    )
+
+    output = log_path.read_text(encoding="utf-8")
+    assert "phase='received'" in output
+    assert "focused_id='prompt-input'" in output
+    assert "character='你'" in output
+    assert "U+4F60" in output
 
 
 def test_help_command_renders_single_page_usage_guide():

@@ -53,6 +53,22 @@ YOYO_AUTO_APPROVE=true python main.py
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 
+### TUI 输入诊断
+
+如果某些终端中输入法表现异常（例如 iTerm2 中无法输入中文），可以开启 TUI 按键诊断：
+
+```bash
+YOYO_TUI_DEBUG_KEYS=1 python main.py --log-file
+```
+
+诊断日志默认写入当前目录的 `tui_key_debug.log`，可通过 `YOYO_TUI_DEBUG_KEYS_FILE` 指定路径：
+
+```bash
+YOYO_TUI_DEBUG_KEYS=1 YOYO_TUI_DEBUG_KEYS_FILE=/tmp/yoyo-tui-keys.log python main.py
+```
+
+日志会记录 Textual 收到的 key/name/character、当前焦点控件，以及输入框文本是否发生变化，用于判断问题发生在终端、Textual 事件层还是 yoyoagent 的快捷键处理层。该开关默认关闭，不影响正常输入行为。
+
 ## ACP stdio server
 
 Yoyo Agent 可以作为 Agent Client Protocol stdio server 启动，供 Zed 等 ACP client 连接：

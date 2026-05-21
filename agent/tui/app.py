@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from datetime import datetime
+import os
+from pathlib import Path
+from typing import Any
 
 from rich.text import Text
 
@@ -32,6 +36,45 @@ SUBAGENT_ROLE_DESCRIPTIONS = {
     "tester": "verify and test",
     "security": "review security risks",
 }
+TUI_KEY_DEBUG_ENV = "YOYO_TUI_DEBUG_KEYS"
+TUI_KEY_DEBUG_FILE_ENV = "YOYO_TUI_DEBUG_KEYS_FILE"
+TUI_KEY_DEBUG_FILE = Path("tui_key_debug.log")
+
+
+def _env_flag_enabled(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _debug_tui_key_event(event: object, focused: object, phase: str, *, action: str = "") -> None:
+    if not _env_flag_enabled(TUI_KEY_DEBUG_ENV):
+        return
+    path = Path(os.environ.get(TUI_KEY_DEBUG_FILE_ENV, str(TUI_KEY_DEBUG_FILE))).expanduser()
+    character = getattr(event, "character", None)
+    try:
+        codepoints = " ".join(f"U+{ord(char):04X}" for char in character) if character else ""
+    except TypeError:
+        codepoints = ""
+    focused_id = getattr(focused, "id", None)
+    focused_type = type(focused).__name__ if focused is not None else None
+    fields: dict[str, Any] = {
+        "time": datetime.now().isoformat(timespec="milliseconds"),
+        "phase": phase,
+        "action": action,
+        "focused_id": focused_id,
+        "focused_type": focused_type,
+        "key": getattr(event, "key", None),
+        "name": getattr(event, "name", None),
+        "character": character,
+        "codepoints": codepoints,
+        "aliases": getattr(event, "aliases", None),
+    }
+    line = " ".join(f"{key}={value!r}" for key, value in fields.items())
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        return
 
 
 def _safe_text(value: object, limit: int | None = None) -> str:
@@ -754,28 +797,33 @@ def run_tui(args: Namespace) -> None:
             await self.runner.close()
 
         def on_key(self, event: events.Key) -> None:
+            _debug_tui_key_event(event, self.focused, "received")
             if (
                 _is_submit_key_event(event)
                 and getattr(self.focused, "id", None) == "prompt-input"
             ):
+                _debug_tui_key_event(event, self.focused, "handled", action="submit_prompt")
                 event.prevent_default()
                 event.stop()
                 self.run_worker(self.action_submit_prompt(), exclusive=False)
                 return
 
             if _is_changed_files_key_event(event):
+                _debug_tui_key_event(event, self.focused, "handled", action="toggle_changed_files")
                 event.prevent_default()
                 event.stop()
                 self.action_toggle_changed_files()
                 return
 
             if _is_message_tokens_key_event(event):
+                _debug_tui_key_event(event, self.focused, "handled", action="toggle_message_tokens")
                 event.prevent_default()
                 event.stop()
                 self.action_toggle_message_tokens()
                 return
 
             if event.key == "?" and getattr(self.focused, "id", None) != "prompt-input":
+                _debug_tui_key_event(event, self.focused, "handled", action="open_help")
                 event.prevent_default()
                 event.stop()
                 self.action_open_help()
@@ -783,40 +831,74 @@ def run_tui(args: Namespace) -> None:
 
             if self._completion_open:
                 if event.key in {"up", "ctrl+p"}:
+                    _debug_tui_key_event(event, self.focused, "handled", action="completion_previous")
                     self._move_completion_selection(-1)
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key in {"down", "ctrl+n"}:
+                    _debug_tui_key_event(event, self.focused, "handled", action="completion_next")
                     self._move_completion_selection(1)
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key in {"enter", "tab"}:
+                    _debug_tui_key_event(event, self.focused, "handled", action="completion_accept")
                     self._complete_selected_completion()
                     event.prevent_default()
                     event.stop()
                     return
                 if event.key == "escape":
+                    _debug_tui_key_event(event, self.focused, "handled", action="completion_hide")
                     self._hide_completion()
                     event.prevent_default()
                     event.stop()
                     return
 
             if not self._approval_open:
+                _debug_tui_key_event(event, self.focused, "passed")
                 return
             if event.key in {"y", "Y", "enter"}:
+                _debug_tui_key_event(event, self.focused, "handled", action="approval_approve")
                 self._resolve_current_approval(True)
                 event.prevent_default()
                 event.stop()
             elif event.key in {"n", "N", "escape"}:
+                _debug_tui_key_event(event, self.focused, "handled", action="approval_deny")
                 self._resolve_current_approval(False)
                 event.prevent_default()
                 event.stop()
+            else:
+                _debug_tui_key_event(event, self.focused, "passed")
 
         def on_text_area_changed(self, event: TextArea.Changed) -> None:
             if event.text_area.id != "prompt-input":
                 return
+            if _env_flag_enabled(TUI_KEY_DEBUG_ENV):
+                text = event.text_area.text
+                tail = text[-20:]
+                try:
+                    codepoints = " ".join(f"U+{ord(char):04X}" for char in tail)
+                except TypeError:
+                    codepoints = ""
+                path = Path(os.environ.get(TUI_KEY_DEBUG_FILE_ENV, str(TUI_KEY_DEBUG_FILE))).expanduser()
+                try:
+                    with path.open("a", encoding="utf-8") as handle:
+                        handle.write(
+                            " ".join(
+                                [
+                                    f"time={datetime.now().isoformat(timespec='milliseconds')!r}",
+                                    "phase='text_area_changed'",
+                                    f"length={len(text)!r}",
+                                    f"cursor={event.text_area.cursor_location!r}",
+                                    f"tail={tail!r}",
+                                    f"tail_codepoints={codepoints!r}",
+                                ]
+                            )
+                            + "\n"
+                        )
+                except OSError:
+                    pass
             self._update_completion(event.text_area)
 
         def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
