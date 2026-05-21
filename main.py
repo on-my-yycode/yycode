@@ -221,6 +221,7 @@ Examples:
   yoyoagent -x bugfix-123
   yoyoagent ~/project -t
   yoyoagent -a
+  yoyoagent --plain
 
 Session data:
   Messages are saved by default under {app_root}/sessions/{workspace_hash}/{session_id}.json.
@@ -268,6 +269,11 @@ Environment:
         "--log-file",
         action="store_true",
         help="Write logs to agent_debug.log.",
+    )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="Use plain terminal input mode instead of the Textual TUI.",
     )
     parser.add_argument(
         "-a",
@@ -321,6 +327,37 @@ Environment:
         help=argparse.SUPPRESS,
     )
     return parser
+
+
+async def run_plain_loop(args: argparse.Namespace, input_func=input) -> None:
+    """Run the agent with ordinary terminal input as a TUI fallback."""
+    approval_callback = auto_approval_callback if args.auto else console_approval_callback
+    session = Session.from_config(
+        workdir=args.workdir,
+        session_id=args.session_id,
+        approval_callback=approval_callback,
+        persist_messages=not args.temp,
+        resume=bool(args.resume),
+    )
+    print(format_startup_info(session))
+    print("\033[90mPlain input mode. Type q or exit to quit. Use /paste and /end for multiline input.\033[0m\n")
+    try:
+        while True:
+            try:
+                query = await read_user_query_with_session(session, input_func)
+            except EOFError:
+                print()
+                break
+            except KeyboardInterrupt:
+                print("\n\033[90mInterrupted. Type q or exit to quit.\033[0m\n")
+                continue
+            if query.strip().lower() in {"q", "exit"}:
+                break
+            if not query.strip():
+                continue
+            await run_agent_task(session, query)
+    finally:
+        await session.close()
 
 
 def list_sessions_for_workdir(workdir: Path) -> str:
@@ -395,7 +432,8 @@ def main() -> None:
     setup_logging(debug=args.debug, log_to_file=args.log_file)
 
     print("\033[33m" + LOGO + "\033[0m")
-    print("Yoyo Agent - Starting TUI...\n")
+    startup_mode = "plain input" if args.plain else "TUI"
+    print(f"Yoyo Agent - Starting {startup_mode}...\n")
     if args.debug:
         print("\033[90m[DEBUG] Debug mode enabled. Logs written to agent_debug.log\033[0m\n")
 
@@ -403,6 +441,10 @@ def main() -> None:
     if args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):
         args.auto = True
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
+
+    if args.plain:
+        asyncio.run(run_plain_loop(args))
+        return
 
     from agent.tui.app import run_tui
 

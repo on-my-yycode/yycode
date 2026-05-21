@@ -2,6 +2,7 @@
 
 import asyncio
 import types
+from argparse import Namespace
 
 from agent.providers.base import ChatResponse, LLMProvider, ToolCall
 from agent.approval import ApprovalRequest
@@ -32,6 +33,7 @@ from main import (
     read_user_query_with_session,
     resolve_startup_workdir,
     run_agent_task,
+    run_plain_loop,
 )
 
 
@@ -191,6 +193,59 @@ def test_read_user_query_with_session_uses_dynamic_prompt(tmp_path):
     query = asyncio.run(read_user_query_with_session(session, fake_input))
 
     assert query == "hello"
+
+
+def test_arg_parser_supports_plain_mode():
+    args = build_arg_parser().parse_args(["--plain"])
+
+    assert args.plain is True
+
+
+def test_run_plain_loop_uses_console_input_and_closes_session(tmp_path, monkeypatch):
+    class PlainSession:
+        created = None
+
+        def __init__(self, **kwargs):
+            PlainSession.created = self
+            self.id = "plain-sess"
+            self.workdir = kwargs["workdir"]
+            self.provider = types.SimpleNamespace(model="fake-model")
+            self.skill_registry = types.SimpleNamespace(list_skills=lambda: [])
+            self.restored_message_count = 0
+            self.context_window_tokens = 1_000
+            self.closed = False
+            self.sent = []
+
+        @classmethod
+        def from_config(cls, **kwargs):
+            return cls(**kwargs)
+
+        def estimate_token_usage(self):
+            return 0
+
+        def estimate_context_window_percent(self):
+            return 0
+
+        async def send(self, query):
+            self.sent.append(query)
+
+        async def close(self):
+            self.closed = True
+
+    fake_input = FakeInput(["hello", "q"])
+    monkeypatch.setattr("main.Session", PlainSession)
+    args = Namespace(
+        workdir=tmp_path,
+        session_id=None,
+        auto=True,
+        temp=True,
+        resume=None,
+    )
+
+    asyncio.run(run_plain_loop(args, input_func=fake_input))
+
+    assert PlainSession.created.sent == ["hello"]
+    assert PlainSession.created.closed is True
 
 
 def test_format_startup_info_includes_restored_messages(tmp_path):
@@ -943,6 +998,33 @@ def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
 
     main()
 
+    assert captured["args"].workdir == tmp_path.resolve()
+
+
+def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_setup_logging(*, debug, log_to_file):
+        captured["logging"] = (debug, log_to_file)
+
+    def fake_load_dotenv(*, override):
+        captured["dotenv_override"] = override
+
+    async def fake_run_plain_loop(args):
+        captured["args"] = args
+
+    def fail_run_tui(args):
+        raise AssertionError("TUI should not start in plain mode")
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.run_plain_loop", fake_run_plain_loop)
+    monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--plain"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
+
+    main()
+
+    assert captured["args"].plain is True
     assert captured["args"].workdir == tmp_path.resolve()
 
 

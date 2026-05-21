@@ -12,6 +12,7 @@ python main.py ~/project       # 指定工作区目录启动
 python main.py -a              # 自动批准高风险操作
 python main.py --debug         # 调试模式，输出详细日志
 python main.py --log-file      # 将日志写入 agent_debug.log
+python main.py --plain         # 使用普通终端输入模式，作为 TUI/输入法兼容兜底
 python main.py --acp           # 启动 ACP stdio server
 python main.py acp             # 同上，便于作为子命令使用
 python main.py -s              # 列出当前工作区可恢复的 sessions
@@ -52,6 +53,14 @@ YOYO_AUTO_APPROVE=true python main.py
 默认技能目录是 `{app_root}/skills`。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
+
+如果某些终端的 TUI 输入法兼容性不好（例如 iTerm2 中中文候选词无法上屏），可以使用普通终端输入模式：
+
+```bash
+python main.py --plain
+```
+
+`--plain` 会跳过 Textual TUI，使用普通 `input()` / readline 读取用户输入；仍支持 `/paste` / `/p` 多行输入、session 保存/恢复和运行时审批。
 
 ### TUI 输入诊断
 
