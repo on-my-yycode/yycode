@@ -234,6 +234,7 @@ def apply_patch(
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=60,
         )
         if check.returncode != 0:
@@ -246,6 +247,7 @@ def apply_patch(
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=60,
         )
         if result.returncode != 0:

@@ -1025,7 +1025,7 @@ def run_tui(args: Namespace) -> None:
             self._session_ready = True
             input_widget = self.query_one("#prompt-input", TextArea)
             input_widget.disabled = False
-            input_widget.placeholder = "Ask yoyoagent... Ctrl+Enter send | Ctrl+T task plan"
+            input_widget.placeholder = "Ask yoyoagent... Ctrl+Enter send | Ctrl+L timeline text | Ctrl+T task plan"
             input_widget.focus()
             self._refresh_all()
 

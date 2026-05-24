@@ -33,6 +33,7 @@ def git_diff(
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=30,
         )
         output = (result.stdout + result.stderr).strip()

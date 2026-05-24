@@ -2,6 +2,7 @@
 
 import asyncio
 from argparse import Namespace
+from subprocess import CompletedProcess
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -546,3 +547,25 @@ def test_runner_keeps_second_turn_tool_and_text_events_in_timeline():
         assert ("text_delta", "answer 2") in transcript
 
     asyncio.run(run())
+
+
+def test_read_git_header_uses_backslash_subprocess_decoding(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return CompletedProcess(command, 0, stdout="master\n", stderr="")
+        if command[:2] == ["git", "status"]:
+            return CompletedProcess(command, 0, stdout=" M file.txt\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr("agent.tui.runner.subprocess.run", fake_run)
+
+    header = _read_git_header(tmp_path)
+
+    assert header.branch == "master"
+    assert header.dirty is True
+    assert calls
+    assert all(kwargs["text"] is True for _, kwargs in calls)
+    assert all(kwargs["errors"] == "backslashreplace" for _, kwargs in calls)

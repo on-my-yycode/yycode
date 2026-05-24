@@ -6,7 +6,7 @@ import asyncio
 from agent.graph import create_tools_node
 from agent.providers.base import ChatResponse, LLMProvider
 from agent.session import Session
-from agent.skills import SkillRegistry, load_skills, parse_skill_paths
+from agent.skills import SkillRegistry, discover_skills, load_skills, parse_skill_paths
 from agent.subagent import build_subagent_system_prompt
 from agent.todo_manager import TodoManager
 from langchain_core.messages import AIMessage
@@ -71,6 +71,20 @@ def test_load_skills_parses_frontmatter_name_and_description(tmp_path):
     assert skills[0].name == "github"
     assert skills[0].description == "Interact with GitHub using the `gh` CLI."
     assert skills[0].content == "# GitHub\n\nUse gh issue and gh pr."
+
+
+def test_skill_files_are_read_as_utf8_with_backslash_replacement(tmp_path):
+    skill_root = tmp_path / "skills"
+    skill_root.mkdir()
+    (skill_root / "review.md").write_bytes(
+        b"---\nname: review\ndescription: It\xe2\x80\x99s useful\n---\n\nBody \x92 text"
+    )
+
+    skills = discover_skills(tmp_path, [str(skill_root)])
+
+    assert len(skills) == 1
+    assert skills[0].description == "It\u2019s useful"
+    assert skills[0].content == "Body \\x92 text"
 
 
 def test_load_skills_resolves_named_skills_from_skill_dirs(tmp_path):

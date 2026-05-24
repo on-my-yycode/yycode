@@ -67,6 +67,7 @@ def _run_git_diff(
         cwd=workspace.root,
         capture_output=True,
         text=True,
+        errors="backslashreplace",
         timeout=30,
     )
     output = (result.stdout + result.stderr).strip()
@@ -132,6 +133,7 @@ def _is_tracked(path: str, workdir: Path | str | None = None) -> bool:
         cwd=workspace.root,
         capture_output=True,
         text=True,
+        errors="backslashreplace",
         timeout=30,
     )
     return result.returncode == 0
