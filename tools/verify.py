@@ -62,6 +62,7 @@ def verify(kind: str = "all", target: str = "", workdir: Path | str | None = Non
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=VERIFY_TIMEOUT_SECONDS,
         )
         elapsed = time.monotonic() - started

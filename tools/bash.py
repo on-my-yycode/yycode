@@ -42,6 +42,7 @@ def bash(command: str, approved: bool = False, workdir: Path | str | None = None
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=120,
         )
         return _format_bash_result(r.returncode, r.stdout, r.stderr)

@@ -219,7 +219,7 @@ def _load_skill_file(path: Path) -> Optional[LoadedSkill]:
 
 def _read_skill_file(path: Path) -> str:
     try:
-        return path.read_text().strip()
+        return path.read_text(encoding="utf-8", errors="backslashreplace").strip()
     except OSError:
         return ""
 

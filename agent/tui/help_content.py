@@ -11,6 +11,7 @@ TUI_SHORTCUTS = [
     ("Ctrl+Enter / Ctrl+J", "Submit current input"),
     ("Ctrl+C", "Cancel current task / interrupt"),
     ("Ctrl+Shift+C", "Copy timeline"),
+    ("Ctrl+L", "Open plain-text timeline"),
     ("Ctrl+Q", "Quit"),
     ("Ctrl+T", "Open task plan panel"),
     ("Ctrl+D", "Open changed files panel"),

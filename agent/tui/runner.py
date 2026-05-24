@@ -405,6 +405,7 @@ def _read_git_header(workdir: Path | str | None) -> GitHeader:
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=2,
             check=True,
         ).stdout.strip()
@@ -414,6 +415,7 @@ def _read_git_header(workdir: Path | str | None) -> GitHeader:
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
+                errors="backslashreplace",
                 timeout=2,
                 check=True,
             ).stdout.strip()
@@ -423,6 +425,7 @@ def _read_git_header(workdir: Path | str | None) -> GitHeader:
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=2,
             check=True,
         ).stdout

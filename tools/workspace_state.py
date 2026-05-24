@@ -15,6 +15,7 @@ def _run_git(args: list[str], workdir: Path | str | None = None) -> tuple[int, s
         cwd=workspace.root,
         capture_output=True,
         text=True,
+        errors="backslashreplace",
         timeout=30,
     )
     return result.returncode, (result.stdout + result.stderr).strip()

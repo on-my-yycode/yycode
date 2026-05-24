@@ -27,6 +27,7 @@ def git_show(ref: str = "HEAD", path: str = "", workdir: Path | str | None = Non
             cwd=workspace.root,
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=30,
         )
         output = (result.stdout + result.stderr).strip()
