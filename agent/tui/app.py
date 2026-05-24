@@ -205,7 +205,7 @@ def run_tui(args: Namespace) -> None:
 
         def on_mount(self) -> None:
             body = self.query_one("#help-body", RichLog)
-            body.write("[bold #c9a6ff]YOYOAGENT Help[/] [#7f8794]Press Esc to close[/]")
+            body.write("[bold #c9a6ff]yycode Help[/] [#7f8794]Press Esc to close[/]")
             body.write("")
             body.write(self.content)
 
@@ -936,7 +936,7 @@ def run_tui(args: Namespace) -> None:
                 result = await self.runner.execute_command(text, self.command_registry, emit_result=False)
                 if result.clear_input:
                     input_widget.load_text("")
-                if result.title == "YOYOAGENT Help":
+                if result.title == "yycode Help":
                     self.push_screen(HelpScreen(result.content))
                 elif result.content:
                     self.notify(result.content, severity=result.severity)

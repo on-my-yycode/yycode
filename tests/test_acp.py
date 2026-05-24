@@ -203,7 +203,7 @@ def test_acp_server_initialize_writes_jsonrpc_response():
 
     payload = json.loads(output.getvalue())
     assert payload["id"] == 1
-    assert payload["result"]["agentInfo"]["name"] == "yoyoagent"
+    assert payload["result"]["agentInfo"]["name"] == "yycode"
     assert payload["result"]["agentCapabilities"]["loadSession"] is True
 
 

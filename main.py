@@ -18,12 +18,13 @@ from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
 from agent.logger import setup_logging
 from agent.session_store import FileSessionStore
 from agent.streaming import colorize_diff
+from agent.logger import LOG_FILE_NAME
 
 # Try to enable readline for better input experience
 try:
     import readline
 
-    histfile = os.path.join(os.path.expanduser("~"), ".yoyoagent_history")
+    histfile = os.path.join(os.path.expanduser("~"), ".yycode_history")
     try:
         readline.read_history_file(histfile)
     except FileNotFoundError:
@@ -212,16 +213,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """Build the command-line parser with user-facing help text."""
     examples = """\
 Examples:
-  yoyoagent
-  yoyoagent ~/project
-  yoyoagent --acp
-  yoyoagent acp
-  yoyoagent -s
-  yoyoagent -r bugfix-123
-  yoyoagent -x bugfix-123
-  yoyoagent ~/project -t
-  yoyoagent -a
-  yoyoagent --plain
+  yycode
+  yycode ~/project
+  yycode --acp
+  yycode acp
+  yycode -s
+  yycode -r bugfix-123
+  yycode -x bugfix-123
+  yycode ~/project -t
+  yycode -a
+  yycode --plain
 
 Session data:
   Messages are saved by default under {app_root}/sessions/{workspace_hash}/{session_id}.json.
@@ -243,8 +244,8 @@ Environment:
   YOYO_AUTO_APPROVE           Alias for YOYO_SILENT.
 """
     parser = argparse.ArgumentParser(
-        prog="yoyoagent",
-        description="Yoyo Agent - terminal coding assistant with workspace tools and session persistence.",
+        prog="yycode",
+        description="yycode - terminal coding assistant with workspace tools and session persistence.",
         epilog=textwrap.dedent(examples),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -396,6 +397,13 @@ def create_session_store_for_workdir(workdir: Path) -> FileSessionStore:
     return FileSessionStore(app_root=app_root, workdir=workdir, root=session_root)
 
 
+def resolve_log_file_path() -> Path:
+    """Return the fixed application log file path."""
+    app_root = resolve_app_root()
+    runtime_data_dir = resolve_runtime_data_dir(app_root)
+    return runtime_data_dir / "logs" / LOG_FILE_NAME
+
+
 def format_session_updated_at(value: str) -> str:
     """Format persisted session timestamps for CLI display."""
     if not value:
@@ -411,7 +419,9 @@ def main() -> None:
     """Parse startup args and launch the TUI on the main thread."""
     parser = build_arg_parser()
     args = parser.parse_args()
+    log_file_path = resolve_log_file_path()
     if args.acp or args.workdir == "acp":
+        setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
         load_dotenv(override=True)
         auto_approve = args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
         from agent.acp.server import main as acp_main
@@ -429,13 +439,13 @@ def main() -> None:
         return
 
     # Set up logging
-    setup_logging(debug=args.debug, log_to_file=args.log_file)
+    setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
 
     print("\033[33m" + LOGO + "\033[0m")
     startup_mode = "plain input" if args.plain else "TUI"
-    print(f"Yoyo Agent - Starting {startup_mode}...\n")
+    print(f"yycode - Starting {startup_mode}...\n")
     if args.debug:
-        print("\033[90m[DEBUG] Debug mode enabled. Logs written to agent_debug.log\033[0m\n")
+        print(f"\033[90m[DEBUG] Debug mode enabled. Logs written to {log_file_path}\033[0m\n")
 
     load_dotenv(override=True)
     if args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):

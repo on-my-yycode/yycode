@@ -86,6 +86,9 @@ uv run python main.py ~/project
 
 # 如果使用 pip 安装，也可以直接运行
 python main.py ~/project
+
+# 安装发行包后可直接使用 yycode 命令
+yycode ~/project
 ```
 
 启动后会进入终端 TUI。你可以直接输入需求，例如：
@@ -109,6 +112,8 @@ uv run python main.py -x <session-id> # 删除指定 session
 uv run python main.py -t              # 临时会话，不保存 messages
 uv run python main.py --acp           # 启动 ACP stdio server
 uv run python main.py acp             # 同上，便于作为子命令使用
+yycode --plain                        # 安装发行包后的普通终端输入模式
+yycode --acp                          # 安装发行包后的 ACP stdio server
 ```
 
 更多 TUI 快捷键、内置工具和会话说明见 [使用说明](docs/usage.md)。
@@ -188,6 +193,9 @@ python main.py -s              # 列出当前工作区可恢复的 sessions
 python main.py -r abc          # 恢复指定 session 的历史 messages
 python main.py -x abc          # 删除指定 session
 python main.py -t              # 临时会话，不保存 session messages
+yycode                         # 安装发行包后启动 TUI
+yycode --plain                 # 安装发行包后使用普通终端输入模式
+yycode --acp                   # 安装发行包后启动 ACP stdio server
 ```
 
 当前默认入口会启动 TUI 界面。工作区使用位置参数指定；如果不传，则使用启动命令时所在目录。上述 `/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。

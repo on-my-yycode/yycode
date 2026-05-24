@@ -164,8 +164,8 @@ def _initialize_result() -> dict[str, Any]:
             },
         },
         "agentInfo": {
-            "name": "yoyoagent",
-            "title": "YoyoAgent",
+            "name": "yycode",
+            "title": "yycode",
             "version": _project_version(),
         },
         "authMethods": [],

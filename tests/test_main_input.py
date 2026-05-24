@@ -31,6 +31,7 @@ from main import (
     main,
     read_user_query,
     read_user_query_with_session,
+    resolve_log_file_path,
     resolve_startup_workdir,
     run_agent_task,
     run_plain_loop,
@@ -829,8 +830,8 @@ def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
 def test_main_launches_tui_on_main_thread(monkeypatch):
     captured = {}
 
-    def fake_setup_logging(*, debug, log_to_file):
-        captured["logging"] = (debug, log_to_file)
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
 
     def fake_load_dotenv(*, override):
         captured["dotenv_override"] = override
@@ -845,18 +846,51 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
 
     main()
 
-    assert captured["logging"] == (True, False)
+    assert captured["logging"][:2] == (True, False)
     assert captured["dotenv_override"] is True
     assert captured["args"].debug is True
     assert captured["args"].auto is True
+
+
+def test_main_acp_mode_initializes_logging(monkeypatch):
+    captured = {}
+
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
+
+    def fake_load_dotenv(*, override):
+        captured["dotenv_override"] = override
+
+    def fake_acp_main(*, auto_approve):
+        captured["auto_approve"] = auto_approve
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("sys.argv", ["main.py", "--acp", "-a", "--log-file"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.acp.server", types.SimpleNamespace(main=fake_acp_main))
+
+    main()
+
+    assert captured["logging"][:2] == (False, True)
+    assert captured["logging"][2].name == "agent_debug.log"
+    assert captured["logging"][2].parent.name == "logs"
+    assert captured["dotenv_override"] is True
+    assert captured["auto_approve"] is True
+
+
+def test_resolve_log_file_path_uses_runtime_data_dir(tmp_path, monkeypatch):
+    runtime_dir = tmp_path / "runtime"
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_dir))
+
+    assert resolve_log_file_path() == runtime_dir.resolve() / "logs" / "agent_debug.log"
 
 
 def test_arg_parser_help_includes_examples_and_session_options():
     help_text = build_arg_parser().format_help()
 
     assert "Examples:" in help_text
-    assert "yoyoagent ~/project" in help_text
-    assert "yoyoagent -r bugfix-123" in help_text
+    assert "yycode ~/project" in help_text
+    assert "yycode -r bugfix-123" in help_text
     assert "-r" in help_text
     assert "--resume ID" in help_text
     assert "-s" in help_text
@@ -879,8 +913,8 @@ def test_arg_parser_help_includes_examples_and_session_options():
 def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_setup_logging(*, debug, log_to_file):
-        captured["logging"] = (debug, log_to_file)
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
 
     def fake_load_dotenv(*, override):
         captured["dotenv_override"] = override
@@ -982,8 +1016,8 @@ def test_main_delete_session_exits_before_tui(tmp_path, monkeypatch, capsys):
 def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_setup_logging(*, debug, log_to_file):
-        captured["logging"] = (debug, log_to_file)
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
 
     def fake_load_dotenv(*, override):
         captured["dotenv_override"] = override
@@ -1004,8 +1038,8 @@ def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
 def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
     captured = {}
 
-    def fake_setup_logging(*, debug, log_to_file):
-        captured["logging"] = (debug, log_to_file)
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
 
     def fake_load_dotenv(*, override):
         captured["dotenv_override"] = override

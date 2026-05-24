@@ -19,6 +19,9 @@ python main.py -s              # 列出当前工作区可恢复的 sessions
 python main.py -r abc          # 恢复同一工作区下指定 session 的历史 messages
 python main.py -x abc          # 删除同一工作区下指定 session
 python main.py -t              # 临时会话，不保存 session messages
+yycode                         # 安装发行包后启动 TUI
+yycode --plain                 # 安装发行包后使用普通终端输入模式
+yycode --acp                   # 安装发行包后启动 ACP stdio server
 ```
 
 工作区使用位置参数指定，不提供 `--workdir`。如果不传工作区，Yoyo Agent 会使用启动命令时所在的当前目录。所有文件、Git、Shell、验证和审批 diff 都会限制在该工作区内。
@@ -58,6 +61,8 @@ YOYO_AUTO_APPROVE=true python main.py
 
 ```bash
 python main.py --plain
+# 或安装发行包后：
+yycode --plain
 ```
 
 `--plain` 会跳过 Textual TUI，使用普通 `input()` / readline 读取用户输入；仍支持 `/paste` / `/p` 多行输入、session 保存/恢复和运行时审批。
@@ -83,9 +88,9 @@ YOYO_TUI_DEBUG_KEYS=1 YOYO_TUI_DEBUG_KEYS_FILE=/tmp/yoyo-tui-keys.log python mai
 Yoyo Agent 可以作为 Agent Client Protocol stdio server 启动，供 Zed 等 ACP client 连接：
 
 ```bash
-yoyoagent --acp
+yycode --acp
 # 或
-yoyoagent acp
+yycode acp
 ```
 
 首版支持 `initialize`、`session/new`、`session/load`、`session/prompt`、`session/cancel`，并把内部 `StreamEvent` 转为 `session/update`。写文件或高风险命令仍复用 yoyoagent runtime approval，并通过 `session/request_permission` 请求 client 审批。ACP 模式下 stdout 只输出 JSON-RPC 消息，日志和诊断信息写 stderr。

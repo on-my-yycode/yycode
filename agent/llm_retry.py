@@ -4,13 +4,17 @@ import asyncio
 import contextlib
 import os
 import math
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 from agent.providers.base import ChatResponse, LLMProvider
 from agent.streaming import ProviderStreamCallback, StreamEvent, StreamEventCallback
-from agent.logger import DEBUG_ENABLED
+from agent.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 DEFAULT_LLM_TIMEOUT_SECONDS = 3600.0  # 1 hour for very long tasks
@@ -81,10 +85,32 @@ async def chat_with_retry(
         DEFAULT_LLM_MAX_RETRIES,
     )
     attempts = max_retries + 1
+    estimated_tokens = _estimate_context_tokens(messages, system_prompt)
+    provider_name = provider.__class__.__name__
+    model_name = str(getattr(provider, "model", "(unknown)"))
+    request_id = f"{source}:{session_id or '-'}:{int(time.time() * 1000) % 1_000_000}"
+
+    logger.debug(
+        "LLM request start request_id=%s source=%s role=%s provider=%s model=%s "
+        "messages=%d tools=%d context_est_tokens=%d stream=%s timeout_s=%.3f "
+        "heartbeat_s=%.3f max_retries=%d attempts=%d",
+        request_id,
+        source,
+        role or "",
+        provider_name,
+        model_name,
+        len(messages),
+        len(tools),
+        estimated_tokens,
+        stream_callback is not None,
+        timeout_seconds,
+        heartbeat_seconds,
+        max_retries,
+        attempts,
+    )
 
     # Debug log to confirm actual values
-    if DEBUG_ENABLED and event_callback:
-        estimated_tokens = _estimate_context_tokens(messages, system_prompt)
+    if _debug_enabled() and event_callback:
         await _emit_llm_event(
             event_callback,
             source=source,
@@ -98,7 +124,7 @@ async def chat_with_retry(
 
     for attempt in range(1, attempts + 1):
         try:
-            return await _chat_once_with_heartbeat(
+            response = await _chat_once_with_heartbeat(
                 provider,
                 messages=messages,
                 tools=tools,
@@ -113,9 +139,24 @@ async def chat_with_retry(
                 heartbeat_seconds=heartbeat_seconds,
                 attempt=attempt,
                 attempts=attempts,
+                request_id=request_id,
             )
+            logger.debug(
+                "LLM request success request_id=%s attempt=%d/%d",
+                request_id,
+                attempt,
+                attempts,
+            )
+            return response
         except asyncio.TimeoutError:
             last_error = f"Timeout after {timeout_seconds:g}s"
+            logger.warning(
+                "LLM request timeout request_id=%s attempt=%d/%d timeout_s=%.3f",
+                request_id,
+                attempt,
+                attempts,
+                timeout_seconds,
+            )
             await _emit_llm_event(
                 event_callback,
                 source=source,
@@ -132,6 +173,14 @@ async def chat_with_retry(
             )
         except Exception as exc:
             last_error = str(exc) or exc.__class__.__name__
+            logger.warning(
+                "LLM request error request_id=%s attempt=%d/%d error_type=%s error=%s",
+                request_id,
+                attempt,
+                attempts,
+                exc.__class__.__name__,
+                last_error,
+            )
             await _emit_llm_event(
                 event_callback,
                 source=source,
@@ -148,6 +197,12 @@ async def chat_with_retry(
             )
 
         if attempt < attempts:
+            logger.debug(
+                "LLM request retry scheduled request_id=%s next_attempt=%d/%d",
+                request_id,
+                attempt + 1,
+                attempts,
+            )
             await _emit_llm_event(
                 event_callback,
                 source=source,
@@ -188,17 +243,34 @@ async def _chat_once_with_heartbeat(
     heartbeat_seconds: float,
     attempt: int,
     attempts: int,
+    request_id: str,
 ) -> ChatResponse:
     last_activity = time.monotonic()
+    first_stream_event_at: Optional[float] = None
+    stream_event_count = 0
 
     async def activity_stream_callback(event_type: str, content: str) -> None:
-        nonlocal last_activity
+        nonlocal first_stream_event_at, last_activity, stream_event_count
+        now = time.monotonic()
+        if first_stream_event_at is None:
+            first_stream_event_at = now
+            logger.debug(
+                "LLM first stream event request_id=%s attempt=%d/%d event_type=%s "
+                "first_token_latency_s=%.3f",
+                request_id,
+                attempt,
+                attempts,
+                event_type,
+                now - start,
+            )
+        stream_event_count += 1
         last_activity = time.monotonic()
         if stream_callback is not None:
             await stream_callback(event_type, content)
 
     # Update activity before starting to avoid idle_seconds jumping
     last_activity = time.monotonic()
+    start = time.monotonic()
 
     task = asyncio.create_task(
         provider.chat(
@@ -208,7 +280,13 @@ async def _chat_once_with_heartbeat(
             stream_callback=activity_stream_callback if stream_callback else None,
         )
     )
-    start = time.monotonic()
+    logger.debug(
+        "LLM attempt started request_id=%s attempt=%d/%d timeout_s=%.3f",
+        request_id,
+        attempt,
+        attempts,
+        timeout_seconds,
+    )
 
     try:
         while True:
@@ -221,10 +299,41 @@ async def _chat_once_with_heartbeat(
 
             done, _ = await asyncio.wait({task}, timeout=min(heartbeat_seconds, remaining))
             if done:
-                return await task
+                response = await task
+                elapsed_seconds = time.monotonic() - start
+                logger.debug(
+                    "LLM attempt completed request_id=%s attempt=%d/%d elapsed_s=%.3f "
+                    "stream_events=%d first_token_latency_s=%s content_chars=%d "
+                    "tool_calls=%d usage=%s",
+                    request_id,
+                    attempt,
+                    attempts,
+                    elapsed_seconds,
+                    stream_event_count,
+                    (
+                        f"{first_stream_event_at - start:.3f}"
+                        if first_stream_event_at is not None
+                        else "none"
+                    ),
+                    len(response.content or ""),
+                    len(response.tool_calls or []),
+                    response.usage,
+                )
+                return response
 
             idle_seconds = int(time.monotonic() - last_activity)
             elapsed_seconds = int(time.monotonic() - start)
+            logger.debug(
+                "LLM still waiting request_id=%s attempt=%d/%d elapsed_s=%d "
+                "idle_s=%d stream_events=%d remaining_s=%.3f",
+                request_id,
+                attempt,
+                attempts,
+                elapsed_seconds,
+                idle_seconds,
+                stream_event_count,
+                remaining,
+            )
             await _emit_llm_event(
                 event_callback,
                 source=source,
@@ -318,3 +427,8 @@ def _resolve_int_env(name: str, explicit: Optional[int], default: int) -> int:
         return max(int(raw), 0)
     except ValueError:
         return default
+
+
+def _debug_enabled() -> bool:
+    logger_module = sys.modules.get("agent.logger")
+    return bool(getattr(logger_module, "DEBUG_ENABLED", False))

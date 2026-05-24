@@ -5,18 +5,24 @@ import sys
 from pathlib import Path
 
 # Log file path
-LOG_FILE = Path("agent_debug.log")
+LOG_FILE_NAME = "agent_debug.log"
+LOG_FILE = Path(LOG_FILE_NAME)
 
 # Global flag to control debug output
 DEBUG_ENABLED = False
 
 
-def setup_logging(debug: bool = False, log_to_file: bool = False):
+def setup_logging(
+    debug: bool = False,
+    log_to_file: bool = False,
+    log_file: str | Path | None = None,
+):
     """Set up logging configuration.
 
     Args:
         debug: Whether to enable debug logging to console.
         log_to_file: Whether to write logs to file.
+        log_file: Optional path for the log file.
     """
     global DEBUG_ENABLED
     DEBUG_ENABLED = debug
@@ -30,11 +36,13 @@ def setup_logging(debug: bool = False, log_to_file: bool = False):
         root_logger.removeHandler(handler)
 
     # File handler - only if log_to_file is True
+    log_path = Path(log_file).expanduser().resolve() if log_file else LOG_FILE
     if log_to_file:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
@@ -58,7 +66,7 @@ def setup_logging(debug: bool = False, log_to_file: bool = False):
     if debug:
         status_parts.append("debug to console")
     if log_to_file:
-        status_parts.append(f"logs to {LOG_FILE}")
+        status_parts.append(f"logs to {log_path}")
 
     if status_parts:
         print(f"\033[90m[INFO] {', '.join(status_parts)}\033[0m")

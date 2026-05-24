@@ -1,7 +1,7 @@
 [project]
-name = "yoyoagent"
+name = "yycode"
 version = "0.3.2"
-description = "Learning LangGraph agent"
+description = "Terminal coding agent with TUI, plain input mode, tools, skills, and ACP support"
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.40.0",
@@ -12,6 +12,12 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "textual>=0.80.0",
 ]
+
+[project.scripts]
+yycode = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 include = ["agent*", "tools*", "utils*"]

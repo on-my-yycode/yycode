@@ -27,3 +27,4 @@ output/
 
 # Local yoyoagent runtime data
 sessions/
+logs/

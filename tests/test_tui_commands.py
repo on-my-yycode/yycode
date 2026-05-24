@@ -114,8 +114,8 @@ def test_help_command_renders_single_page_usage_guide():
 
         result = await runner.execute_command(":help anything", registry)
 
-        assert result.title == "YOYOAGENT Help"
-        assert "YOYOAGENT Help" in result.content
+        assert result.title == "yycode Help"
+        assert "yycode Help" in result.content
         assert "TUI Commands" in result.content
         assert ":clear" in result.content
         assert ":clear!" in result.content
@@ -134,7 +134,7 @@ def test_help_command_renders_single_page_usage_guide():
         assert "Skills" in result.content
         assert "/skill-name" in result.content
         assert "Startup Arguments" in result.content
-        assert "yoyoagent [WORKDIR] [options]" in result.content
+        assert "yycode [WORKDIR] [options]" in result.content
         assert "--resume ID" in result.content
         assert "--sessions" in result.content
         assert "--list-sessions" in result.content

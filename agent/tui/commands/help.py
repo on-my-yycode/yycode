@@ -19,7 +19,7 @@ class HelpCommand:
 
     async def execute(self, ctx: CommandContext, args: str) -> CommandResult:
         return CommandResult(
-            title="YOYOAGENT Help",
+            title="yycode Help",
             content=render_help_page(ctx.registry.list_commands()),
         )
 

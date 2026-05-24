@@ -55,7 +55,7 @@ STARTUP_ARGUMENTS = [
 def render_help_page(commands: Iterable[TuiCommand]) -> str:
     """Render the complete single-page TUI help text."""
     sections = [
-        "YOYOAGENT Help",
+        "yycode Help",
         "",
         "TUI Commands",
         *_render_commands(commands),
@@ -83,11 +83,11 @@ def render_help_page(commands: Iterable[TuiCommand]) -> str:
         "  Example: /drawio-skill create an architecture diagram",
         "",
         "Startup Arguments",
-        "  yoyoagent [WORKDIR] [options]",
+        "  yycode [WORKDIR] [options]",
         *_render_rows(STARTUP_ARGUMENTS),
         "",
         "More",
-        "  Run `yoyoagent --help` for raw CLI help.",
+        "  Run `yycode --help` for raw CLI help.",
     ]
     return "\n".join(sections)
 
