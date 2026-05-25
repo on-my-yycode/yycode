@@ -4,24 +4,73 @@
 
 本文档整理 Yoyo Agent 的日常使用入口、TUI 交互和内置工具清单。README 保留项目概览，本页作为更完整的使用参考。
 
+## 安装 yycode 命令
+
+yycode 已发布到 PyPI：
+
+```text
+https://pypi.org/project/yycode/
+```
+
+推荐使用 `uv tool install` 从 PyPI 安装 yycode 命令：
+
+```bash
+uv tool install yycode
+yycode --help
+```
+
+也可以使用 pip 安装：
+
+```bash
+pip install yycode
+yycode --help
+```
+
+安装后可以在任意项目目录运行：
+
+```bash
+yycode
+yycode ~/project
+yycode --plain
+yycode --acp
+```
+
+如果要升级到远程最新版本：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果要安装 GitHub 分支上的预览版本，或者需要强制刷新本地工具环境：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+开发 yycode 源码时可以在仓库目录运行：
+
+```bash
+uv sync
+uv run yycode
+uv run yycode ~/project
+uv run python main.py ~/project
+```
+
 ## 启动
 
 ```bash
-python main.py                 # 默认以当前目录作为工作区启动 TUI
-python main.py ~/project       # 指定工作区目录启动
-python main.py -a              # 自动批准高风险操作
-python main.py --debug         # 调试模式，输出详细日志
-python main.py --log-file      # 将日志写入 agent_debug.log
-python main.py --plain         # 使用普通终端输入模式，作为 TUI/输入法兼容兜底
-python main.py --acp           # 启动 ACP stdio server
-python main.py acp             # 同上，便于作为子命令使用
-python main.py -s              # 列出当前工作区可恢复的 sessions
-python main.py -r abc          # 恢复同一工作区下指定 session 的历史 messages
-python main.py -x abc          # 删除同一工作区下指定 session
-python main.py -t              # 临时会话，不保存 session messages
-yycode                         # 安装发行包后启动 TUI
-yycode --plain                 # 安装发行包后使用普通终端输入模式
-yycode --acp                   # 安装发行包后启动 ACP stdio server
+yycode                         # 默认以当前目录作为工作区启动 TUI
+yycode ~/project               # 指定工作区目录启动
+yycode -a                      # 自动批准高风险操作
+yycode --debug                 # 调试模式，输出详细日志
+yycode --log-file              # 将日志写入 agent_debug.log
+yycode --plain                 # 使用普通终端输入模式，作为 TUI/输入法兼容兜底
+yycode --acp                   # 启动 ACP stdio server
+yycode acp                     # 同上，便于作为子命令使用
+yycode -s                      # 列出当前工作区可恢复的 sessions
+yycode -r abc                  # 恢复同一工作区下指定 session 的历史 messages
+yycode -x abc                  # 删除同一工作区下指定 session
+yycode -t                      # 临时会话，不保存 session messages
 ```
 
 工作区使用位置参数指定，不提供 `--workdir`。如果不传工作区，Yoyo Agent 会使用启动命令时所在的当前目录。所有文件、Git、Shell、验证和审批 diff 都会限制在该工作区内。
@@ -96,6 +145,58 @@ yycode acp
 首版支持 `initialize`、`session/new`、`session/load`、`session/prompt`、`session/cancel`，并把内部 `StreamEvent` 转为 `session/update`。写文件或高风险命令仍复用 yoyoagent runtime approval，并通过 `session/request_permission` 请求 client 审批。ACP 模式下 stdout 只输出 JSON-RPC 消息，日志和诊断信息写 stderr。
 
 与外部 `yoyohub` 的 ACP 对接请按 [ACP 与 yoyohub 对接要求](acp_yoyohub_integration_requirements.md) 填写兼容性报告、日志和问题清单。
+
+## 版本更新与发布
+
+项目版本号定义在 `pyproject.toml` 的 `version` 字段。准备把新能力发布给用户时，建议同步更新版本号，便于用户确认安装的是哪个版本。
+
+建议规则：
+
+- 文档或小修复：升级 patch，例如 `0.3.2` -> `0.3.3`
+- 新增用户可见能力或安装体验：升级 minor，例如 `0.3.2` -> `0.4.0`
+- 破坏兼容的 CLI 或配置改动：升级 minor，稳定后再进入 major 版本
+
+发布流程示例：
+
+```bash
+# 修改 pyproject.toml 中的 version
+uv lock
+git add pyproject.toml uv.lock
+git commit -m "Bump version to 0.4.0"
+git tag v0.4.0
+git push origin dev master --tags
+
+# 构建并发布到 PyPI
+uv build
+uv publish --token <your-pypi-token>
+```
+
+仓库也提供 GitHub Actions 自动发布流程：`.github/workflows/publish-pypi.yml`。在 GitHub 仓库设置中添加 secret：
+
+```text
+PYPI_API_TOKEN=<your-pypi-token>
+```
+
+之后每次提交到 `master` 都会自动执行：
+
+```bash
+uv build
+uv publish
+```
+
+用户升级：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果用户直接从 GitHub 分支安装，可以强制刷新：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+PyPI token 只应通过本地命令、CI secret 或凭据管理器使用，不要提交到仓库、文档或聊天记录中。如果 token 泄露，应立即在 PyPI 后台撤销并重新生成。
 
 ## TUI 快捷键
 

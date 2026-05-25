@@ -32,7 +32,52 @@ uv --version
 
 如果你不想使用 `uv`，也可以使用 Python 自带的 `venv` + `pip`，见下一步的备选命令。
 
-### 2. 获取代码并安装依赖
+### 2. 安装 yycode 命令
+
+yycode 已发布到 PyPI：
+
+```text
+https://pypi.org/project/yycode/
+```
+
+如果只是使用 yycode，推荐直接从 PyPI 安装命令：
+
+```bash
+uv tool install yycode
+yycode --help
+```
+
+也可以使用 pip 安装：
+
+```bash
+pip install yycode
+yycode --help
+```
+
+安装后可以在任意项目目录运行：
+
+```bash
+yycode
+yycode ~/project
+yycode --plain
+yycode --acp
+```
+
+以后升级到远程最新版本：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果要安装 GitHub 分支上的预览版本，或者需要强制刷新本地工具环境：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+### 3. 开发环境安装
+
+如果要修改 yycode 源码，再 clone 仓库并安装开发依赖：
 
 ```bash
 git clone <your-repo-url>
@@ -49,7 +94,7 @@ pip install -e .
 
 > 依赖声明在 `pyproject.toml` 中，包含 TUI、LLM Provider、LangGraph 和 dotenv 支持。
 
-### 3. 配置模型
+### 4. 配置模型
 
 ```bash
 cp .env.example .env
@@ -75,20 +120,20 @@ AI_MODEL=gpt-4o
 
 不要把真实 API Key 提交到仓库；本地私密配置只放在 `.env`。
 
-### 4. 启动 TUI
+### 5. 启动 TUI
 
 ```bash
 # 在当前目录启动，默认把当前目录作为被操作工作区
-uv run python main.py
+yycode
 
 # 指定要让 agent 操作的项目目录
-uv run python main.py ~/project
-
-# 如果使用 pip 安装，也可以直接运行
-python main.py ~/project
-
-# 安装发行包后可直接使用 yycode 命令
 yycode ~/project
+
+# 开发环境中也可以使用 uv 运行项目入口
+uv run yycode ~/project
+
+# 等价的源码入口
+uv run python main.py ~/project
 ```
 
 启动后会进入终端 TUI。你可以直接输入需求，例如：
@@ -99,7 +144,7 @@ yycode ~/project
 给 README 增加安装说明
 ```
 
-### 5. 常用运行方式
+### 6. 常用运行方式
 
 ```bash
 uv run python main.py -a              # 自动批准高风险操作
@@ -117,6 +162,56 @@ yycode --acp                          # 安装发行包后的 ACP stdio server
 ```
 
 更多 TUI 快捷键、内置工具和会话说明见 [使用说明](docs/usage.md)。
+
+### 7. 版本更新与发布
+
+项目版本号定义在 `pyproject.toml` 的 `version` 字段。准备发布给用户使用时，建议同步更新版本号：
+
+- 文档或小修复：例如 `0.3.2` -> `0.3.3`
+- 新增用户可见能力或安装体验：例如 `0.3.2` -> `0.4.0`
+- 破坏兼容的 CLI 或配置改动：升级 minor 或后续 major 版本
+
+发布新版本的一般流程：
+
+```bash
+# 修改 pyproject.toml 中的 version
+uv lock
+git add pyproject.toml uv.lock
+git commit -m "Bump version to 0.4.0"
+git tag v0.4.0
+git push origin dev master --tags
+
+# 构建并发布到 PyPI
+uv build
+uv publish --token <your-pypi-token>
+```
+
+仓库也提供 GitHub Actions 自动发布流程：`.github/workflows/publish-pypi.yml`。在 GitHub 仓库设置中添加 secret：
+
+```text
+PYPI_API_TOKEN=<your-pypi-token>
+```
+
+之后每次提交到 `master` 都会自动执行：
+
+```bash
+uv build
+uv publish
+```
+
+用户升级：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果用户是直接从 GitHub 分支安装，也可以强制重新安装最新代码：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+PyPI token 只应通过本地命令、CI secret 或凭据管理器使用，不要提交到仓库、文档或聊天记录中。如果 token 泄露，应立即在 PyPI 后台撤销并重新生成。
 
 ## 功能特性
 
