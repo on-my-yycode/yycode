@@ -1,6 +1,8 @@
 """Tests for startup helpers and async input handling."""
 
 import asyncio
+import json
+import os
 import types
 from argparse import Namespace
 
@@ -28,6 +30,7 @@ from main import (
     format_token_count,
     format_session_updated_at,
     list_sessions_for_workdir,
+    load_startup_configuration,
     main,
     read_user_query,
     read_user_query_with_session,
@@ -805,6 +808,131 @@ def test_env_flag_enabled_accepts_truthy_values(monkeypatch):
     assert env_flag_enabled("YOYO_SILENT") is True
 
 
+CONFIG_ENV_KEYS = [
+    "PROVIDER",
+    "API_KEY",
+    "API_BASE",
+    "AI_MODEL",
+    "YOYO_CONTEXT_WINDOW_TOKENS",
+    "YOYO_SKILL_DIRS",
+    "YOYO_RUNTIME_DATA_DIR",
+    "YOYO_SESSION_DIR",
+    "YOYO_AUTO_APPROVE",
+    "IGNORED_NULL",
+]
+
+
+def _clear_config_env(monkeypatch):
+    for key in CONFIG_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_load_startup_configuration_creates_default_config_without_setting_env(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "config.json"
+
+    warnings = load_startup_configuration(config_path)
+
+    assert warnings == []
+    assert json.loads(config_path.read_text(encoding="utf-8")) == {
+        "PROVIDER": "",
+        "API_KEY": "",
+        "API_BASE": "",
+        "AI_MODEL": "",
+        "YOYO_CONTEXT_WINDOW_TOKENS": "",
+        "YOYO_SKILL_DIRS": "",
+        "YOYO_RUNTIME_DATA_DIR": "",
+        "YOYO_SESSION_DIR": "",
+    }
+    assert "API_KEY" not in os.environ
+
+
+def test_load_startup_configuration_uses_json_then_dotenv_defaults(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "PROVIDER": "openai",
+                "API_KEY": "",
+                "AI_MODEL": "gpt-5",
+                "YOYO_CONTEXT_WINDOW_TOKENS": 12345,
+                "YOYO_AUTO_APPROVE": True,
+                "IGNORED_NULL": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "PROVIDER=anthropic\n"
+        "API_KEY=dotenv-key\n"
+        "API_BASE=https://dotenv.example/v1\n",
+        encoding="utf-8",
+    )
+
+    load_startup_configuration(config_path)
+
+    assert os.environ["PROVIDER"] == "openai"
+    assert os.environ["API_KEY"] == "dotenv-key"
+    assert os.environ["API_BASE"] == "https://dotenv.example/v1"
+    assert os.environ["AI_MODEL"] == "gpt-5"
+    assert os.environ["YOYO_CONTEXT_WINDOW_TOKENS"] == "12345"
+    assert os.environ["YOYO_AUTO_APPROVE"] == "true"
+    assert "IGNORED_NULL" not in os.environ
+
+
+def test_load_startup_configuration_preserves_existing_environment(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("API_KEY", "shell-key")
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"API_KEY": "json-key"}', encoding="utf-8")
+    (tmp_path / ".env").write_text("API_KEY=dotenv-key\n", encoding="utf-8")
+
+    load_startup_configuration(config_path)
+
+    assert os.environ["API_KEY"] == "shell-key"
+
+
+def test_load_startup_configuration_rejects_invalid_json_values(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"API_KEY": ["bad"]}', encoding="utf-8")
+
+    try:
+        load_startup_configuration(config_path)
+    except SystemExit as exc:
+        assert "must be a string, number, boolean, or null" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")
+
+
+def test_load_startup_configuration_rejects_non_object_json(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text("[]", encoding="utf-8")
+
+    try:
+        load_startup_configuration(config_path)
+    except SystemExit as exc:
+        assert "must contain a JSON object" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")
+
+
+def test_load_startup_configuration_creates_custom_config_path(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "nested" / "yycode.json"
+
+    load_startup_configuration(config_path)
+
+    assert config_path.is_file()
+    assert json.loads(config_path.read_text(encoding="utf-8"))["API_KEY"] == ""
+
+
 def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
     skill_root = tmp_path / "skills"
     skill_root.mkdir()
@@ -833,21 +961,22 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
     def fake_setup_logging(*, debug, log_to_file, log_file=None):
         captured["logging"] = (debug, log_to_file, log_file)
 
-    def fake_load_dotenv(*, override):
-        captured["dotenv_override"] = override
+    def fake_load_startup_configuration(config_path=None):
+        captured["config_path"] = config_path
+        return []
 
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
-    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
     monkeypatch.setattr("sys.argv", ["main.py", "-d", "-a"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
     main()
 
     assert captured["logging"][:2] == (True, False)
-    assert captured["dotenv_override"] is True
+    assert captured["config_path"] is None
     assert captured["args"].debug is True
     assert captured["args"].auto is True
 
@@ -858,14 +987,15 @@ def test_main_acp_mode_initializes_logging(monkeypatch):
     def fake_setup_logging(*, debug, log_to_file, log_file=None):
         captured["logging"] = (debug, log_to_file, log_file)
 
-    def fake_load_dotenv(*, override):
-        captured["dotenv_override"] = override
+    def fake_load_startup_configuration(config_path=None):
+        captured["config_path"] = config_path
+        return []
 
     def fake_acp_main(*, auto_approve):
         captured["auto_approve"] = auto_approve
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
-    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
     monkeypatch.setattr("sys.argv", ["main.py", "--acp", "-a", "--log-file"])
     monkeypatch.setitem(__import__("sys").modules, "agent.acp.server", types.SimpleNamespace(main=fake_acp_main))
 
@@ -874,7 +1004,7 @@ def test_main_acp_mode_initializes_logging(monkeypatch):
     assert captured["logging"][:2] == (False, True)
     assert captured["logging"][2].name == "agent_debug.log"
     assert captured["logging"][2].parent.name == "logs"
-    assert captured["dotenv_override"] is True
+    assert captured["config_path"] is None
     assert captured["auto_approve"] is True
 
 
@@ -899,6 +1029,7 @@ def test_arg_parser_help_includes_examples_and_session_options():
     assert "--delete" in help_text
     assert "-t" in help_text
     assert "--temp" in help_text
+    assert "--config PATH" in help_text
     assert "-a" in help_text
     assert "--auto" in help_text
     assert "--session-id" not in help_text
@@ -916,14 +1047,15 @@ def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
     def fake_setup_logging(*, debug, log_to_file, log_file=None):
         captured["logging"] = (debug, log_to_file, log_file)
 
-    def fake_load_dotenv(*, override):
-        captured["dotenv_override"] = override
+    def fake_load_startup_configuration(config_path=None):
+        captured["config_path"] = config_path
+        return []
 
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
-    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--resume", "sess-1"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
@@ -931,6 +1063,30 @@ def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
 
     assert captured["args"].session_id == "sess-1"
     assert captured["args"].resume == "sess-1"
+
+
+def test_main_passes_config_path_to_startup_loader(tmp_path, monkeypatch):
+    captured = {}
+    config_path = tmp_path / "config.json"
+
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        captured["logging"] = (debug, log_to_file, log_file)
+
+    def fake_load_startup_configuration(path=None):
+        captured["config_path"] = path
+        return []
+
+    def fake_run_tui(args):
+        captured["args"] = args
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--config", str(config_path)])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
+
+    main()
+
+    assert captured["config_path"] == str(config_path)
 
 
 def test_list_sessions_for_workdir_outputs_saved_sessions(tmp_path, monkeypatch):
@@ -1055,14 +1211,15 @@ def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
     def fake_setup_logging(*, debug, log_to_file, log_file=None):
         captured["logging"] = (debug, log_to_file, log_file)
 
-    def fake_load_dotenv(*, override):
-        captured["dotenv_override"] = override
+    def fake_load_startup_configuration(config_path=None):
+        captured["config_path"] = config_path
+        return []
 
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
-    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path)])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
@@ -1077,8 +1234,9 @@ def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
     def fake_setup_logging(*, debug, log_to_file, log_file=None):
         captured["logging"] = (debug, log_to_file, log_file)
 
-    def fake_load_dotenv(*, override):
-        captured["dotenv_override"] = override
+    def fake_load_startup_configuration(config_path=None):
+        captured["config_path"] = config_path
+        return []
 
     async def fake_run_plain_loop(args):
         captured["args"] = args
@@ -1087,7 +1245,7 @@ def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
         raise AssertionError("TUI should not start in plain mode")
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
-    monkeypatch.setattr("main.load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
     monkeypatch.setattr("main.run_plain_loop", fake_run_plain_loop)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--plain"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))

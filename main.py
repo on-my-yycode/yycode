@@ -5,12 +5,14 @@ import os
 import argparse
 import asyncio
 import contextlib
+import json
+import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
 
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 from agent import Session
 from agent.approval import ApprovalRequest
@@ -61,6 +63,16 @@ READLINE_PROMPT_END = "\002"
 ANSI_CYAN = "\033[36m"
 ANSI_GRAY = "\033[90m"
 ANSI_RESET = "\033[0m"
+DEFAULT_CONFIG_VALUES = {
+    "PROVIDER": "",
+    "API_KEY": "",
+    "API_BASE": "",
+    "AI_MODEL": "",
+    "YOYO_CONTEXT_WINDOW_TOKENS": "",
+    "YOYO_SKILL_DIRS": "",
+    "YOYO_RUNTIME_DATA_DIR": "",
+    "YOYO_SESSION_DIR": "",
+}
 
 
 def _protect_prompt_color(sequence: str) -> str:
@@ -166,6 +178,76 @@ def env_flag_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def default_config_file_path() -> Path:
+    """Return the default user data JSON config path."""
+    app_root = resolve_app_root()
+    return resolve_runtime_data_dir(app_root) / "config.json"
+
+
+def load_startup_configuration(config_path: str | Path | None = None) -> list[str]:
+    """Load config.json and .env without overriding existing environment variables."""
+    warnings = []
+    path = Path(config_path).expanduser().resolve() if config_path else default_config_file_path()
+    warnings.extend(_load_json_config_defaults(path))
+    _load_dotenv_defaults()
+    return warnings
+
+
+def _load_json_config_defaults(path: Path) -> list[str]:
+    """Load JSON config defaults into os.environ and return non-fatal warnings."""
+    warnings = []
+    if not path.exists():
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(DEFAULT_CONFIG_VALUES, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            return [f"Could not create config file {path}: {exc}"]
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Error: config file is not valid JSON: {path}\n{exc}") from exc
+    except OSError as exc:
+        raise SystemExit(f"Error: unable to read config file: {path}\n{exc}") from exc
+
+    if not isinstance(data, dict):
+        raise SystemExit(f"Error: config file must contain a JSON object: {path}")
+
+    for key, value in data.items():
+        if value is None or value == "":
+            continue
+        if not isinstance(value, (str, int, float, bool)):
+            raise SystemExit(
+                f"Error: config value for {key!r} must be a string, number, boolean, or null: {path}"
+            )
+        if key not in os.environ:
+            os.environ[str(key)] = _config_value_to_env(value)
+    return warnings
+
+
+def _load_dotenv_defaults() -> None:
+    """Load non-empty .env values without overriding existing environment variables."""
+    dotenv_path = Path.cwd() / ".env"
+    if not dotenv_path.is_file():
+        return
+    for key, value in dotenv_values(dotenv_path).items():
+        if not key or value is None or value == "":
+            continue
+        if key not in os.environ:
+            os.environ[key] = value
+
+
+def _config_value_to_env(value: str | int | float | bool) -> str:
+    """Convert a supported JSON config value into an environment string."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def format_startup_info(session: Session) -> str:
     """Return non-sensitive startup details for the current session."""
     model = getattr(session.provider, "model", "(unknown)")
@@ -227,6 +309,7 @@ Examples:
   yycode -x bugfix-123
   yycode ~/project -t
   yycode --update-skills
+  yycode --config ~/.config/yycode/config.json
   yycode -a
   yycode --plain
 
@@ -241,6 +324,7 @@ Environment:
   API_KEY                     API key for the selected provider.
   API_BASE                    Optional custom API base URL.
   AI_MODEL                    Model name override.
+  config.json                 Optional JSON defaults at {data_dir}/config.json.
   YOYO_APP_ROOT               Bundled yycode resource root override.
   YOYO_RUNTIME_DATA_DIR       User data directory; skills, sessions, and logs live here.
   YOYO_SESSION_DIR            Session messages directory override.
@@ -331,6 +415,11 @@ Environment:
         "--update-skills",
         action="store_true",
         help="Copy bundled skills into the user data skills directory, overwriting matching files.",
+    )
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="JSON config file path. Defaults to {data_dir}/config.json.",
     )
     parser.add_argument(
         "--no-persist",
@@ -449,13 +538,15 @@ def main() -> None:
     """Parse startup args and launch the TUI on the main thread."""
     parser = build_arg_parser()
     args = parser.parse_args()
+    config_warnings = load_startup_configuration(args.config)
     log_file_path = resolve_log_file_path()
     if args.update_skills:
+        _print_config_warnings(config_warnings)
         print(update_default_skills())
         return
     if args.acp or args.workdir == "acp":
         setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
-        load_dotenv(override=True)
+        _print_config_warnings(config_warnings, stream=sys.stderr)
         auto_approve = args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
         from agent.acp.server import main as acp_main
 
@@ -465,9 +556,11 @@ def main() -> None:
     args.session_id = args.resume
 
     if args.sessions:
+        _print_config_warnings(config_warnings)
         print(list_sessions_for_workdir(args.workdir))
         return
     if args.delete:
+        _print_config_warnings(config_warnings)
         print(delete_session_for_workdir(args.workdir, args.delete))
         return
 
@@ -475,12 +568,12 @@ def main() -> None:
     setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
 
     print("\033[33m" + LOGO + "\033[0m")
+    _print_config_warnings(config_warnings)
     startup_mode = "plain input" if args.plain else "TUI"
     print(f"yycode - Starting {startup_mode}...\n")
     if args.debug:
         print(f"\033[90m[DEBUG] Debug mode enabled. Logs written to {log_file_path}\033[0m\n")
 
-    load_dotenv(override=True)
     if args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE"):
         args.auto = True
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
@@ -492,6 +585,13 @@ def main() -> None:
     from agent.tui.app import run_tui
 
     run_tui(args)
+
+
+def _print_config_warnings(warnings: list[str], *, stream=None) -> None:
+    """Print non-fatal startup config warnings."""
+    output = stream or sys.stdout
+    for warning in warnings:
+        print(f"[config] {warning}", file=output)
 
 
 if __name__ == "__main__":
