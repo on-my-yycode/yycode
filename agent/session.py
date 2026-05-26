@@ -14,7 +14,7 @@ from langchain_core.messages import (
 )
 
 from agent.approval import ApprovalCallback, ApprovalDenied
-from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
+from agent.app_paths import resolve_app_root, resolve_resource_root, resolve_runtime_data_dir
 from agent.session_replay import ReplayEvent, build_session_replay
 from agent.graph import build_graph
 from agent.llm_retry import LLMCallError
@@ -65,6 +65,7 @@ class Session:
         self.provider = provider
         self.workdir = (workdir or Path.cwd()).expanduser().resolve()
         self.app_root = resolve_app_root(app_root)
+        self.resource_root = resolve_resource_root(app_root)
         self.runtime_data_dir = resolve_runtime_data_dir(self.app_root, runtime_data_dir)
         self.skill_dirs = self._resolve_skill_dirs(skill_dirs)
         self.skill_registry = SkillRegistry(self.workdir, self.skill_dirs)
@@ -114,7 +115,7 @@ class Session:
         self.task_summary_memory_builder = TaskSummaryMemoryBuilder()
 
     def _resolve_skill_dirs(self, skill_dirs: Optional[Iterable[str]]) -> list[str]:
-        default_dir = str(self.app_root / "skills")
+        default_dir = str(self.resource_root / "skills")
         if skill_dirs is None:
             return [default_dir]
         return [default_dir, *[str(path) for path in skill_dirs]]

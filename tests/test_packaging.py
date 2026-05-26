@@ -32,4 +32,9 @@ def test_wheel_includes_tui_stylesheet(tmp_path):
     assert len(wheels) == 1
 
     with zipfile.ZipFile(wheels[0]) as wheel:
-        assert "agent/tui/styles.tcss" in wheel.namelist()
+        names = set(wheel.namelist())
+
+    assert "agent/tui/styles.tcss" in names
+    assert "yycode-0.3.4.data/data/skills/plan.md" in names
+    assert "yycode-0.3.4.data/data/skills/drawio/SKILL.md" in names
+    assert "yycode-0.3.4.data/data/skills/drawio/styles/built-in/default.json" in names

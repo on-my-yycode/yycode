@@ -3,6 +3,7 @@
 import os
 import asyncio
 
+from agent import app_paths
 from agent.graph import create_tools_node
 from agent.providers.base import ChatResponse, LLMProvider
 from agent.session import Session
@@ -237,6 +238,19 @@ def test_session_appends_explicit_extra_skill_dirs(tmp_path):
 
     assert session.skill_dirs == [str(app_root / "skills"), str(extra)]
     assert "- extra: Extra skill." in session.system_prompt
+
+
+def test_resource_root_uses_installed_tool_prefix_for_bundled_skills(tmp_path, monkeypatch):
+    fake_source_root = tmp_path / "site-packages"
+    fake_agent_dir = fake_source_root / "agent"
+    fake_prefix = tmp_path / "tool-env"
+    fake_agent_dir.mkdir(parents=True)
+    (fake_prefix / "skills").mkdir(parents=True)
+
+    monkeypatch.setattr(app_paths, "__file__", str(fake_agent_dir / "app_paths.py"))
+    monkeypatch.setattr(app_paths.sys, "prefix", str(fake_prefix))
+
+    assert app_paths.resolve_resource_root() == fake_prefix.resolve()
 
 
 def test_subagent_prompt_mentions_skill_tools_without_parent_prompt(tmp_path):
