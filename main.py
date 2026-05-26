@@ -235,10 +235,10 @@ Environment:
   API_KEY                     API key for the selected provider.
   API_BASE                    Optional custom API base URL.
   AI_MODEL                    Model name override.
-  YOYO_APP_ROOT               Yoyo Agent app/release directory.
-  YOYO_RUNTIME_DATA_DIR       Runtime data directory; defaults to app_root.
+  YOYO_APP_ROOT               yycode resource root; skills are loaded from this directory.
+  YOYO_RUNTIME_DATA_DIR       Runtime data directory; defaults to the app/runtime root.
   YOYO_SESSION_DIR            Session messages directory override.
-  YOYO_SKILL_DIRS             Extra skill directories, separated by comma/pathsep.
+  YOYO_SKILL_DIRS             Extra skill directories appended after the default skills dir.
   YOYO_CONTEXT_WINDOW_TOKENS  Context window size override for token pressure.
   YOYO_SILENT                 Auto-approve risky actions when truthy.
   YOYO_AUTO_APPROVE           Alias for YOYO_SILENT.

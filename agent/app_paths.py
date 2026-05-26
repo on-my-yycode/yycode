@@ -16,7 +16,7 @@ def resolve_app_root(raw_app_root: str | Path | None = None) -> Path:
 
 
 def resolve_resource_root(raw_app_root: str | Path | None = None) -> Path:
-    """Resolve the directory that owns bundled yycode resources such as skills."""
+    """Resolve the user-editable yycode resource root for bundled files."""
     raw = raw_app_root or os.environ.get("YOYO_APP_ROOT")
     if raw:
         return Path(raw).expanduser().resolve()

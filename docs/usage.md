@@ -97,12 +97,14 @@ YOYO_AUTO_APPROVE=true python main.py
 
 | 变量 | 功能 |
 |------|------|
-| `YOYO_APP_ROOT` | 覆盖 yoyoagent 应用根目录，默认是源码/发行目录 |
-| `YOYO_RUNTIME_DATA_DIR` | 覆盖运行数据目录，默认等于 `app_root` |
+| `YOYO_APP_ROOT` | 覆盖 yycode 程序资源目录；默认是源码运行目录或发行安装后的 tool 环境目录 |
+| `YOYO_RUNTIME_DATA_DIR` | 覆盖运行数据目录，默认等于程序运行根目录 |
 | `YOYO_SESSION_DIR` | 覆盖 session messages 保存目录 |
 | `YOYO_SKILL_DIRS` | 追加额外技能目录，多个目录用逗号、换行或系统 path 分隔符分隔 |
 
-默认技能目录是 `{app_root}/skills`。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
+默认技能目录是 yycode 程序资源目录下的 `skills`。使用 `uv tool install yycode`
+安装后，这个目录位于该 tool 环境中，用户可以查看和编辑其中的 skill 文件。项目内的
+`workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 

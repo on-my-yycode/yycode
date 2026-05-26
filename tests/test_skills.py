@@ -253,6 +253,20 @@ def test_resource_root_uses_installed_tool_prefix_for_bundled_skills(tmp_path, m
     assert app_paths.resolve_resource_root() == fake_prefix.resolve()
 
 
+def test_resource_root_uses_source_root_for_development_checkout(tmp_path, monkeypatch):
+    fake_source_root = tmp_path / "checkout"
+    fake_agent_dir = fake_source_root / "agent"
+    fake_prefix = tmp_path / "tool-env"
+    fake_agent_dir.mkdir(parents=True)
+    (fake_source_root / "skills").mkdir()
+    (fake_prefix / "skills").mkdir(parents=True)
+
+    monkeypatch.setattr(app_paths, "__file__", str(fake_agent_dir / "app_paths.py"))
+    monkeypatch.setattr(app_paths.sys, "prefix", str(fake_prefix))
+
+    assert app_paths.resolve_resource_root() == fake_source_root.resolve()
+
+
 def test_subagent_prompt_mentions_skill_tools_without_parent_prompt(tmp_path):
     skill_root = tmp_path / "skills"
     skill_root.mkdir()

@@ -110,12 +110,14 @@ YOYO_SESSION_DIR=/custom/session/dir
 {app_root}/sessions
 ```
 
-也就是说，默认 skills 和 sessions 都是 yoyoagent 应用自身的一部分，而不是用户 `workdir` 的一部分。
+也就是说，默认 skills 和 sessions 都是 yycode 应用自身的一部分，而不是用户 `workdir` 的一部分。
+对最终用户来说，默认 `skills` 是安装后的 yycode 程序资源目录，用户可以查看和编辑这个目录中的 skill 文件。
+源码目录只对应开发运行场景。
 
 当前代码已经按这个模型收口：
 
 ```text
-默认技能目录：{app_root}/skills
+默认技能目录：{yycode_resource_root}/skills
 额外技能目录：YOYO_SKILL_DIRS 指定
 ```
 
