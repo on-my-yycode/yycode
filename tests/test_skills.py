@@ -4,6 +4,7 @@ import os
 import asyncio
 
 from agent import app_paths
+from agent.app_paths import sync_default_skills_dir
 from agent.graph import create_tools_node
 from agent.providers.base import ChatResponse, LLMProvider
 from agent.session import Session
@@ -308,6 +309,27 @@ def test_runtime_data_dir_defaults_to_user_data_directory(tmp_path, monkeypatch)
     assert app_paths.resolve_runtime_data_dir(tmp_path / "app") == (
         tmp_path / "home" / ".local" / "share" / "yycode"
     ).resolve()
+
+
+def test_sync_default_skills_overwrites_bundled_paths_and_preserves_user_files(tmp_path):
+    resource_root = tmp_path / "resource"
+    runtime_data_dir = tmp_path / "data"
+    bundled = resource_root / "skills"
+    user_skills = runtime_data_dir / "skills"
+    (bundled / "drawio").mkdir(parents=True)
+    user_skills.mkdir(parents=True)
+    (bundled / "plan.md").write_text("bundled plan v2", encoding="utf-8")
+    (bundled / "drawio" / "SKILL.md").write_text("bundled drawio", encoding="utf-8")
+    (user_skills / "plan.md").write_text("user changed bundled plan", encoding="utf-8")
+    (user_skills / "custom.md").write_text("user custom skill", encoding="utf-8")
+
+    result = sync_default_skills_dir(runtime_data_dir, resource_root)
+
+    assert sorted(str(path) for path in result.updated) == ["plan.md"]
+    assert sorted(str(path) for path in result.copied) == ["drawio/SKILL.md"]
+    assert (user_skills / "plan.md").read_text(encoding="utf-8") == "bundled plan v2"
+    assert (user_skills / "drawio" / "SKILL.md").read_text(encoding="utf-8") == "bundled drawio"
+    assert (user_skills / "custom.md").read_text(encoding="utf-8") == "user custom skill"
 
 
 def test_subagent_prompt_mentions_skill_tools_without_parent_prompt(tmp_path):

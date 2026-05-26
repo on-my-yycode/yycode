@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 
 def resolve_app_root(raw_app_root: str | Path | None = None) -> Path:
@@ -72,3 +73,41 @@ def ensure_default_skills_dir(runtime_data_dir: Path, resource_root: Path) -> Pa
     else:
         skills_dir.mkdir(parents=True, exist_ok=True)
     return skills_dir
+
+
+class SkillSyncResult(NamedTuple):
+    """Summary of a bundled skill sync into the user data directory."""
+
+    source_dir: Path
+    target_dir: Path
+    copied: list[Path]
+    updated: list[Path]
+    skipped: list[Path]
+
+
+def sync_default_skills_dir(runtime_data_dir: Path, resource_root: Path) -> SkillSyncResult:
+    """Copy bundled skills into user data, overwriting matching bundled files only."""
+    source_dir = resource_root / "skills"
+    target_dir = runtime_data_dir / "skills"
+    copied: list[Path] = []
+    updated: list[Path] = []
+    skipped: list[Path] = []
+
+    if not source_dir.is_dir():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return SkillSyncResult(source_dir, target_dir, copied, updated, skipped)
+
+    for source_path in sorted(path for path in source_dir.rglob("*") if path.is_file()):
+        relative_path = source_path.relative_to(source_dir)
+        target_path = target_dir / relative_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            if target_path.read_bytes() == source_path.read_bytes():
+                skipped.append(relative_path)
+                continue
+            updated.append(relative_path)
+        else:
+            copied.append(relative_path)
+        shutil.copy2(source_path, target_path)
+
+    return SkillSyncResult(source_dir, target_dir, copied, updated, skipped)

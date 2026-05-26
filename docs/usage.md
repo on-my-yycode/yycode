@@ -71,6 +71,7 @@ yycode -s                      # 列出当前工作区可恢复的 sessions
 yycode -r abc                  # 恢复同一工作区下指定 session 的历史 messages
 yycode -x abc                  # 删除同一工作区下指定 session
 yycode -t                      # 临时会话，不保存 session messages
+yycode --update-skills         # 用内置默认 skills 覆盖同步用户数据目录中的同路径文件
 ```
 
 工作区使用位置参数指定，不提供 `--workdir`。如果不传工作区，Yoyo Agent 会使用启动命令时所在的当前目录。所有文件、Git、Shell、验证和审批 diff 都会限制在该工作区内。
@@ -106,6 +107,9 @@ YOYO_AUTO_APPROVE=true python main.py
 skills 复制到这个目录；之后用户可以直接查看和编辑这里的 skill 文件，升级 yycode 不会
 覆盖已有用户 skills。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过
 `YOYO_SKILL_DIRS` 显式加入。
+
+升级后如需同步新版内置 skills，可以运行 `yycode --update-skills`。该命令会按内置
+`skills` 目录覆盖用户数据目录中的同路径文件，但不会删除用户自己额外创建的 skill 文件。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 

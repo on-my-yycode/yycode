@@ -14,7 +14,12 @@ from dotenv import load_dotenv
 
 from agent import Session
 from agent.approval import ApprovalRequest
-from agent.app_paths import resolve_app_root, resolve_runtime_data_dir
+from agent.app_paths import (
+    resolve_app_root,
+    resolve_resource_root,
+    resolve_runtime_data_dir,
+    sync_default_skills_dir,
+)
 from agent.logger import setup_logging
 from agent.session_store import FileSessionStore
 from agent.streaming import colorize_diff
@@ -221,6 +226,7 @@ Examples:
   yycode -r bugfix-123
   yycode -x bugfix-123
   yycode ~/project -t
+  yycode --update-skills
   yycode -a
   yycode --plain
 
@@ -322,6 +328,11 @@ Environment:
         help="Delete a persisted session id for WORKDIR and exit.",
     )
     parser.add_argument(
+        "--update-skills",
+        action="store_true",
+        help="Copy bundled skills into the user data skills directory, overwriting matching files.",
+    )
+    parser.add_argument(
         "--no-persist",
         dest="temp",
         action="store_true",
@@ -389,6 +400,25 @@ def delete_session_for_workdir(workdir: Path, session_id: str) -> str:
     return f"Deleted session for workspace {workdir}: {session_id}"
 
 
+def update_default_skills() -> str:
+    """Overwrite user data skills with bundled defaults where bundled files exist."""
+    app_root = resolve_app_root()
+    resource_root = resolve_resource_root(app_root)
+    runtime_data_dir = resolve_runtime_data_dir(app_root)
+    result = sync_default_skills_dir(runtime_data_dir, resource_root)
+    lines = [
+        "Updated yycode skills.",
+        f"Source: {result.source_dir}",
+        f"Target: {result.target_dir}",
+        f"Copied: {len(result.copied)}",
+        f"Updated: {len(result.updated)}",
+        f"Unchanged: {len(result.skipped)}",
+    ]
+    preserved_note = "User-created files without matching bundled paths were preserved."
+    lines.append(preserved_note)
+    return "\n".join(lines)
+
+
 def create_session_store_for_workdir(workdir: Path) -> FileSessionStore:
     """Create the default file session store for a workspace."""
     app_root = resolve_app_root()
@@ -420,6 +450,9 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
     log_file_path = resolve_log_file_path()
+    if args.update_skills:
+        print(update_default_skills())
+        return
     if args.acp or args.workdir == "acp":
         setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
         load_dotenv(override=True)

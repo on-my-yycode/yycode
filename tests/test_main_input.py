@@ -1021,6 +1021,34 @@ def test_main_delete_session_exits_before_tui(tmp_path, monkeypatch, capsys):
     assert store.load("sess-1") == []
 
 
+def test_update_default_skills_command_syncs_and_exits(tmp_path, monkeypatch, capsys):
+    app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
+    workdir = tmp_path / "workspace"
+    (app_root / "skills").mkdir(parents=True)
+    (app_root / "skills" / "plan.md").write_text("bundled plan", encoding="utf-8")
+    (runtime_data_dir / "skills").mkdir(parents=True)
+    (runtime_data_dir / "skills" / "plan.md").write_text("old plan", encoding="utf-8")
+    (runtime_data_dir / "skills" / "custom.md").write_text("custom", encoding="utf-8")
+    workdir.mkdir()
+    monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_data_dir))
+
+    def fail_run_tui(args):
+        raise AssertionError("TUI should not start when updating skills")
+
+    monkeypatch.setattr("sys.argv", ["main.py", str(workdir), "--update-skills"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
+
+    main()
+
+    output = capsys.readouterr().out
+    assert "Updated yycode skills." in output
+    assert "Updated: 1" in output
+    assert (runtime_data_dir / "skills" / "plan.md").read_text(encoding="utf-8") == "bundled plan"
+    assert (runtime_data_dir / "skills" / "custom.md").read_text(encoding="utf-8") == "custom"
+
+
 def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
     captured = {}
 

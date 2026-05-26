@@ -155,9 +155,11 @@ uv run python main.py -s              # 查看当前工作区可恢复的 sessio
 uv run python main.py -r <session-id> # 恢复指定 session
 uv run python main.py -x <session-id> # 删除指定 session
 uv run python main.py -t              # 临时会话，不保存 messages
+uv run python main.py --update-skills # 用内置 skills 覆盖同步用户数据目录中的同路径文件
 uv run python main.py --acp           # 启动 ACP stdio server
 uv run python main.py acp             # 同上，便于作为子命令使用
 yycode --plain                        # 安装发行包后的普通终端输入模式
+yycode --update-skills                # 更新用户数据目录中的默认 skills，保留用户自定义文件
 yycode --acp                          # 安装发行包后的 ACP stdio server
 ```
 
