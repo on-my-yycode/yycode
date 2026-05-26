@@ -23,6 +23,9 @@ py-modules = ["main"]
 include = ["agent*", "tools*", "utils*"]
 exclude = ["sessions*", "output*", "tests*", "examples*", "docs*", "changes*"]
 
+[tool.setuptools.package-data]
+"agent.tui" = ["*.tcss"]
+
 [tool.setuptools.data-files]
 "skills" = ["skills/*.md"]
 "skills/drawio" = ["skills/drawio/SKILL.md"]
@@ -31,7 +34,8 @@ exclude = ["sessions*", "output*", "tests*", "examples*", "docs*", "changes*"]
 "skills/drawio/assets" = ["skills/drawio/assets/*"]
 "skills/drawio/docs" = ["skills/drawio/docs/*"]
 "skills/drawio/references" = ["skills/drawio/references/*"]
-"skills/drawio/styles" = ["skills/drawio/styles/*"]
+"skills/drawio/styles" = ["skills/drawio/styles/*.json"]
+"skills/drawio/styles/built-in" = ["skills/drawio/styles/built-in/*.json"]
 
 [tool.ruff]
 line-length = 100
