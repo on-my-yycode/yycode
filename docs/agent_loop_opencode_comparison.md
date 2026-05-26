@@ -229,6 +229,17 @@ Recommended direction:
   - the model repeats the same incomplete todo state without real progress;
   - the user adds new instructions that need reconciliation.
 
+Implementation decision:
+
+- The agent loop no longer consumes `TodoManager.needs_reminder()` to append
+  periodic `task_reminder` context messages.
+- `TodoManager` still owns task items and memory for runtime state.
+- TUI and ACP clients continue to observe task progress through structured plan
+  snapshots and `session/update` plan events.
+- Model-visible context is reserved for blockers and corrective reminders:
+  `task_guard`, verification reminders, repeated incomplete todo warnings, and
+  explicit user-instruction reconciliation.
+
 In other words:
 
 ```text

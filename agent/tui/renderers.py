@@ -423,9 +423,9 @@ def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     """Render the compact app brand block."""
     W = max(72, min(width, 180))
     brand_line = (
-        "[bold #c9a6ff]YOYOAGENT[/] "
+        "[bold #c9a6ff]YYCode[/] "
         "[#7f8794]code assistant[/] "
-        "[#3f4652]" + ("─" * max(4, W - 29)) + "[/]"
+        "[#3f4652]" + ("─" * max(4, W - 26)) + "[/]"
     )
     if state is None:
         return brand_line
@@ -1275,7 +1275,7 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, 
     if item.event_type == "context_compressed":
         return f"{role_prefix}[#7f8794][context] {_safe_text(item.content)}[/]"
     if item.event_type == "context_summarized":
-        return f"{role_prefix}[#8fd6a3][context] {_safe_text(item.content)}[/]"
+        return f"{role_prefix}[#7f8794][context] {_safe_text(item.content)}[/]"
     if item.event_type == "llm_waiting":
         return _render_llm_waiting_item(item, role_prefix, state)
     if item.event_type == "llm_timeout":
@@ -1598,19 +1598,13 @@ def _is_task_state_result(item: TimelineItem) -> bool:
 
 def _render_task_state_summary(role_prefix: str, item: TimelineItem) -> str:
     counts = _task_state_counts(item.content)
-    summary = "Task plan"
+    parts = [f"{role_prefix}[bold #8fd6a3]● Plan Progress[/]"]
     if counts["total"]:
-        summary = f"{counts['completed']}/{counts['total']} done"
-        if counts["active"]:
-            summary += " · current"
-    lines = [
-        f"{role_prefix}[bold #8fd6a3]● Task Plan[/]",
-        f"  [#7f8794]{_safe_text(summary)}[/]",
-    ]
+        parts.append(f"[#7f8794]{counts['completed']}/{counts['total']} done[/]")
     if counts["active"]:
-        lines.append(f"  [#d7dae0]{_safe_text(counts['active'])}[/]")
-    lines.append("  [#7f8794]Ctrl+T full plan[/]")
-    return "\n".join(lines)
+        parts.append(f"[#d7dae0]{_safe_text(counts['active'])}[/]")
+    parts.append("[#7f8794][Ctrl+T][/]")
+    return " [#7f8794]·[/] ".join(parts)
 
 
 def _task_state_counts(content: str) -> dict[str, int | str]:

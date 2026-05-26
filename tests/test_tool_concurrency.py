@@ -147,6 +147,47 @@ def test_todo_reminder_resets_after_it_is_consumed():
     assert manager.needs_reminder() is False
 
 
+def test_tools_node_does_not_inject_periodic_todo_reminder(tmp_path, monkeypatch):
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {"read_file": lambda **kwargs: "read"},
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [_tool_def("read_file", "read_only", "safe")],
+    )
+
+    manager = TodoManager()
+    manager.set_items([{"id": "1", "text": "Long task", "status": "in_progress"}])
+    manager.record_tool_call("read_file")
+    manager.record_tool_call("grep")
+
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=manager,
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="read-1", name="read_file", args={"path": "x"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert manager.needs_reminder() is True
+    assert not any(
+        isinstance(message, HumanMessage)
+        and message.additional_kwargs.get("ephemeral_kind") == "task_reminder"
+        for message in result["messages"]
+    )
+
+
 def test_tools_node_warns_when_todo_repeats_same_incomplete_state(tmp_path):
     manager = TodoManager()
     tools_node = create_tools_node(

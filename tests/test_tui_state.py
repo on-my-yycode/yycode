@@ -59,7 +59,7 @@ def test_timeline_renders_context_summarized_event():
 
     rendered = render_timeline_lines(state, header_mode="main")
 
-    assert "[context]" in rendered
+    assert "[#7f8794][context]" in rendered
     assert "Task summary saved" in rendered
     Text.from_markup(rendered)
 
@@ -114,7 +114,7 @@ def test_tui_brand_text_shows_message_context_summary():
 
     brand = render_brand_text(state, width=140)
 
-    assert "YOYOAGENT" in brand
+    assert "YYCode" in brand
     assert "" in brand
     assert "master" in brand
     assert "±" in brand
@@ -282,7 +282,7 @@ def test_tui_renderers_show_initializing_state_before_session_ready():
     state = TuiState()
 
     status = render_status_text(state, width=140)
-    assert "YOYOAGENT" in status
+    assert "YYCode" in status
     assert "Model" in status
     assert "(initializing)" in status
     assert "Starting yoyoagent" in render_timeline_lines(state)
@@ -518,7 +518,7 @@ def test_tui_state_completes_waiting_item_when_model_starts_responding():
 
     waiting = next(item for item in state.timeline if item.event_type == "llm_waiting")
     assert waiting.status == "completed"
-    assert waiting.title == "Model response started"
+    assert waiting.title == "Thinking"
 
 
 def test_tui_timeline_renders_common_markdown_in_assistant_text():
@@ -859,11 +859,12 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
     transcript = render_timeline_lines(state)
 
     assert "Tool returned" not in transcript
-    assert "● Task Plan" in transcript
+    assert "● Plan Progress" in transcript
     assert "1/2 done" in transcript
-    assert "current" in transcript
+    assert "current" not in transcript
     assert "Patch" in transcript
-    assert "Ctrl+T full plan" in transcript
+    assert "[Ctrl+T]" in transcript
+    assert transcript.count("Plan Progress") == 1
     assert "Goal: keep timeline concise" not in transcript
     assert "Constraints:" not in transcript
 
@@ -1168,7 +1169,7 @@ def test_tui_status_header_uses_compact_two_column_layout():
 
     status = render_status_text(state, width=140)
 
-    assert "YOYOAGENT" in status
+    assert "YYCode" in status
     assert "session" in status
     assert "12345678-1234-5678-1234-567812345678" in status
     assert "git -" in status

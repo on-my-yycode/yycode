@@ -171,17 +171,6 @@ class WorkflowGuard:
     def after_batch_messages(self, tool_calls_data: list) -> list[HumanMessage]:
         """Return extra HumanMessages to append after a tools batch."""
         additional_messages = []
-        todo_manager = self.runtime.todo_manager
-        if todo_manager.needs_reminder():
-            additional_messages.append(
-                HumanMessage(
-                    content=todo_manager.consume_reminder_message(),
-                    additional_kwargs={
-                        "context_ephemeral": True,
-                        "ephemeral_kind": "task_reminder",
-                    },
-                )
-            )
         if self.state.needs_verify and not any(tc.name == "verify" for tc in tool_calls_data):
             additional_messages.append(
                 HumanMessage(
