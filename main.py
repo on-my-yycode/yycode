@@ -73,6 +73,7 @@ DEFAULT_CONFIG_VALUES = {
     "YOYO_RUNTIME_DATA_DIR": "",
     "YOYO_SESSION_DIR": "",
 }
+REQUIRED_MODEL_CONFIG_KEYS = ("PROVIDER", "API_KEY", "API_BASE", "AI_MODEL")
 
 
 def _protect_prompt_color(sequence: str) -> str:
@@ -184,13 +185,40 @@ def default_config_file_path() -> Path:
     return resolve_runtime_data_dir(app_root) / "config.json"
 
 
+def resolve_config_file_path(config_path: str | Path | None = None) -> Path:
+    """Resolve a user-supplied config path or the default AppData config path."""
+    return Path(config_path).expanduser().resolve() if config_path else default_config_file_path()
+
+
 def load_startup_configuration(config_path: str | Path | None = None) -> list[str]:
     """Load config.json and .env without overriding existing environment variables."""
     warnings = []
-    path = Path(config_path).expanduser().resolve() if config_path else default_config_file_path()
+    path = resolve_config_file_path(config_path)
     warnings.extend(_load_json_config_defaults(path))
     _load_dotenv_defaults()
     return warnings
+
+
+def build_missing_model_config_warnings(config_path: str | Path | None = None) -> list[str]:
+    """Return warnings for required model configuration keys that are still unset."""
+    missing = [
+        key
+        for key in REQUIRED_MODEL_CONFIG_KEYS
+        if not os.environ.get(key, "").strip()
+    ]
+    if not missing:
+        return []
+    path = resolve_config_file_path(config_path)
+    return [
+        "\n".join(
+            [
+                f"Missing required model configuration: {', '.join(missing)}",
+                f"Edit config file: {path}",
+                "Or set environment variables / .env. Priority: environment > config.json > .env > defaults.",
+                "Empty strings in config.json are ignored.",
+            ]
+        )
+    ]
 
 
 def _load_json_config_defaults(path: Path) -> list[str]:
@@ -539,6 +567,7 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
     config_warnings = load_startup_configuration(args.config)
+    missing_config_warnings = build_missing_model_config_warnings(args.config)
     log_file_path = resolve_log_file_path()
     if args.update_skills:
         _print_config_warnings(config_warnings)
@@ -547,6 +576,7 @@ def main() -> None:
     if args.acp or args.workdir == "acp":
         setup_logging(debug=args.debug, log_to_file=args.log_file, log_file=log_file_path)
         _print_config_warnings(config_warnings, stream=sys.stderr)
+        _print_config_warnings(missing_config_warnings, stream=sys.stderr)
         auto_approve = args.auto or env_flag_enabled("YOYO_SILENT") or env_flag_enabled("YOYO_AUTO_APPROVE")
         from agent.acp.server import main as acp_main
 
@@ -579,9 +609,11 @@ def main() -> None:
         print("\033[90m[SILENT] Approval prompts disabled; risky actions auto-approved.\033[0m\n")
 
     if args.plain:
+        _print_config_warnings(missing_config_warnings)
         asyncio.run(run_plain_loop(args))
         return
 
+    args.config_warnings = missing_config_warnings
     from agent.tui.app import run_tui
 
     run_tui(args)
@@ -591,7 +623,8 @@ def _print_config_warnings(warnings: list[str], *, stream=None) -> None:
     """Print non-fatal startup config warnings."""
     output = stream or sys.stdout
     for warning in warnings:
-        print(f"[config] {warning}", file=output)
+        for line in str(warning).splitlines() or [""]:
+            print(f"[config] {line}", file=output)
 
 
 if __name__ == "__main__":

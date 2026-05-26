@@ -21,6 +21,7 @@ from agent.session import (
 from agent.tui.app import _completion_context, _is_message_tokens_key_event
 from main import (
     auto_approval_callback,
+    build_missing_model_config_warnings,
     build_arg_parser,
     build_prompt,
     delete_session_for_workdir,
@@ -933,6 +934,57 @@ def test_load_startup_configuration_creates_custom_config_path(tmp_path, monkeyp
     assert json.loads(config_path.read_text(encoding="utf-8"))["API_KEY"] == ""
 
 
+def test_build_missing_model_config_warnings_lists_required_keys(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+
+    warnings = build_missing_model_config_warnings(config_path)
+
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert "Missing required model configuration: PROVIDER, API_KEY, API_BASE, AI_MODEL" in warning
+    assert f"Edit config file: {config_path.resolve()}" in warning
+    assert "Priority: environment > config.json > .env > defaults" in warning
+    assert "Empty strings in config.json are ignored." in warning
+
+
+def test_build_missing_model_config_warnings_lists_only_missing_keys(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("PROVIDER", "openai")
+    monkeypatch.setenv("API_KEY", "real-secret-value")
+    monkeypatch.setenv("AI_MODEL", "gpt-test")
+
+    warnings = build_missing_model_config_warnings(tmp_path / "config.json")
+
+    assert len(warnings) == 1
+    assert "Missing required model configuration: API_BASE" in warnings[0]
+    assert "real-secret-value" not in warnings[0]
+
+
+def test_build_missing_model_config_warnings_treats_blank_values_as_missing(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("PROVIDER", "   ")
+    monkeypatch.setenv("API_KEY", "\t")
+    monkeypatch.setenv("API_BASE", "https://api.example/v1")
+    monkeypatch.setenv("AI_MODEL", "model")
+
+    warnings = build_missing_model_config_warnings(tmp_path / "config.json")
+
+    assert "Missing required model configuration: PROVIDER, API_KEY" in warnings[0]
+    assert "API_BASE" not in warnings[0].splitlines()[0]
+    assert "AI_MODEL" not in warnings[0].splitlines()[0]
+
+
+def test_build_missing_model_config_warnings_returns_empty_when_complete(tmp_path, monkeypatch):
+    _clear_config_env(monkeypatch)
+    monkeypatch.setenv("PROVIDER", "openai")
+    monkeypatch.setenv("API_KEY", "real-secret-value")
+    monkeypatch.setenv("API_BASE", "https://api.example/v1")
+    monkeypatch.setenv("AI_MODEL", "gpt-test")
+
+    assert build_missing_model_config_warnings(tmp_path / "config.json") == []
+
+
 def test_format_startup_info_includes_model_and_skills_without_prompt(tmp_path):
     skill_root = tmp_path / "skills"
     skill_root.mkdir()
@@ -965,11 +1017,15 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
         captured["config_path"] = config_path
         return []
 
+    def fake_missing_config_warnings(config_path=None):
+        return ["Missing required model configuration: API_KEY"]
+
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("sys.argv", ["main.py", "-d", "-a"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
@@ -979,6 +1035,7 @@ def test_main_launches_tui_on_main_thread(monkeypatch):
     assert captured["config_path"] is None
     assert captured["args"].debug is True
     assert captured["args"].auto is True
+    assert captured["args"].config_warnings == ["Missing required model configuration: API_KEY"]
 
 
 def test_main_acp_mode_initializes_logging(monkeypatch):
@@ -991,11 +1048,15 @@ def test_main_acp_mode_initializes_logging(monkeypatch):
         captured["config_path"] = config_path
         return []
 
+    def fake_missing_config_warnings(config_path=None):
+        return ["Missing required model configuration: API_KEY"]
+
     def fake_acp_main(*, auto_approve):
         captured["auto_approve"] = auto_approve
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("sys.argv", ["main.py", "--acp", "-a", "--log-file"])
     monkeypatch.setitem(__import__("sys").modules, "agent.acp.server", types.SimpleNamespace(main=fake_acp_main))
 
@@ -1006,6 +1067,33 @@ def test_main_acp_mode_initializes_logging(monkeypatch):
     assert captured["logging"][2].parent.name == "logs"
     assert captured["config_path"] is None
     assert captured["auto_approve"] is True
+
+
+def test_main_acp_mode_prints_missing_config_to_stderr(monkeypatch, capsys):
+    def fake_setup_logging(*, debug, log_to_file, log_file=None):
+        return None
+
+    def fake_load_startup_configuration(config_path=None):
+        return []
+
+    def fake_missing_config_warnings(config_path=None):
+        return ["Missing required model configuration: API_KEY\nEdit config file: /tmp/config.json"]
+
+    def fake_acp_main(*, auto_approve):
+        return None
+
+    monkeypatch.setattr("main.setup_logging", fake_setup_logging)
+    monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
+    monkeypatch.setattr("sys.argv", ["main.py", "--acp"])
+    monkeypatch.setitem(__import__("sys").modules, "agent.acp.server", types.SimpleNamespace(main=fake_acp_main))
+
+    main()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "[config] Missing required model configuration: API_KEY" in captured.err
+    assert "[config] Edit config file: /tmp/config.json" in captured.err
 
 
 def test_resolve_log_file_path_uses_runtime_data_dir(tmp_path, monkeypatch):
@@ -1051,11 +1139,15 @@ def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
         captured["config_path"] = config_path
         return []
 
+    def fake_missing_config_warnings(config_path=None):
+        return ["Missing required model configuration: API_KEY"]
+
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--resume", "sess-1"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
@@ -1076,17 +1168,23 @@ def test_main_passes_config_path_to_startup_loader(tmp_path, monkeypatch):
         captured["config_path"] = path
         return []
 
+    def fake_missing_config_warnings(path=None):
+        captured["missing_config_path"] = path
+        return []
+
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--config", str(config_path)])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
     main()
 
     assert captured["config_path"] == str(config_path)
+    assert captured["missing_config_path"] == str(config_path)
 
 
 def test_list_sessions_for_workdir_outputs_saved_sessions(tmp_path, monkeypatch):
@@ -1129,12 +1227,18 @@ def test_main_list_sessions_exits_before_tui(tmp_path, monkeypatch, capsys):
     def fail_run_tui(args):
         raise AssertionError("TUI should not start when listing sessions")
 
+    monkeypatch.setattr(
+        "main.build_missing_model_config_warnings",
+        lambda config_path=None: ["Missing required model configuration: API_KEY"],
+    )
     monkeypatch.setattr("sys.argv", ["main.py", str(workdir), "-s"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
 
     main()
 
-    assert "sess-1" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "sess-1" in output
+    assert "Missing required model configuration" not in output
 
 
 def test_delete_session_for_workdir_removes_saved_session(tmp_path, monkeypatch):
@@ -1193,6 +1297,10 @@ def test_update_default_skills_command_syncs_and_exits(tmp_path, monkeypatch, ca
     def fail_run_tui(args):
         raise AssertionError("TUI should not start when updating skills")
 
+    monkeypatch.setattr(
+        "main.build_missing_model_config_warnings",
+        lambda config_path=None: ["Missing required model configuration: API_KEY"],
+    )
     monkeypatch.setattr("sys.argv", ["main.py", str(workdir), "--update-skills"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
 
@@ -1201,6 +1309,7 @@ def test_update_default_skills_command_syncs_and_exits(tmp_path, monkeypatch, ca
     output = capsys.readouterr().out
     assert "Updated yycode skills." in output
     assert "Updated: 1" in output
+    assert "Missing required model configuration" not in output
     assert (runtime_data_dir / "skills" / "plan.md").read_text(encoding="utf-8") == "bundled plan"
     assert (runtime_data_dir / "skills" / "custom.md").read_text(encoding="utf-8") == "custom"
 
@@ -1215,11 +1324,15 @@ def test_main_resolves_positional_workdir(tmp_path, monkeypatch):
         captured["config_path"] = config_path
         return []
 
+    def fake_missing_config_warnings(config_path=None):
+        return []
+
     def fake_run_tui(args):
         captured["args"] = args
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path)])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fake_run_tui))
 
@@ -1238,6 +1351,9 @@ def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
         captured["config_path"] = config_path
         return []
 
+    def fake_missing_config_warnings(config_path=None):
+        return ["Missing required model configuration: API_KEY\nEdit config file: /tmp/config.json"]
+
     async def fake_run_plain_loop(args):
         captured["args"] = args
 
@@ -1246,6 +1362,7 @@ def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
 
     monkeypatch.setattr("main.setup_logging", fake_setup_logging)
     monkeypatch.setattr("main.load_startup_configuration", fake_load_startup_configuration)
+    monkeypatch.setattr("main.build_missing_model_config_warnings", fake_missing_config_warnings)
     monkeypatch.setattr("main.run_plain_loop", fake_run_plain_loop)
     monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--plain"])
     monkeypatch.setitem(__import__("sys").modules, "agent.tui.app", types.SimpleNamespace(run_tui=fail_run_tui))
@@ -1254,6 +1371,28 @@ def test_main_plain_mode_skips_tui(tmp_path, monkeypatch):
 
     assert captured["args"].plain is True
     assert captured["args"].workdir == tmp_path.resolve()
+
+
+def test_main_plain_mode_prints_missing_config_to_stdout(tmp_path, monkeypatch, capsys):
+    async def fake_run_plain_loop(args):
+        return None
+
+    monkeypatch.setattr("main.setup_logging", lambda **kwargs: None)
+    monkeypatch.setattr("main.load_startup_configuration", lambda config_path=None: [])
+    monkeypatch.setattr(
+        "main.build_missing_model_config_warnings",
+        lambda config_path=None: [
+            "Missing required model configuration: API_KEY\nEdit config file: /tmp/config.json"
+        ],
+    )
+    monkeypatch.setattr("main.run_plain_loop", fake_run_plain_loop)
+    monkeypatch.setattr("sys.argv", ["main.py", str(tmp_path), "--plain"])
+
+    main()
+
+    output = capsys.readouterr().out
+    assert "[config] Missing required model configuration: API_KEY" in output
+    assert "[config] Edit config file: /tmp/config.json" in output
 
 
 def test_resolve_startup_workdir_defaults_to_cwd(tmp_path, monkeypatch):

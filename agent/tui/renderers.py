@@ -1284,6 +1284,12 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, 
         return f"{role_prefix}[#9cdcfe][retry] {_safe_text(item.content)}[/]"
     if item.event_type == "llm_error":
         return f"{role_prefix}[#ff8f8f][error] {_safe_text(item.content)}[/]"
+    if item.event_type == "config_warning":
+        lines = [f"{role_prefix}[bold #d7ba7d][config] {_safe_text(item.title or 'Configuration required')}[/]"]
+        for line in (item.content or item.detail or "").splitlines():
+            if line.strip():
+                lines.append(f"  [#d7ba7d]{_safe_text(line)}[/]")
+        return "\n".join(lines)
     if item.event_type == "file_changed":
         files = ", ".join(_safe_text(fp) for fp in item.file_paths) if item.file_paths else _safe_text(item.content or "file")
         return f"{role_prefix}[#8fd6a3]+[/] [#cfd3dc]modified[/] {files}"

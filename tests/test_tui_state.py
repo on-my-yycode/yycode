@@ -288,6 +288,34 @@ def test_tui_renderers_show_initializing_state_before_session_ready():
     assert "Starting yoyoagent" in render_timeline_lines(state)
 
 
+def test_tui_timeline_renders_config_warning():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="tui",
+            session_id="sess-1",
+            event_type="config_warning",
+            title="Configuration required",
+            content=(
+                "Missing required model configuration: API_KEY, API_BASE\n"
+                "Edit config file: /tmp/yycode/config.json\n"
+                "Or set environment variables / .env. Priority: environment > config.json > .env > defaults.\n"
+                "Empty strings in config.json are ignored."
+            ),
+            status="warning",
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "[config]" in transcript
+    assert "Configuration required" in transcript
+    assert "Missing required model configuration: API_KEY, API_BASE" in transcript
+    assert "Edit config file: /tmp/yycode/config.json" in transcript
+    assert "real-secret-value" not in transcript
+
+
 def test_tui_renderers_show_compact_transcript_style_lines():
     state = TuiState()
     state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")

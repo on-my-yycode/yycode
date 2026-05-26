@@ -134,10 +134,10 @@ AI_MODEL=gpt-4o
 |------|------|------|
 | `PROVIDER` | LLM 提供商，支持 `anthropic` 或 `openai` | `openai` |
 | `API_KEY` | 对应提供商的 API 密钥 | `your-api-key` |
-| `API_BASE` | 可选，自定义 API Base/Base URL | `https://api.openai.com/v1` |
+| `API_BASE` | API Base/Base URL | `https://api.openai.com/v1` |
 | `AI_MODEL` | 模型名称 | `gpt-4o` |
 
-配置优先级为：系统环境变量 > `config.json` 非空值 > `.env` 非空值 > 程序默认值。默认生成的空值不会影响环境变量或 `.env`。不要把真实 API Key 提交到仓库；本地私密配置推荐放在用户数据目录的 `config.json` 或本机 `.env`。
+配置优先级为：系统环境变量 > `config.json` 非空值 > `.env` 非空值 > 程序默认值。默认生成的空值不会影响环境变量或 `.env`。如果 `PROVIDER`、`API_KEY`、`API_BASE`、`AI_MODEL` 仍有缺失，启动时会提示需要补齐，并显示当前系统实际使用的 `config.json` 路径；TUI 会在 timeline 中显示该提示，ACP 模式只写入 stderr。不要把真实 API Key 提交到仓库；本地私密配置推荐放在用户数据目录的 `config.json` 或本机 `.env`。
 
 ### 5. 启动 TUI
 

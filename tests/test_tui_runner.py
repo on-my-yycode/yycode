@@ -358,6 +358,49 @@ def test_runner_emits_session_persistence_warning_on_start(monkeypatch):
     asyncio.run(run())
 
 
+def test_runner_emits_config_warnings_on_start(monkeypatch):
+    async def run():
+        state = TuiState()
+        events = []
+
+        async def on_state_change(event):
+            events.append(event)
+
+        warning = (
+            "Missing required model configuration: API_KEY\n"
+            "Edit config file: /tmp/yycode/config.json"
+        )
+        runner = AgentTuiRunner(
+            Namespace(silent=False, temp=False, session_id=None, config_warnings=[warning]),
+            state=state,
+            on_state_change=on_state_change,
+        )
+        session = MessageContextSession()
+        session.workdir = "."
+        session.context_window_tokens = 1_000
+        session.restored_message_count = 0
+        session.todo_manager = None
+
+        class FakeSessionFactory:
+            @staticmethod
+            def from_config(**kwargs):
+                return session
+
+        monkeypatch.setattr("agent.tui.runner.Session", FakeSessionFactory)
+        monkeypatch.setattr("agent.tui.runner._read_git_header", lambda workdir: _read_git_header(None))
+
+        await runner.start()
+
+        warnings = [item for item in state.timeline if item.event_type == "config_warning"]
+        assert len(warnings) == 1
+        assert warnings[0].title == "Configuration required"
+        assert "Missing required model configuration: API_KEY" in warnings[0].content
+        assert "/tmp/yycode/config.json" in warnings[0].content
+        assert events[-1].event_type == "config_warning"
+
+    asyncio.run(run())
+
+
 def test_submit_emits_final_response_when_provider_does_not_stream_text():
     async def run():
         state = TuiState()

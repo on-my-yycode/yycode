@@ -129,7 +129,10 @@ skills 复制到这个目录；之后用户可以直接查看和编辑这里的 
 ```
 
 配置优先级为：系统环境变量 > `config.json` 非空值 > `.env` 非空值 > 程序默认值。
-可以用 `yycode --config /path/to/config.json` 指定其它 JSON 配置文件。
+可以用 `yycode --config /path/to/config.json` 指定其它 JSON 配置文件。启动时如果
+`PROVIDER`、`API_KEY`、`API_BASE`、`AI_MODEL` 仍有缺失，yycode 会提示需要补齐，
+并显示当前系统实际使用的配置文件路径；TUI 会在 timeline 中显示该提示，ACP 模式
+只写入 stderr。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 
