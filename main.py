@@ -225,7 +225,7 @@ Examples:
   yycode --plain
 
 Session data:
-  Messages are saved by default under {app_root}/sessions/{workspace_hash}/{session_id}.json.
+  Messages are saved by default under {data_dir}/sessions/{workspace_hash}/{session_id}.json.
   Use -s/--sessions to inspect saved sessions for WORKDIR.
   Use -r/--resume ID to continue a previous conversation in the same workspace.
   Use -x/--delete ID to delete a saved session for WORKDIR.
@@ -235,10 +235,10 @@ Environment:
   API_KEY                     API key for the selected provider.
   API_BASE                    Optional custom API base URL.
   AI_MODEL                    Model name override.
-  YOYO_APP_ROOT               yycode resource root; skills are loaded from this directory.
-  YOYO_RUNTIME_DATA_DIR       Runtime data directory; defaults to the app/runtime root.
+  YOYO_APP_ROOT               Bundled yycode resource root override.
+  YOYO_RUNTIME_DATA_DIR       User data directory; skills, sessions, and logs live here.
   YOYO_SESSION_DIR            Session messages directory override.
-  YOYO_SKILL_DIRS             Extra skill directories appended after the default skills dir.
+  YOYO_SKILL_DIRS             Extra skill directories appended after {data_dir}/skills.
   YOYO_CONTEXT_WINDOW_TOKENS  Context window size override for token pressure.
   YOYO_SILENT                 Auto-approve risky actions when truthy.
   YOYO_AUTO_APPROVE           Alias for YOYO_SILENT.

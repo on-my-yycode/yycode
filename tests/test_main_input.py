@@ -935,11 +935,13 @@ def test_arg_parser_resume_sets_session_id_for_tui(tmp_path, monkeypatch):
 
 def test_list_sessions_for_workdir_outputs_saved_sessions(tmp_path, monkeypatch):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
     app_root.mkdir()
     workdir.mkdir()
     monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
-    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_data_dir))
+    store = FileSessionStore(app_root=app_root, workdir=workdir, root=runtime_data_dir / "sessions")
     store.save("sess-1", [AIMessage(content="hello")])
 
     output = list_sessions_for_workdir(workdir)
@@ -959,11 +961,13 @@ def test_format_session_updated_at_uses_minute_precision():
 
 def test_main_list_sessions_exits_before_tui(tmp_path, monkeypatch, capsys):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
     app_root.mkdir()
     workdir.mkdir()
     monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
-    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_data_dir))
+    store = FileSessionStore(app_root=app_root, workdir=workdir, root=runtime_data_dir / "sessions")
     store.save("sess-1", [AIMessage(content="hello")])
 
     def fail_run_tui(args):
@@ -979,11 +983,13 @@ def test_main_list_sessions_exits_before_tui(tmp_path, monkeypatch, capsys):
 
 def test_delete_session_for_workdir_removes_saved_session(tmp_path, monkeypatch):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
     app_root.mkdir()
     workdir.mkdir()
     monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
-    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_data_dir))
+    store = FileSessionStore(app_root=app_root, workdir=workdir, root=runtime_data_dir / "sessions")
     store.save("sess-1", [AIMessage(content="hello")])
 
     output = delete_session_for_workdir(workdir, "sess-1")
@@ -994,11 +1000,13 @@ def test_delete_session_for_workdir_removes_saved_session(tmp_path, monkeypatch)
 
 def test_main_delete_session_exits_before_tui(tmp_path, monkeypatch, capsys):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
     app_root.mkdir()
     workdir.mkdir()
     monkeypatch.setenv("YOYO_APP_ROOT", str(app_root))
-    store = FileSessionStore(app_root=app_root, workdir=workdir)
+    monkeypatch.setenv("YOYO_RUNTIME_DATA_DIR", str(runtime_data_dir))
+    store = FileSessionStore(app_root=app_root, workdir=workdir, root=runtime_data_dir / "sessions")
     store.save("sess-1", [AIMessage(content="hello")])
 
     def fail_run_tui(args):

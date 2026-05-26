@@ -75,10 +75,10 @@ yycode -t                      # 临时会话，不保存 session messages
 
 工作区使用位置参数指定，不提供 `--workdir`。如果不传工作区，Yoyo Agent 会使用启动命令时所在的当前目录。所有文件、Git、Shell、验证和审批 diff 都会限制在该工作区内。
 
-`sessions` 属于 yoyoagent 应用自身，而不是被操作项目的一部分。默认保存路径为：
+`sessions` 属于 yycode 用户数据，而不是被操作项目的一部分。默认保存路径为：
 
 ```text
-{app_root}/sessions/{workspace_hash}/{session_id}.json
+{runtime_data_dir}/sessions/{workspace_hash}/{session_id}.json
 ```
 
 其中 `workspace_hash = sha256(resolve(workdir))[:16]`。恢复时会校验 session 文件中的 `workdir` 与当前工作区一致，避免跨项目混用上下文。
@@ -97,14 +97,15 @@ YOYO_AUTO_APPROVE=true python main.py
 
 | 变量 | 功能 |
 |------|------|
-| `YOYO_APP_ROOT` | 覆盖 yycode 程序资源目录；默认是源码运行目录或发行安装后的 tool 环境目录 |
-| `YOYO_RUNTIME_DATA_DIR` | 覆盖运行数据目录，默认等于程序运行根目录 |
+| `YOYO_APP_ROOT` | 覆盖 yycode 内置资源来源目录；通常不需要设置 |
+| `YOYO_RUNTIME_DATA_DIR` | 覆盖用户数据目录；默认使用系统用户数据目录 |
 | `YOYO_SESSION_DIR` | 覆盖 session messages 保存目录 |
 | `YOYO_SKILL_DIRS` | 追加额外技能目录，多个目录用逗号、换行或系统 path 分隔符分隔 |
 
-默认技能目录是 yycode 程序资源目录下的 `skills`。使用 `uv tool install yycode`
-安装后，这个目录位于该 tool 环境中，用户可以查看和编辑其中的 skill 文件。项目内的
-`workdir/skills` 不再默认扫描，如需项目级技能请通过 `YOYO_SKILL_DIRS` 显式加入。
+默认技能目录是用户数据目录下的 `skills`。首次启动时，yycode 会把安装包内置的默认
+skills 复制到这个目录；之后用户可以直接查看和编辑这里的 skill 文件，升级 yycode 不会
+覆盖已有用户 skills。项目内的 `workdir/skills` 不再默认扫描，如需项目级技能请通过
+`YOYO_SKILL_DIRS` 显式加入。
 
 当前默认入口会启动 TUI 界面。`/p` / `/paste` 多行粘贴辅助函数保留在控制台输入实现中，但默认 TUI 路径不直接使用。
 

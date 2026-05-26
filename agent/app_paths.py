@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def resolve_app_root(raw_app_root: str | Path | None = None) -> Path:
 
 
 def resolve_resource_root(raw_app_root: str | Path | None = None) -> Path:
-    """Resolve the user-editable yycode resource root for bundled files."""
+    """Resolve the bundled yycode resource root for default files."""
     raw = raw_app_root or os.environ.get("YOYO_APP_ROOT")
     if raw:
         return Path(raw).expanduser().resolve()
@@ -36,8 +37,38 @@ def resolve_runtime_data_dir(
     app_root: Path,
     raw_runtime_data_dir: str | Path | None = None,
 ) -> Path:
-    """Resolve the runtime data directory for yoyoagent-owned data."""
+    """Resolve the user-editable runtime data directory for yycode-owned data."""
     raw = raw_runtime_data_dir or os.environ.get("YOYO_RUNTIME_DATA_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
-    return app_root
+    return default_user_data_dir()
+
+
+def default_user_data_dir() -> Path:
+    """Return the default per-user yycode data directory."""
+    if sys.platform == "darwin":
+        return (Path.home() / "Library" / "Application Support" / "yycode").resolve()
+    if os.name == "nt":
+        base = os.environ.get("APPDATA")
+        if base:
+            return (Path(base).expanduser() / "yycode").resolve()
+        return (Path.home() / "AppData" / "Roaming" / "yycode").resolve()
+    base = os.environ.get("XDG_DATA_HOME")
+    if base:
+        return (Path(base).expanduser() / "yycode").resolve()
+    return (Path.home() / ".local" / "share" / "yycode").resolve()
+
+
+def ensure_default_skills_dir(runtime_data_dir: Path, resource_root: Path) -> Path:
+    """Initialize the user-editable skills directory from bundled defaults if needed."""
+    skills_dir = runtime_data_dir / "skills"
+    if skills_dir.exists():
+        return skills_dir
+
+    bundled_skills = resource_root / "skills"
+    if bundled_skills.is_dir():
+        skills_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(bundled_skills, skills_dir)
+    else:
+        skills_dir.mkdir(parents=True, exist_ok=True)
+    return skills_dir
