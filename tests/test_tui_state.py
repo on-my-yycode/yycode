@@ -2,12 +2,17 @@
 
 from rich.text import Text
 from textual.markup import to_content
+from textual.widgets import TextArea
 
 from agent.runtime.tool_events import format_tool_event_metadata
 from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
-from agent.tui.app import _timeline_markup_to_plain_text
+from agent.tui.app import (
+    TIMELINE_TEXT_HEADER,
+    _timeline_copy_text,
+    _timeline_markup_to_plain_text,
+)
 from agent.tui.renderers import (
     render_brand_text,
     render_status_text,
@@ -26,6 +31,34 @@ def test_timeline_markup_to_plain_text_keeps_dynamic_brackets():
     assert "1-24" in plain
     assert "events" in plain
     assert "[#7f8794]" not in plain
+
+
+def test_timeline_copy_text_uses_selection_when_present():
+    text, label = _timeline_copy_text("full timeline", "selected block")
+
+    assert text == "selected block"
+    assert label == "selected text"
+
+
+def test_timeline_copy_text_falls_back_to_full_timeline_without_selection():
+    text, label = _timeline_copy_text("full timeline", "")
+
+    assert text == "full timeline"
+    assert label == "full timeline"
+
+
+def test_timeline_text_header_documents_copy_shortcuts():
+    assert "Ctrl+C/Cmd+C copy" in TIMELINE_TEXT_HEADER
+    assert "Ctrl+A/Cmd+A select all" in TIMELINE_TEXT_HEADER
+    assert "Esc close" in TIMELINE_TEXT_HEADER
+
+
+def test_text_area_select_all_covers_full_timeline_text():
+    body = TextArea("first line\nsecond line", read_only=True)
+
+    body.select_all()
+
+    assert body.selected_text == "first line\nsecond line"
 
 
 def test_timeline_markup_is_parseable_for_bracket_heavy_content():

@@ -39,6 +39,10 @@ SUBAGENT_ROLE_DESCRIPTIONS = {
 TUI_KEY_DEBUG_ENV = "YOYO_TUI_DEBUG_KEYS"
 TUI_KEY_DEBUG_FILE_ENV = "YOYO_TUI_DEBUG_KEYS_FILE"
 TUI_KEY_DEBUG_FILE = Path("tui_key_debug.log")
+TIMELINE_TEXT_HEADER = (
+    "Timeline text view - select text, Ctrl+C/Cmd+C copy, "
+    "Ctrl+A/Cmd+A select all, Esc close."
+)
 
 
 def _env_flag_enabled(name: str) -> bool:
@@ -93,6 +97,14 @@ def _timeline_markup_to_plain_text(content: str) -> str:
         import re
 
         return re.sub(r"\[/?[^\]]*\]", "", content).replace(r"\[", "[")
+
+
+def _timeline_copy_text(content: str, selected_text: str | None) -> tuple[str, str]:
+    """Return timeline text to copy and a user-facing copy scope label."""
+    selection = selected_text or ""
+    if selection:
+        return selection, "selected text"
+    return content, "full timeline"
 
 
 def _is_submit_key_event(event: object) -> bool:
@@ -240,6 +252,8 @@ def run_tui(args: Namespace) -> None:
         BINDINGS = [
             ("escape", "close_timeline_text", "Close"),
             ("ctrl+l", "close_timeline_text", "Back"),
+            ("ctrl+c,super+c", "copy_selection_or_all", "Copy"),
+            ("ctrl+a,super+a", "select_all_text", "Select all"),
         ]
 
         def __init__(self, content: str) -> None:
@@ -249,7 +263,7 @@ def run_tui(args: Namespace) -> None:
         def compose(self) -> ComposeResult:
             yield Container(
                 Static(
-                    "Timeline text view — select/copy with terminal or mouse. Press Esc / Ctrl+L to close.",
+                    TIMELINE_TEXT_HEADER,
                     id="timeline-text-header",
                 ),
                 TextArea(
@@ -268,6 +282,27 @@ def run_tui(args: Namespace) -> None:
 
         def action_close_timeline_text(self) -> None:
             self.dismiss(None)
+
+        def action_select_all_text(self) -> None:
+            self.query_one("#timeline-text-body", TextArea).select_all()
+
+        def action_copy_selection_or_all(self) -> None:
+            body = self.query_one("#timeline-text-body", TextArea)
+            text, label = _timeline_copy_text(self.content, body.selected_text)
+            try:
+                self.app.copy_to_clipboard(text)
+            except Exception:
+                try:
+                    import pyperclip
+
+                    pyperclip.copy(text)
+                except ImportError:
+                    self.notify("Clipboard is unavailable. Install with: pip install pyperclip", severity="warning")
+                    return
+                except Exception as exc:
+                    self.notify(f"Failed to copy: {exc}", severity="warning")
+                    return
+            self.notify(f"Copied {label} to clipboard.", severity="information")
 
 
     class TaskPlanScreen(ModalScreen[None]):
