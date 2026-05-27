@@ -43,12 +43,12 @@ class ToolExecutor:
         status = "completed"
         await self._emit_tool_start(tc)
         try:
-            logger.debug(f"Calling tool: {getattr(tc, 'name', 'unknown')}")
-            logger.debug(f"Full tc object: {tc!r}")
-            logger.debug(f"tc type: {type(tc)}")
-            logger.debug(f"tc.name: {getattr(tc, 'name', 'N/A')!r}")
-            logger.debug(f"tc.args: {getattr(tc, 'args', 'N/A')!r}")
-            logger.debug(f"tc.id: {getattr(tc, 'id', 'N/A')!r}")
+            logger.debug(
+                "Calling tool: name=%s id=%s args=%s",
+                getattr(tc, "name", "unknown"),
+                getattr(tc, "id", "N/A"),
+                _safe_tool_args_summary(getattr(tc, "args", None)),
+            )
 
             if self.registry.is_workspace_write(tc.name) and not self.workflow_guard.has_preflight():
                 output = await self.workflow_guard.run_preflight()
@@ -64,6 +64,12 @@ class ToolExecutor:
                 approved_args = await self.approval_service.approve(tc.name, tc.args or {})
             except ApprovalTargetMissing as exc:
                 status = "failed"
+                logger.warning(
+                    "Tool edit blocked due to missing target: name=%s id=%s args=%s",
+                    getattr(tc, "name", "unknown"),
+                    getattr(tc, "id", "N/A"),
+                    _safe_tool_args_summary(getattr(tc, "args", None)),
+                )
                 await self._emit_tool_result(
                     str(exc),
                     title="File edit blocked",
@@ -82,8 +88,13 @@ class ToolExecutor:
             )
             output_view = build_tool_output_view(tc.name, output, tc)
 
-            logger.debug(f"Tool output: {output[:200]}...")
-            logger.debug(f"End tool: {getattr(tc, 'name', 'unknown')}")
+            logger.debug(
+                "Tool completed: name=%s id=%s output_len=%d output_preview=%r",
+                getattr(tc, "name", "unknown"),
+                getattr(tc, "id", "N/A"),
+                len(output or ""),
+                (output or "")[:200],
+            )
             tool_message = self._tool_message(tc, output_view.model)
             if output_view.context_policy != "full":
                 tool_message.additional_kwargs["context_policy"] = output_view.context_policy
@@ -206,3 +217,26 @@ class ToolExecutor:
                 metadata={"tool_call_id": tc.id},
             )
         )
+
+
+def _safe_tool_args_summary(args) -> dict:
+    """Return argument diagnostics without logging large file contents."""
+    if not isinstance(args, dict):
+        return {"type": type(args).__name__, "is_dict": False}
+    summary = {
+        "type": "dict",
+        "keys": sorted(str(key) for key in args.keys()),
+    }
+    for key in ("path", "command", "target", "role", "approved"):
+        if key in args:
+            summary[key] = args.get(key)
+    if "content" in args:
+        content = args.get("content")
+        summary["has_content"] = content is not None
+        summary["content_len"] = len(content) if isinstance(content, str) else None
+        summary["content_type"] = type(content).__name__
+    if "patch" in args:
+        patch = args.get("patch")
+        summary["has_patch"] = patch is not None
+        summary["patch_len"] = len(patch) if isinstance(patch, str) else None
+    return summary

@@ -32,7 +32,52 @@ uv --version
 
 如果你不想使用 `uv`，也可以使用 Python 自带的 `venv` + `pip`，见下一步的备选命令。
 
-### 2. 获取代码并安装依赖
+### 2. 安装 yycode 命令
+
+yycode 已发布到 PyPI：
+
+```text
+https://pypi.org/project/yycode/
+```
+
+如果只是使用 yycode，推荐直接从 PyPI 安装命令：
+
+```bash
+uv tool install yycode
+yycode --help
+```
+
+也可以使用 pip 安装：
+
+```bash
+pip install yycode
+yycode --help
+```
+
+安装后可以在任意项目目录运行：
+
+```bash
+yycode
+yycode ~/project
+yycode --plain
+yycode --acp
+```
+
+以后升级到远程最新版本：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果要安装 GitHub 分支上的预览版本，或者需要强制刷新本地工具环境：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+### 3. 开发环境安装
+
+如果要修改 yycode 源码，再 clone 仓库并安装开发依赖：
 
 ```bash
 git clone <your-repo-url>
@@ -49,13 +94,32 @@ pip install -e .
 
 > 依赖声明在 `pyproject.toml` 中，包含 TUI、LLM Provider、LangGraph 和 dotenv 支持。
 
-### 3. 配置模型
+### 4. 配置模型
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，填入你的 LLM Provider、API Key 和模型名称：
+首次启动时，yycode 也会在用户数据目录创建一个空值配置文件：
+
+```text
+~/Library/Application Support/yycode/config.json   # macOS
+%APPDATA%\yycode\config.json                       # Windows
+~/.local/share/yycode/config.json                  # Linux 默认
+```
+
+可以编辑这个 JSON，填入你的 LLM Provider、API Key 和模型名称：
+
+```json
+{
+  "PROVIDER": "openai",
+  "API_KEY": "your-api-key",
+  "API_BASE": "https://api.openai.com/v1",
+  "AI_MODEL": "gpt-4o"
+}
+```
+
+也可以继续使用 `.env`：
 
 ```dotenv
 PROVIDER=openai
@@ -70,25 +134,25 @@ AI_MODEL=gpt-4o
 |------|------|------|
 | `PROVIDER` | LLM 提供商，支持 `anthropic` 或 `openai` | `openai` |
 | `API_KEY` | 对应提供商的 API 密钥 | `your-api-key` |
-| `API_BASE` | 可选，自定义 API Base/Base URL | `https://api.openai.com/v1` |
+| `API_BASE` | API Base/Base URL | `https://api.openai.com/v1` |
 | `AI_MODEL` | 模型名称 | `gpt-4o` |
 
-不要把真实 API Key 提交到仓库；本地私密配置只放在 `.env`。
+配置优先级为：系统环境变量 > `config.json` 非空值 > `.env` 非空值 > 程序默认值。默认生成的空值不会影响环境变量或 `.env`。如果 `PROVIDER`、`API_KEY`、`API_BASE`、`AI_MODEL` 仍有缺失，启动时会提示需要补齐，并显示当前系统实际使用的 `config.json` 路径；TUI 会在 timeline 中显示该提示，ACP 模式只写入 stderr。不要把真实 API Key 提交到仓库；本地私密配置推荐放在用户数据目录的 `config.json` 或本机 `.env`。
 
-### 4. 启动 TUI
+### 5. 启动 TUI
 
 ```bash
 # 在当前目录启动，默认把当前目录作为被操作工作区
-uv run python main.py
+yycode
 
 # 指定要让 agent 操作的项目目录
-uv run python main.py ~/project
-
-# 如果使用 pip 安装，也可以直接运行
-python main.py ~/project
-
-# 安装发行包后可直接使用 yycode 命令
 yycode ~/project
+
+# 开发环境中也可以使用 uv 运行项目入口
+uv run yycode ~/project
+
+# 等价的源码入口
+uv run python main.py ~/project
 ```
 
 启动后会进入终端 TUI。你可以直接输入需求，例如：
@@ -99,7 +163,7 @@ yycode ~/project
 给 README 增加安装说明
 ```
 
-### 5. 常用运行方式
+### 6. 常用运行方式
 
 ```bash
 uv run python main.py -a              # 自动批准高风险操作
@@ -110,13 +174,66 @@ uv run python main.py -s              # 查看当前工作区可恢复的 sessio
 uv run python main.py -r <session-id> # 恢复指定 session
 uv run python main.py -x <session-id> # 删除指定 session
 uv run python main.py -t              # 临时会话，不保存 messages
+uv run python main.py --update-skills # 用内置 skills 覆盖同步用户数据目录中的同路径文件
+uv run python main.py --config ~/yycode-config.json # 指定 JSON 配置文件
 uv run python main.py --acp           # 启动 ACP stdio server
 uv run python main.py acp             # 同上，便于作为子命令使用
 yycode --plain                        # 安装发行包后的普通终端输入模式
+yycode --update-skills                # 更新用户数据目录中的默认 skills，保留用户自定义文件
 yycode --acp                          # 安装发行包后的 ACP stdio server
 ```
 
 更多 TUI 快捷键、内置工具和会话说明见 [使用说明](docs/usage.md)。
+
+### 7. 版本更新与发布
+
+项目版本号定义在 `pyproject.toml` 的 `version` 字段。准备发布给用户使用时，建议同步更新版本号：
+
+- 文档或小修复：例如 `0.3.2` -> `0.3.3`
+- 新增用户可见能力或安装体验：例如 `0.3.2` -> `0.4.0`
+- 破坏兼容的 CLI 或配置改动：升级 minor 或后续 major 版本
+
+发布新版本的一般流程：
+
+```bash
+# 修改 pyproject.toml 中的 version
+uv lock
+git add pyproject.toml uv.lock
+git commit -m "Bump version to 0.4.0"
+git tag v0.4.0
+git push origin dev master --tags
+
+# 构建并发布到 PyPI
+uv build
+uv publish --token <your-pypi-token>
+```
+
+仓库也提供 GitHub Actions 自动发布流程：`.github/workflows/publish-pypi.yml`。在 GitHub 仓库设置中添加 secret：
+
+```text
+PYPI_API_TOKEN=<your-pypi-token>
+```
+
+之后每次提交到 `master` 都会自动执行：
+
+```bash
+uv build
+uv publish
+```
+
+用户升级：
+
+```bash
+uv tool upgrade yycode
+```
+
+如果用户是直接从 GitHub 分支安装，也可以强制重新安装最新代码：
+
+```bash
+uv tool install --force git+https://github.com/on-my-yycode/yycode.git
+```
+
+PyPI token 只应通过本地命令、CI secret 或凭据管理器使用，不要提交到仓库、文档或聊天记录中。如果 token 泄露，应立即在 PyPI 后台撤销并重新生成。
 
 ## 功能特性
 
@@ -161,11 +278,12 @@ yycode --acp                          # 安装发行包后的 ACP stdio server
 | `API_KEY` | 对应提供商的 API 密钥 | `sk-...` |
 | `API_BASE` | 可选，自定义 API Base/Base URL | `https://api.openai.com/v1` |
 | `AI_MODEL` | 模型名称 | Anthropic 默认 `claude-3-5-sonnet-20241022`，OpenAI 默认 `gpt-4o` |
+| `--config PATH` | 可选，指定 JSON 配置文件；默认使用用户数据目录下的 `config.json` | `~/yycode-config.json` |
 | `YOYO_CONTEXT_WINDOW_TOKENS` | 可选，覆盖上下文窗口大小，用于 TUI/CLI 提示符统计；未设置时会按模型推断 | Claude `200000`，Doubao Code `224000`，GPT-4o/4.1/5 `128000` |
-| `YOYO_APP_ROOT` | 可选，覆盖 yoyoagent 应用根目录；默认是源码/发行目录 | `/path/to/yoyoagent` |
-| `YOYO_RUNTIME_DATA_DIR` | 可选，覆盖运行数据目录；默认等于 `app_root` | `/path/to/yoyoagent` |
+| `YOYO_APP_ROOT` | 可选，覆盖 yycode 内置资源来源目录；通常不需要设置 | `/path/to/yycode-install` |
+| `YOYO_RUNTIME_DATA_DIR` | 可选，覆盖用户数据目录；默认使用系统用户数据目录 | macOS: `~/Library/Application Support/yycode` |
 | `YOYO_SESSION_DIR` | 可选，覆盖 session messages 保存目录 | `~/.yoyoagent/sessions` |
-| `YOYO_SKILL_DIRS` | 可选，额外技能目录，多个目录用逗号分隔；默认技能目录是 `{app_root}/skills` | `../shared-skills` |
+| `YOYO_SKILL_DIRS` | 可选，额外技能目录，多个目录用逗号分隔；默认技能目录是用户数据目录下的 `skills` | `../shared-skills` |
 | `YOYO_SILENT` / `YOYO_AUTO_APPROVE` | 可选，启用后自动批准高风险操作 | `true` |
 
 高级重试配置：

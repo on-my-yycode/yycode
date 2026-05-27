@@ -1,6 +1,6 @@
 [project]
 name = "yycode"
-version = "0.3.2"
+version = "0.3.6"
 description = "Terminal coding agent with TUI, plain input mode, tools, skills, and ACP support"
 requires-python = ">=3.10"
 dependencies = [
@@ -10,7 +10,7 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
     "python-dotenv>=1.0.0",
-    "textual>=0.80.0",
+    "textual==8.2.4"
 ]
 
 [project.scripts]
@@ -23,6 +23,9 @@ py-modules = ["main"]
 include = ["agent*", "tools*", "utils*"]
 exclude = ["sessions*", "output*", "tests*", "examples*", "docs*", "changes*"]
 
+[tool.setuptools.package-data]
+"agent.tui" = ["*.tcss"]
+
 [tool.setuptools.data-files]
 "skills" = ["skills/*.md"]
 "skills/drawio" = ["skills/drawio/SKILL.md"]
@@ -31,7 +34,8 @@ exclude = ["sessions*", "output*", "tests*", "examples*", "docs*", "changes*"]
 "skills/drawio/assets" = ["skills/drawio/assets/*"]
 "skills/drawio/docs" = ["skills/drawio/docs/*"]
 "skills/drawio/references" = ["skills/drawio/references/*"]
-"skills/drawio/styles" = ["skills/drawio/styles/*"]
+"skills/drawio/styles" = ["skills/drawio/styles/*.json"]
+"skills/drawio/styles/built-in" = ["skills/drawio/styles/built-in/*.json"]
 
 [tool.ruff]
 line-length = 100

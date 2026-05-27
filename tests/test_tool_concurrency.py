@@ -147,6 +147,47 @@ def test_todo_reminder_resets_after_it_is_consumed():
     assert manager.needs_reminder() is False
 
 
+def test_tools_node_does_not_inject_periodic_todo_reminder(tmp_path, monkeypatch):
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {"read_file": lambda **kwargs: "read"},
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [_tool_def("read_file", "read_only", "safe")],
+    )
+
+    manager = TodoManager()
+    manager.set_items([{"id": "1", "text": "Long task", "status": "in_progress"}])
+    manager.record_tool_call("read_file")
+    manager.record_tool_call("grep")
+
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=manager,
+        workdir=tmp_path,
+        session_id="session",
+    )
+    ai_msg = AIMessage(content="")
+    ai_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="read-1", name="read_file", args={"path": "x"}),
+    ]
+
+    result = asyncio.run(tools_node({"messages": [ai_msg]}))
+
+    assert manager.needs_reminder() is True
+    assert not any(
+        isinstance(message, HumanMessage)
+        and message.additional_kwargs.get("ephemeral_kind") == "task_reminder"
+        for message in result["messages"]
+    )
+
+
 def test_tools_node_warns_when_todo_repeats_same_incomplete_state(tmp_path):
     manager = TodoManager()
     tools_node = create_tools_node(
@@ -1204,3 +1245,53 @@ def test_tools_node_allows_write_file_for_new_file(tmp_path, monkeypatch):
 
     assert captured == ["workspace_state", "git_diff", "write_file"]
     assert result["messages"][0].name == "write_file"
+
+
+def test_tools_node_logs_missing_write_file_target_without_content(caplog, tmp_path, monkeypatch):
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "write_file": lambda **kwargs: "wrote",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("write_file", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        approval_callback=lambda request: True,
+    )
+
+    preflight_msg = AIMessage(content="")
+    preflight_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+    ]
+    asyncio.run(tools_node({"messages": [preflight_msg]}))
+
+    caplog.set_level("WARNING", logger="agent.runtime.tool_executor")
+    write_msg = AIMessage(content="")
+    write_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="3", name="write_file", args={"content": "secret document body"}),
+    ]
+    result = asyncio.run(tools_node({"messages": [write_msg]}))
+
+    assert "no target file was detected" in result["messages"][0].content
+    assert "Tool edit blocked due to missing target" in caplog.text
+    assert "content_len" in caplog.text
+    assert "secret document body" not in caplog.text

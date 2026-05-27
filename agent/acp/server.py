@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from pathlib import Path
 from typing import Any, TextIO
 
 from agent.acp.jsonrpc import (
@@ -20,6 +19,7 @@ from agent.acp.jsonrpc import (
     response,
 )
 from agent.acp.session_manager import AcpSessionManager
+from agent.version import project_version
 
 
 ACP_PROTOCOL_VERSION = 1
@@ -173,14 +173,7 @@ def _initialize_result() -> dict[str, Any]:
 
 
 def _project_version() -> str:
-    try:
-        import tomllib
-
-        root = Path(__file__).resolve().parents[2]
-        payload = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-        return str(payload.get("project", {}).get("version") or "")
-    except Exception:
-        return ""
+    return project_version()
 
 
 async def run_stdio_server(*, auto_approve: bool = False) -> None:

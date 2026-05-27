@@ -3,6 +3,8 @@
 import os
 import asyncio
 
+from agent import app_paths
+from agent.app_paths import sync_default_skills_dir
 from agent.graph import create_tools_node
 from agent.providers.base import ChatResponse, LLMProvider
 from agent.session import Session
@@ -180,17 +182,19 @@ def test_skill_registry_formats_loaded_skills(tmp_path):
     assert "Always run focused tests." in output
 
 
-def test_session_uses_app_root_skills_directory_by_default(tmp_path):
+def test_session_initializes_user_data_skills_from_bundled_defaults(tmp_path):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
-    skill_root = app_root / "skills"
+    bundled_skill_root = app_root / "skills"
+    user_skill_root = runtime_data_dir / "skills"
     workdir.mkdir()
     app_root.mkdir()
-    skill_root.mkdir()
-    (skill_root / "testing.md").write_text(
+    bundled_skill_root.mkdir()
+    (bundled_skill_root / "testing.md").write_text(
         "---\n"
         "name: testing\n"
-        'description: "App skill directory works."\n'
+        'description: "Bundled skill copied into user data."\n'
         "---\n\n"
         "Use focused tests.\n"
     )
@@ -204,19 +208,50 @@ def test_session_uses_app_root_skills_directory_by_default(tmp_path):
         provider=FakeProvider(),
         workdir=workdir,
         app_root=app_root,
-        runtime_data_dir=tmp_path / "runtime",
+        runtime_data_dir=runtime_data_dir,
         persist_messages=False,
     )
 
-    assert session.skill_dirs == [str(skill_root)]
+    assert session.skill_dirs == [str(user_skill_root)]
+    assert (user_skill_root / "testing.md").is_file()
     assert "Available local skills:" in session.system_prompt
-    assert "- testing: App skill directory works." in session.system_prompt
+    assert "- testing: Bundled skill copied into user data." in session.system_prompt
     assert "Should not load by default" not in session.system_prompt
     assert "Use focused tests." not in session.system_prompt
 
 
+def test_session_keeps_existing_user_data_skills_without_overwrite(tmp_path):
+    app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
+    workdir = tmp_path / "workspace"
+    (app_root / "skills").mkdir(parents=True)
+    user_skill_root = runtime_data_dir / "skills"
+    user_skill_root.mkdir(parents=True)
+    (app_root / "skills" / "testing.md").write_text(
+        "---\nname: bundled\ndescription: \"Bundled default.\"\n---\n\nBundled.\n"
+    )
+    (user_skill_root / "custom.md").write_text(
+        "---\nname: custom\ndescription: \"User custom skill.\"\n---\n\nCustom.\n"
+    )
+    workdir.mkdir()
+
+    session = Session(
+        provider=FakeProvider(),
+        workdir=workdir,
+        app_root=app_root,
+        runtime_data_dir=runtime_data_dir,
+        persist_messages=False,
+    )
+
+    assert session.skill_dirs == [str(user_skill_root)]
+    assert "- custom: User custom skill." in session.system_prompt
+    assert "Bundled default" not in session.system_prompt
+    assert not (user_skill_root / "testing.md").exists()
+
+
 def test_session_appends_explicit_extra_skill_dirs(tmp_path):
     app_root = tmp_path / "app"
+    runtime_data_dir = tmp_path / "runtime"
     workdir = tmp_path / "workspace"
     extra = tmp_path / "extra-skills"
     (app_root / "skills").mkdir(parents=True)
@@ -230,13 +265,71 @@ def test_session_appends_explicit_extra_skill_dirs(tmp_path):
         provider=FakeProvider(),
         workdir=workdir,
         app_root=app_root,
-        runtime_data_dir=tmp_path / "runtime",
+        runtime_data_dir=runtime_data_dir,
         skill_dirs=[str(extra)],
         persist_messages=False,
     )
 
-    assert session.skill_dirs == [str(app_root / "skills"), str(extra)]
+    assert session.skill_dirs == [str(runtime_data_dir / "skills"), str(extra)]
     assert "- extra: Extra skill." in session.system_prompt
+
+
+def test_resource_root_uses_installed_tool_prefix_for_bundled_skills(tmp_path, monkeypatch):
+    fake_source_root = tmp_path / "site-packages"
+    fake_agent_dir = fake_source_root / "agent"
+    fake_prefix = tmp_path / "tool-env"
+    fake_agent_dir.mkdir(parents=True)
+    (fake_prefix / "skills").mkdir(parents=True)
+
+    monkeypatch.setattr(app_paths, "__file__", str(fake_agent_dir / "app_paths.py"))
+    monkeypatch.setattr(app_paths.sys, "prefix", str(fake_prefix))
+
+    assert app_paths.resolve_resource_root() == fake_prefix.resolve()
+
+
+def test_resource_root_uses_source_root_for_development_checkout(tmp_path, monkeypatch):
+    fake_source_root = tmp_path / "checkout"
+    fake_agent_dir = fake_source_root / "agent"
+    fake_prefix = tmp_path / "tool-env"
+    fake_agent_dir.mkdir(parents=True)
+    (fake_source_root / "skills").mkdir()
+    (fake_prefix / "skills").mkdir(parents=True)
+
+    monkeypatch.setattr(app_paths, "__file__", str(fake_agent_dir / "app_paths.py"))
+    monkeypatch.setattr(app_paths.sys, "prefix", str(fake_prefix))
+
+    assert app_paths.resolve_resource_root() == fake_source_root.resolve()
+
+
+def test_runtime_data_dir_defaults_to_user_data_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(app_paths.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+
+    assert app_paths.resolve_runtime_data_dir(tmp_path / "app") == (
+        tmp_path / "home" / ".local" / "share" / "yycode"
+    ).resolve()
+
+
+def test_sync_default_skills_overwrites_bundled_paths_and_preserves_user_files(tmp_path):
+    resource_root = tmp_path / "resource"
+    runtime_data_dir = tmp_path / "data"
+    bundled = resource_root / "skills"
+    user_skills = runtime_data_dir / "skills"
+    (bundled / "drawio").mkdir(parents=True)
+    user_skills.mkdir(parents=True)
+    (bundled / "plan.md").write_text("bundled plan v2", encoding="utf-8")
+    (bundled / "drawio" / "SKILL.md").write_text("bundled drawio", encoding="utf-8")
+    (user_skills / "plan.md").write_text("user changed bundled plan", encoding="utf-8")
+    (user_skills / "custom.md").write_text("user custom skill", encoding="utf-8")
+
+    result = sync_default_skills_dir(runtime_data_dir, resource_root)
+
+    assert sorted(str(path) for path in result.updated) == ["plan.md"]
+    assert sorted(str(path) for path in result.copied) == ["drawio/SKILL.md"]
+    assert (user_skills / "plan.md").read_text(encoding="utf-8") == "bundled plan v2"
+    assert (user_skills / "drawio" / "SKILL.md").read_text(encoding="utf-8") == "bundled drawio"
+    assert (user_skills / "custom.md").read_text(encoding="utf-8") == "user custom skill"
 
 
 def test_subagent_prompt_mentions_skill_tools_without_parent_prompt(tmp_path):

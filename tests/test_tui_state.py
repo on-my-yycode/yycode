@@ -2,12 +2,18 @@
 
 from rich.text import Text
 from textual.markup import to_content
+from textual.widgets import TextArea
 
+from agent.branding import LOGO
 from agent.runtime.tool_events import format_tool_event_metadata
 from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
-from agent.tui.app import _timeline_markup_to_plain_text
+from agent.tui.app import (
+    TIMELINE_TEXT_HEADER,
+    _timeline_copy_text,
+    _timeline_markup_to_plain_text,
+)
 from agent.tui.renderers import (
     render_brand_text,
     render_status_text,
@@ -26,6 +32,34 @@ def test_timeline_markup_to_plain_text_keeps_dynamic_brackets():
     assert "1-24" in plain
     assert "events" in plain
     assert "[#7f8794]" not in plain
+
+
+def test_timeline_copy_text_uses_selection_when_present():
+    text, label = _timeline_copy_text("full timeline", "selected block")
+
+    assert text == "selected block"
+    assert label == "selected text"
+
+
+def test_timeline_copy_text_falls_back_to_full_timeline_without_selection():
+    text, label = _timeline_copy_text("full timeline", "")
+
+    assert text == "full timeline"
+    assert label == "full timeline"
+
+
+def test_timeline_text_header_documents_copy_shortcuts():
+    assert "Ctrl+C/Cmd+C copy" in TIMELINE_TEXT_HEADER
+    assert "Ctrl+A/Cmd+A select all" in TIMELINE_TEXT_HEADER
+    assert "Esc close" in TIMELINE_TEXT_HEADER
+
+
+def test_text_area_select_all_covers_full_timeline_text():
+    body = TextArea("first line\nsecond line", read_only=True)
+
+    body.select_all()
+
+    assert body.selected_text == "first line\nsecond line"
 
 
 def test_timeline_markup_is_parseable_for_bracket_heavy_content():
@@ -59,7 +93,7 @@ def test_timeline_renders_context_summarized_event():
 
     rendered = render_timeline_lines(state, header_mode="main")
 
-    assert "[context]" in rendered
+    assert "[#7f8794][context]" in rendered
     assert "Task summary saved" in rendered
     Text.from_markup(rendered)
 
@@ -91,7 +125,8 @@ def test_tui_state_updates_message_context_header():
     assert state.message_context_header.pressure == "low"
 
 
-def test_tui_brand_text_shows_message_context_summary():
+def test_tui_brand_text_shows_message_context_summary(monkeypatch):
+    monkeypatch.setattr("agent.tui.renderers.display_version", lambda: "v9.8.7")
     state = TuiState()
     state.set_startup_info(
         session_id="sess-1",
@@ -114,7 +149,8 @@ def test_tui_brand_text_shows_message_context_summary():
 
     brand = render_brand_text(state, width=140)
 
-    assert "YOYOAGENT" in brand
+    assert "YYCode" in brand
+    assert "v9.8.7" in brand
     assert "" in brand
     assert "master" in brand
     assert "±" in brand
@@ -282,10 +318,72 @@ def test_tui_renderers_show_initializing_state_before_session_ready():
     state = TuiState()
 
     status = render_status_text(state, width=140)
-    assert "YOYOAGENT" in status
+    assert "YYCode" in status
     assert "Model" in status
     assert "(initializing)" in status
-    assert "Starting yoyoagent" in render_timeline_lines(state)
+    assert "Preparing session" in status
+    timeline = render_timeline_lines(state)
+    assert "Preparing YYCode" in timeline
+    assert "Initializing session" in timeline
+    assert LOGO.strip().splitlines()[0] in timeline
+
+
+def test_tui_startup_loading_animates_logo_gradient():
+    state = TuiState()
+
+    first = render_timeline_lines(state, header_mode="main", progress_frame=0)
+    second = render_timeline_lines(state, header_mode="main", progress_frame=1)
+
+    assert "Preparing YYCode" in first
+    assert "Preparing YYCode" in second
+    assert first != second
+
+
+def test_tui_timeline_renders_startup_error():
+    state = TuiState()
+    state.apply_event(
+        StreamEvent(
+            source="tui",
+            session_id="startup",
+            event_type="startup_error",
+            title="Startup failed",
+            content="boom",
+            status="error",
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Startup failed" in transcript
+    assert "boom" in transcript
+
+
+def test_tui_timeline_renders_config_warning():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+    state.apply_event(
+        StreamEvent(
+            source="tui",
+            session_id="sess-1",
+            event_type="config_warning",
+            title="Configuration required",
+            content=(
+                "Missing required model configuration: API_KEY, API_BASE\n"
+                "Edit config file: /tmp/yycode/config.json\n"
+                "Or set environment variables / .env. Priority: environment > config.json > .env > defaults.\n"
+                "Empty strings in config.json are ignored."
+            ),
+            status="warning",
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "[config]" in transcript
+    assert "Configuration required" in transcript
+    assert "Missing required model configuration: API_KEY, API_BASE" in transcript
+    assert "Edit config file: /tmp/yycode/config.json" in transcript
+    assert "real-secret-value" not in transcript
 
 
 def test_tui_renderers_show_compact_transcript_style_lines():
@@ -518,7 +616,7 @@ def test_tui_state_completes_waiting_item_when_model_starts_responding():
 
     waiting = next(item for item in state.timeline if item.event_type == "llm_waiting")
     assert waiting.status == "completed"
-    assert waiting.title == "Model response started"
+    assert waiting.title == "Thinking"
 
 
 def test_tui_timeline_renders_common_markdown_in_assistant_text():
@@ -859,11 +957,12 @@ def test_tui_timeline_hides_todo_tool_return_when_task_state_result_is_present()
     transcript = render_timeline_lines(state)
 
     assert "Tool returned" not in transcript
-    assert "● Task Plan" in transcript
+    assert "● Plan Progress" in transcript
     assert "1/2 done" in transcript
-    assert "current" in transcript
+    assert "current" not in transcript
     assert "Patch" in transcript
-    assert "Ctrl+T full plan" in transcript
+    assert "[Ctrl+T]" in transcript
+    assert transcript.count("Plan Progress") == 1
     assert "Goal: keep timeline concise" not in transcript
     assert "Constraints:" not in transcript
 
@@ -1168,7 +1267,7 @@ def test_tui_status_header_uses_compact_two_column_layout():
 
     status = render_status_text(state, width=140)
 
-    assert "YOYOAGENT" in status
+    assert "YYCode" in status
     assert "session" in status
     assert "12345678-1234-5678-1234-567812345678" in status
     assert "git -" in status
@@ -1371,6 +1470,22 @@ def test_tui_main_timeline_keeps_latest_detailed_event_block_intact_when_height_
     assert "agent/tui/file_5.py" in transcript
     assert "agent/tui/file_4.py" in transcript
     assert "agent/tui/file_3.py" not in transcript
+
+
+def test_tui_main_timeline_respects_recent_item_limit():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+
+    for index in range(105):
+        state.add_user_input("sess-1", f"prompt-{index:03d}")
+
+    transcript = render_timeline_lines(state, limit=100, header_mode="main")
+
+    assert "showing 6-105 of 105" in transcript
+    assert "prompt-000" not in transcript
+    assert "prompt-004" not in transcript
+    assert "prompt-005" in transcript
+    assert "prompt-104" in transcript
 
 
 def test_tui_timeline_escapes_nested_tool_args_for_textual_markup():

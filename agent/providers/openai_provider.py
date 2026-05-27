@@ -1,6 +1,7 @@
 """OpenAI LLM provider implementation."""
 
 import json
+import logging
 from typing import Any, Optional, Callable
 
 from openai import AsyncOpenAI
@@ -8,6 +9,8 @@ import tiktoken
 
 from .base import LLMProvider, ChatResponse, ToolCall
 from .text_tool_calls import TextToolCallStreamFilter, parse_text_tool_calls
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(LLMProvider):
@@ -128,10 +131,8 @@ class OpenAIProvider(LLMProvider):
                 tools=openai_tools,
                 stream=True,
                 stream_options={"include_usage": True},
-                max_tokens=4096,
+                max_tokens=16384,
             )
-
-            current_tool_call = None
 
             async for chunk in stream:
                 if getattr(chunk, "usage", None):
@@ -151,13 +152,17 @@ class OpenAIProvider(LLMProvider):
 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
-                        if tc.index >= len(tool_calls_data):
+                        while tc.index >= len(tool_calls_data):
                             tool_calls_data.append({
-                                "id": tc.id,
-                                "name": tc.function.name if tc.function else None,
+                                "id": None,
+                                "name": None,
                                 "args": "",
                             })
-                            current_tool_call = tool_calls_data[-1]
+                        current_tool_call = tool_calls_data[tc.index]
+                        if tc.id:
+                            current_tool_call["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            current_tool_call["name"] = tc.function.name
                         if tc.function and tc.function.arguments:
                             current_tool_call["args"] += tc.function.arguments
             for safe_text in text_filter.flush():
@@ -168,7 +173,7 @@ class OpenAIProvider(LLMProvider):
                 messages=openai_messages,
                 tools=openai_tools,
                 stream=False,
-                max_tokens=4096,
+                max_tokens=16384,
             )
             usage = self._extract_usage(getattr(response, "usage", None))
             choice = response.choices[0]
@@ -184,12 +189,15 @@ class OpenAIProvider(LLMProvider):
                     })
 
         tool_calls = []
-        for tc in tool_calls_data:
-            try:
-                args = json.loads(tc["args"]) if tc["args"] else {}
-            except json.JSONDecodeError:
-                args = {}
-            tool_calls.append(ToolCall(id=tc["id"], name=tc["name"], args=args))
+        for index, tc in enumerate(tool_calls_data):
+            args = _parse_tool_arguments(tc)
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id") or f"call_{index}",
+                    name=tc.get("name") or "<unknown>",
+                    args=args,
+                )
+            )
 
         cleaned_text, text_tool_calls = parse_text_tool_calls(current_text)
         if text_tool_calls:
@@ -268,6 +276,51 @@ class OpenAIProvider(LLMProvider):
             "output_tokens": output_tokens or 0,
             "total_tokens": total_tokens or 0,
         }
+
+
+def _parse_tool_arguments(tool_call_data: dict[str, Any]) -> dict[str, Any]:
+    """Parse provider tool-call arguments and log safe diagnostics on failure."""
+    raw_args = tool_call_data.get("args") or ""
+    tool_name = tool_call_data.get("name") or "<unknown>"
+    tool_id = tool_call_data.get("id") or "<missing>"
+    if not raw_args:
+        logger.warning(
+            "OpenAI tool call has empty arguments: tool=%s id=%s",
+            tool_name,
+            tool_id,
+        )
+        return {}
+    try:
+        parsed = json.loads(raw_args)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "OpenAI tool call arguments failed JSON parsing: tool=%s id=%s args_len=%d error=%s pos=%d line=%d col=%d",
+            tool_name,
+            tool_id,
+            len(raw_args),
+            exc.msg,
+            exc.pos,
+            exc.lineno,
+            exc.colno,
+        )
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "OpenAI tool call arguments parsed to non-object: tool=%s id=%s args_type=%s args_len=%d",
+            tool_name,
+            tool_id,
+            type(parsed).__name__,
+            len(raw_args),
+        )
+        return {}
+    logger.debug(
+        "OpenAI tool call arguments parsed: tool=%s id=%s args_len=%d arg_keys=%s",
+        tool_name,
+        tool_id,
+        len(raw_args),
+        sorted(str(key) for key in parsed.keys()),
+    )
+    return parsed
 
 
 def _openai_content_blocks(content: str, reasoning_content: Optional[str]) -> Optional[list[dict[str, Any]]]:

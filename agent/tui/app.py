@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from argparse import Namespace
 from datetime import datetime
 import os
@@ -17,6 +18,7 @@ from tools import TOOLS
 
 PROGRESS_TRACK_WIDTH = 18
 PROGRESS_PULSE_WIDTH = 6
+MIN_STARTUP_LOADING_SECONDS = 0.7
 PROGRESS_COLORS = (
     "#3b82f6",
     "#06b6d4",
@@ -29,6 +31,7 @@ PROGRESS_COLORS = (
     "#facc15",
 )
 MAX_SKILL_SUGGESTIONS = 8
+MAIN_TIMELINE_VISIBLE_ITEMS = 100
 SUBAGENT_ROLE_DESCRIPTIONS = {
     "explorer": "investigate codebase",
     "architect": "design technical approach",
@@ -39,6 +42,10 @@ SUBAGENT_ROLE_DESCRIPTIONS = {
 TUI_KEY_DEBUG_ENV = "YOYO_TUI_DEBUG_KEYS"
 TUI_KEY_DEBUG_FILE_ENV = "YOYO_TUI_DEBUG_KEYS_FILE"
 TUI_KEY_DEBUG_FILE = Path("tui_key_debug.log")
+TIMELINE_TEXT_HEADER = (
+    "Timeline text view - select text, Ctrl+C/Cmd+C copy, "
+    "Ctrl+A/Cmd+A select all, Esc close."
+)
 
 
 def _env_flag_enabled(name: str) -> bool:
@@ -93,6 +100,14 @@ def _timeline_markup_to_plain_text(content: str) -> str:
         import re
 
         return re.sub(r"\[/?[^\]]*\]", "", content).replace(r"\[", "[")
+
+
+def _timeline_copy_text(content: str, selected_text: str | None) -> tuple[str, str]:
+    """Return timeline text to copy and a user-facing copy scope label."""
+    selection = selected_text or ""
+    if selection:
+        return selection, "selected text"
+    return content, "full timeline"
 
 
 def _is_submit_key_event(event: object) -> bool:
@@ -178,6 +193,7 @@ def run_tui(args: Namespace) -> None:
     from .runner import AgentTuiRunner
     from .state import MAX_TIMELINE_ITEMS, PendingApproval, TuiState
     from .help_content import render_help_page
+    from agent.streaming import StreamEvent
 
 
     class HelpScreen(ModalScreen[None]):
@@ -240,16 +256,19 @@ def run_tui(args: Namespace) -> None:
         BINDINGS = [
             ("escape", "close_timeline_text", "Close"),
             ("ctrl+l", "close_timeline_text", "Back"),
+            ("ctrl+c,super+c", "copy_selection_or_all", "Copy"),
+            ("ctrl+a,super+a", "select_all_text", "Select all"),
         ]
 
-        def __init__(self, content: str) -> None:
+        def __init__(self, content: str, *, scroll_to_end: bool = False) -> None:
             super().__init__()
             self.content = content
+            self.scroll_to_end = scroll_to_end
 
         def compose(self) -> ComposeResult:
             yield Container(
                 Static(
-                    "Timeline text view — select/copy with terminal or mouse. Press Esc / Ctrl+L to close.",
+                    TIMELINE_TEXT_HEADER,
                     id="timeline-text-header",
                 ),
                 TextArea(
@@ -264,10 +283,34 @@ def run_tui(args: Namespace) -> None:
             )
 
         def on_mount(self) -> None:
-            self.query_one("#timeline-text-body", TextArea).focus()
+            body = self.query_one("#timeline-text-body", TextArea)
+            body.focus()
+            if self.scroll_to_end:
+                self.call_after_refresh(lambda: body.scroll_end(animate=False))
 
         def action_close_timeline_text(self) -> None:
             self.dismiss(None)
+
+        def action_select_all_text(self) -> None:
+            self.query_one("#timeline-text-body", TextArea).select_all()
+
+        def action_copy_selection_or_all(self) -> None:
+            body = self.query_one("#timeline-text-body", TextArea)
+            text, label = _timeline_copy_text(self.content, body.selected_text)
+            try:
+                self.app.copy_to_clipboard(text)
+            except Exception:
+                try:
+                    import pyperclip
+
+                    pyperclip.copy(text)
+                except ImportError:
+                    self.notify("Clipboard is unavailable. Install with: pip install pyperclip", severity="warning")
+                    return
+                except Exception as exc:
+                    self.notify(f"Failed to copy: {exc}", severity="warning")
+                    return
+            self.notify(f"Copied {label} to clipboard.", severity="information")
 
 
     class TaskPlanScreen(ModalScreen[None]):
@@ -968,8 +1011,14 @@ def run_tui(args: Namespace) -> None:
             self.push_screen(HelpScreen(render_help_page(self.command_registry.list_commands())))
 
         def action_open_timeline_text(self) -> None:
-            plain_text = _timeline_markup_to_plain_text(self._last_timeline_content)
-            self.push_screen(TimelineTextScreen(plain_text))
+            timeline_content = render_timeline_lines(
+                self.runner.state,
+                limit=MAX_TIMELINE_ITEMS,
+                header_mode="main",
+                progress_frame=self._progress_frame,
+            )
+            plain_text = _timeline_markup_to_plain_text(timeline_content)
+            self.push_screen(TimelineTextScreen(plain_text, scroll_to_end=True))
 
         def action_open_changed_files(self) -> None:
             self.action_toggle_changed_files()
@@ -1012,16 +1061,35 @@ def run_tui(args: Namespace) -> None:
                 self._refresh_status_surfaces()
 
         def _refresh_progress_tick(self) -> None:
-            if self.runner.state.active_task.get("is_running"):
+            if self.runner.state.active_task.get("is_running") or not self._session_ready:
                 self._progress_frame += 1
-                self._refresh_status_surfaces()
+                self._refresh_all()
 
         async def _initialize_session(self) -> None:
+            started_at = asyncio.get_running_loop().time()
+            self.runner.state.status_line = "Initializing workspace, skills, and session..."
+            self.query_one("#prompt-input", TextArea).placeholder = "Preparing session..."
+            self._refresh_all()
             try:
                 await self.runner.start()
             except Exception as exc:
+                self.runner.state.apply_event(
+                    StreamEvent(
+                        source="tui",
+                        session_id="startup",
+                        event_type="startup_error",
+                        title="Startup failed",
+                        content=str(exc),
+                        status="error",
+                        phase="planning",
+                    )
+                )
                 self.notify(f"Failed to initialize session: {exc}", severity="error")
+                self._refresh_all()
                 return
+            remaining = MIN_STARTUP_LOADING_SECONDS - (asyncio.get_running_loop().time() - started_at)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
             self._session_ready = True
             input_widget = self.query_one("#prompt-input", TextArea)
             input_widget.disabled = False
@@ -1036,8 +1104,9 @@ def run_tui(args: Namespace) -> None:
 
             timeline_content = render_timeline_lines(
                 state,
-                limit=MAX_TIMELINE_ITEMS,
+                limit=MAIN_TIMELINE_VISIBLE_ITEMS,
                 header_mode="main",
+                progress_frame=self._progress_frame,
             )
 
             timeline_panel = self.query_one("#timeline-panel", RichLog)

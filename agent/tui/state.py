@@ -385,7 +385,7 @@ class TuiState:
                 continue
             if item.event_type == "llm_waiting" and item.status in {"running", "retrying", "timeout", None}:
                 item.status = "completed"
-                item.title = "Model response started"
+                item.title = "Thinking"
                 item.invalidate_render_cache()
                 return
             if item.event_type in {"text_delta", "tool_start", "tool_result", "tool_end", "user_message"}:

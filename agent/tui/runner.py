@@ -82,6 +82,19 @@ class AgentTuiRunner:
         )
         await self.refresh_message_context_header()
         await self.refresh_git_header()
+        for warning in getattr(self.args, "config_warnings", []) or []:
+            event = StreamEvent(
+                source="tui",
+                session_id=self.session.id,
+                event_type="config_warning",
+                title="Configuration required",
+                content=str(warning),
+                status="warning",
+                phase="planning",
+            )
+            self.state.apply_event(event)
+            if self.on_state_change is not None:
+                await self.on_state_change(event)
         if warning := getattr(self.session, "_session_persistence_warning", None):
             event = StreamEvent(
                 source="tui",

@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.message_format import messages_to_provider_format
 from agent.providers.base import ToolCall
-from agent.providers.openai_provider import OpenAIProvider
+from agent.providers.openai_provider import OpenAIProvider, _parse_tool_arguments
 
 
 def test_openai_message_conversion_keeps_reasoning_content_for_deepseek():
@@ -188,3 +188,21 @@ def test_openai_provider_stores_streaming_reasoning_content():
         assert deltas == [("text_delta", "Done")]
 
     asyncio.run(run_test())
+
+
+def test_openai_tool_argument_parse_failure_logs_diagnostics(caplog):
+    caplog.set_level("WARNING", logger="agent.providers.openai_provider")
+
+    args = _parse_tool_arguments(
+        {
+            "id": "call-1",
+            "name": "write_file",
+            "args": '{"path": "docs/new.md", "content": ',
+        }
+    )
+
+    assert args == {}
+    assert "failed JSON parsing" in caplog.text
+    assert "tool=write_file" in caplog.text
+    assert "args_len=" in caplog.text
+    assert "content" not in caplog.text

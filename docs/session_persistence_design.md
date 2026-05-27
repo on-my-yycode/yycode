@@ -39,12 +39,12 @@
 - CLI/TUI 支持 `-r` / `--resume <id>`、`-s` / `--sessions`、`-x` / `--delete <id>`、`-t` / `--temp`。
 - `send()` / `send_stream()` 在任务结束并裁剪 todo artifacts 后保存 canonical messages。
 - `clear()` / `reset()` 会保存空历史。
-- 默认 skills 已迁移到 `{app_root}/skills`；`YOYO_SKILL_DIRS` 作为额外技能目录追加。
+- 默认 skills 已迁移到 `{runtime_data_dir}/skills`；首次启动从内置资源初始化，`YOYO_SKILL_DIRS` 作为额外技能目录追加。
 
 仍未实现：
 
 - `--resume-latest`。
-- `app_root/sessions` 不可写时 fallback 到 `~/.yoyoagent/sessions`。
+- 无。
 - 恢复后预压缩。
 - 多进程同 session 文件并发写协调。
 
@@ -58,13 +58,13 @@
 
 ```text
 app_root
-  yoyoagent 应用/发行版本所在目录，用于保存 yoyoagent 自身资源和运行数据。
+  yoyoagent 应用/发行版本所在目录，用作内置资源来源。
 
 workdir
   用户让 yoyoagent 操作的目标项目目录，用于 read_file、apply_patch、bash、git、verify、LSP 等工具。
 
 runtime_data_dir
-  yoyoagent 的运行数据目录，首版默认放在 app_root 下。
+  yoyoagent 的用户数据目录，默认使用系统用户数据目录，可通过 YOYO_RUNTIME_DATA_DIR 覆盖。
 ```
 
 `sessions` 应属于 yoyoagent 应用自身，而不是被操作项目的一部分。因此首版不再建议写入：
@@ -76,7 +76,7 @@ runtime_data_dir
 推荐默认路径：
 
 ```text
-{app_root}/sessions/{workspace_hash}/{session_id}.json
+{runtime_data_dir}/sessions/{workspace_hash}/{session_id}.json
 ```
 
 其中：
@@ -87,10 +87,10 @@ workspace_hash = sha256(resolve(workdir))[:16]
 
 这样 session 数据由 yoyoagent 应用管理，同时仍按被操作的 workspace 隔离，避免不同项目历史上下文混用。
 
-如果未来支持 pip/系统安装，`app_root/sessions` 可能不可写，可以再增加 fallback：
+默认 session 目录位于用户数据目录；也可以通过 `YOYO_SESSION_DIR` 覆盖：
 
 ```text
-~/.yoyoagent/sessions/{workspace_hash}/{session_id}.json
+{runtime_data_dir}/sessions/{workspace_hash}/{session_id}.json
 ```
 
 也可以通过环境变量覆盖：
@@ -106,16 +106,21 @@ YOYO_SESSION_DIR=/custom/session/dir
 我们讨论后的目标模型是：
 
 ```text
-{app_root}/skills
-{app_root}/sessions
+{data_dir}/skills
+{data_dir}/sessions
+{data_dir}/logs
 ```
 
-也就是说，默认 skills 和 sessions 都是 yoyoagent 应用自身的一部分，而不是用户 `workdir` 的一部分。
+也就是说，默认 skills、sessions 和 logs 都是 yycode 用户数据的一部分，而不是用户
+`workdir` 的一部分，也不是安装包目录本身。对最终用户来说，默认 `skills` 是可编辑的
+用户数据目录；首次启动时从安装包内置资源复制默认 skills，之后升级 yycode 不覆盖已有
+用户 skills。源码目录只对应开发运行场景中的内置资源来源。
 
 当前代码已经按这个模型收口：
 
 ```text
-默认技能目录：{app_root}/skills
+默认技能目录：{data_dir}/skills
+默认来源目录：{yycode_resource_root}/skills
 额外技能目录：YOYO_SKILL_DIRS 指定
 ```
 
@@ -175,7 +180,7 @@ class SessionStore:
 FileSessionStore(app_root: Path, workdir: Path, root: Path | None = None)
 ```
 
-其中 `root` 默认为 `{app_root}/sessions`，测试或高级用户可覆盖。
+其中 `root` 默认为 `{runtime_data_dir}/sessions`，测试或高级用户可覆盖。
 
 ## Session 生命周期集成
 
@@ -253,7 +258,7 @@ Restored messages: N
 
 因此需要：
 
-- 在文档中说明 `{app_root}/sessions/` 或 `YOYO_SESSION_DIR` 可能包含敏感上下文。
+- 在文档中说明 `{runtime_data_dir}/sessions/` 或 `YOYO_SESSION_DIR` 可能包含敏感上下文。
 - 不自动修改用户项目 `.gitignore`。sessions 不应默认写入用户 `workdir`。
 - 读写路径必须限制在 yoyoagent 应用数据目录或明确的用户配置目录内。
 - 恢复时必须校验 session 文件中的 `workdir` 与当前 `workdir` 一致。
@@ -306,10 +311,9 @@ Restored messages: N
 - 简化序列化导致 tool call 上下文丢失，恢复后 provider payload 不合法。
 - 历史过大导致恢复后的第一轮请求超上下文窗口。
 - 默认持久化可能写入敏感信息。
-- `{app_root}/sessions/` 或用户配置的 session 目录如果被误同步/备份，可能泄露对话历史。
+- `{runtime_data_dir}/sessions/` 或用户配置的 session 目录如果被误同步/备份，可能泄露对话历史。
 - 多进程同时写同一 session 文件可能互相覆盖；首版可不支持并发写，但应采用临时文件 + 原子替换降低损坏概率。
-- 如果 `app_root/sessions` 不可写，需要提供清晰错误或 fallback 到用户数据目录。
-- 旧行为中默认扫描 `workdir/skills`；当前已迁移到 `{app_root}/skills`，项目级技能需要通过显式额外目录配置。
+- 旧行为中默认扫描 `workdir/skills`；当前已迁移到 `{runtime_data_dir}/skills`，项目级技能需要通过显式额外目录配置。
 
 ## 待确认
 
@@ -317,5 +321,4 @@ Restored messages: N
 - `clear()` / `reset()` 对磁盘文件的精确定义。
 - 是否需要 `--resume-latest`。
 - `app_root` 如何解析：源码运行、便携发行和未来 pip 安装是否使用不同规则。
-- `app_root/sessions` 不可写时是否首版 fallback 到 `~/.yoyoagent/sessions`。
 - 是否增加配置文件形式的项目级技能扩展入口。

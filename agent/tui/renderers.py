@@ -5,7 +5,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from agent.branding import LOGO
 from agent.plan_snapshot import PlanEntry, build_plan_snapshot
+from agent.version import display_version
 
 from .state import MAX_TIMELINE_ITEMS, PendingApproval, SubagentStatus, TimelineItem, TuiState
 
@@ -26,6 +28,8 @@ PROGRESS_COLORS = (
     "#f97316",
     "#facc15",
 )
+STARTUP_LOGO_COLORS = ("#d7ba7d", "#f0d48a", "#c9a6ff", "#9cdcfe")
+STARTUP_SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
 
 
 def _safe_text(value: object, limit: int | None = None) -> str:
@@ -422,10 +426,12 @@ def _parts_visible_len(parts: list[str]) -> int:
 def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     """Render the compact app brand block."""
     W = max(72, min(width, 180))
+    version_text = display_version()
     brand_line = (
-        "[bold #c9a6ff]YOYOAGENT[/] "
+        "[bold #c9a6ff]YYCode[/] "
         "[#7f8794]code assistant[/] "
-        "[#3f4652]" + ("─" * max(4, W - 29)) + "[/]"
+        f"[#cfd3dc]{version_text}[/] "
+        "[#3f4652]" + ("─" * max(4, W - 27 - len(version_text))) + "[/]"
     )
     if state is None:
         return brand_line
@@ -514,6 +520,10 @@ def render_status_bar_text(
     status_text = "[#8fd6a3]⏺ Ready[/]"
     elapsed_label = "Last run"
     elapsed_text = "0s"
+    if not state.session_id:
+        status_text = f"[#d7ba7d]{STARTUP_SPINNER_FRAMES[progress_frame % len(STARTUP_SPINNER_FRAMES)]} Preparing session[/]"
+        elapsed_label = "Startup"
+        elapsed_text = "loading"
     if getattr(state, "last_task", None) and state.last_task.get("elapsed_ms") is not None:
         elapsed_text = _format_duration(int(state.last_task["elapsed_ms"]))
     goal_text = ""
@@ -621,10 +631,11 @@ def render_timeline_lines(
     offset_from_end: int = 0,
     max_lines: int | None = None,
     header_mode: str = "history",
+    progress_frame: int = 0,
 ) -> str:
     """Render the main activity transcript."""
     if header_mode == "main":
-        return render_main_timeline_lines(state, limit=limit, max_lines=max_lines)
+        return render_main_timeline_lines(state, limit=limit, max_lines=max_lines, progress_frame=progress_frame)
 
     rendered_items = _render_timeline_blocks(state)
 
@@ -659,11 +670,7 @@ def render_timeline_lines(
         header = _timeline_window_header(start, end, total, mode=header_mode)
         return "\n\n".join([header, *visible])
     if not state.session_id:
-        return (
-            "[#d7ba7d]Starting yoyoagent[/]\n"
-            "\n"
-            "[#7f8794]The workspace is loading and the session is being prepared.[/]"
-        )
+        return render_startup_loading(state, progress_frame=progress_frame)
     return (
         "[#8fd6a3]Ready[/]\n"
         "\n"
@@ -676,13 +683,17 @@ def render_main_timeline_lines(
     state: TuiState,
     limit: int = MAX_TIMELINE_ITEMS,
     max_lines: int | None = None,
+    *,
+    progress_frame: int = 0,
 ) -> str:
-    """Render ALL activity for the main UI (unlimited, scrollable)."""
+    """Render recent activity for the main UI."""
     rendered_items = _render_timeline_blocks(state)
 
     sections = []
 
-    if not rendered_items:
+    if not rendered_items and not state.session_id:
+        sections.append(render_startup_loading(state, progress_frame=progress_frame))
+    elif not rendered_items:
         sections.append(
             "[#8fd6a3]Ready[/]\n"
             "\n"
@@ -691,8 +702,9 @@ def render_main_timeline_lines(
         )
     else:
         total = len(rendered_items)
-        start = 0
-        visible_items = rendered_items
+        page_size = max(1, min(limit, total))
+        start = max(0, total - page_size)
+        visible_items = rendered_items[start:]
         if max_lines is not None:
             body_budget = max(4, max_lines - 2)
             start = total
@@ -708,11 +720,37 @@ def render_main_timeline_lines(
                     break
                 used_lines += separator_lines + candidate_lines
                 start -= 1
+                if total - start >= page_size:
+                    break
             visible_items = rendered_items[start:]
         header = _timeline_window_header(start, total, total, mode="main")
         sections.append("\n\n".join([header, *visible_items]))
 
     return "\n\n".join(sections)
+
+
+def render_startup_loading(state: TuiState, *, progress_frame: int = 0) -> str:
+    """Render the pre-session startup loading screen."""
+    spinner = STARTUP_SPINNER_FRAMES[progress_frame % len(STARTUP_SPINNER_FRAMES)]
+    status = getattr(state, "status_line", "") or "Initializing workspace, skills, and session..."
+    return "\n".join(
+        [
+            _render_startup_logo(progress_frame),
+            "",
+            f"[bold #d7ba7d]{spinner} Preparing YYCode[/]",
+            f"[#7f8794]{_safe_text(status)}[/]",
+        ]
+    )
+
+
+def _render_startup_logo(progress_frame: int = 0) -> str:
+    """Render the shared ASCII logo with a subtle animated gradient."""
+    lines = LOGO.strip("\n").splitlines()
+    rendered: list[str] = []
+    for index, line in enumerate(lines):
+        color = STARTUP_LOGO_COLORS[(index + progress_frame) % len(STARTUP_LOGO_COLORS)]
+        rendered.append(f"[{color}]{_safe_text(line)}[/]")
+    return "\n".join(rendered)
 
 
 def render_task_plan_panel(state: TuiState) -> str:
@@ -1275,7 +1313,7 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, 
     if item.event_type == "context_compressed":
         return f"{role_prefix}[#7f8794][context] {_safe_text(item.content)}[/]"
     if item.event_type == "context_summarized":
-        return f"{role_prefix}[#8fd6a3][context] {_safe_text(item.content)}[/]"
+        return f"{role_prefix}[#7f8794][context] {_safe_text(item.content)}[/]"
     if item.event_type == "llm_waiting":
         return _render_llm_waiting_item(item, role_prefix, state)
     if item.event_type == "llm_timeout":
@@ -1284,6 +1322,17 @@ def _render_timeline_item(item: TimelineItem, state: TuiState | None = None, *, 
         return f"{role_prefix}[#9cdcfe][retry] {_safe_text(item.content)}[/]"
     if item.event_type == "llm_error":
         return f"{role_prefix}[#ff8f8f][error] {_safe_text(item.content)}[/]"
+    if item.event_type == "startup_error":
+        lines = [f"{role_prefix}[bold #ff8f8f]Startup failed[/]"]
+        if item.content or item.detail:
+            lines.append(f"  [#ff8f8f]{_safe_text(item.content or item.detail)}[/]")
+        return "\n".join(lines)
+    if item.event_type == "config_warning":
+        lines = [f"{role_prefix}[bold #d7ba7d][config] {_safe_text(item.title or 'Configuration required')}[/]"]
+        for line in (item.content or item.detail or "").splitlines():
+            if line.strip():
+                lines.append(f"  [#d7ba7d]{_safe_text(line)}[/]")
+        return "\n".join(lines)
     if item.event_type == "file_changed":
         files = ", ".join(_safe_text(fp) for fp in item.file_paths) if item.file_paths else _safe_text(item.content or "file")
         return f"{role_prefix}[#8fd6a3]+[/] [#cfd3dc]modified[/] {files}"
@@ -1598,19 +1647,13 @@ def _is_task_state_result(item: TimelineItem) -> bool:
 
 def _render_task_state_summary(role_prefix: str, item: TimelineItem) -> str:
     counts = _task_state_counts(item.content)
-    summary = "Task plan"
+    parts = [f"{role_prefix}[bold #8fd6a3]● Plan Progress[/]"]
     if counts["total"]:
-        summary = f"{counts['completed']}/{counts['total']} done"
-        if counts["active"]:
-            summary += " · current"
-    lines = [
-        f"{role_prefix}[bold #8fd6a3]● Task Plan[/]",
-        f"  [#7f8794]{_safe_text(summary)}[/]",
-    ]
+        parts.append(f"[#7f8794]{counts['completed']}/{counts['total']} done[/]")
     if counts["active"]:
-        lines.append(f"  [#d7dae0]{_safe_text(counts['active'])}[/]")
-    lines.append("  [#7f8794]Ctrl+T full plan[/]")
-    return "\n".join(lines)
+        parts.append(f"[#d7dae0]{_safe_text(counts['active'])}[/]")
+    parts.append("[#7f8794][Ctrl+T][/]")
+    return " [#7f8794]·[/] ".join(parts)
 
 
 def _task_state_counts(content: str) -> dict[str, int | str]:
