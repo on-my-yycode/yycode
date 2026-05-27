@@ -22,6 +22,7 @@ from agent.app_paths import (
     resolve_runtime_data_dir,
     sync_default_skills_dir,
 )
+from agent.branding import LOGO
 from agent.logger import setup_logging
 from agent.session_store import FileSessionStore
 from agent.streaming import colorize_diff
@@ -45,16 +46,6 @@ try:
         readline.parse_and_bind("tab: complete")
 except ImportError:
     readline = None
-
-
-LOGO = """
-__  __                     ___                    __
-\\ \\/ /___  __  ______     /   | ____ ____  ____  / /_
- \\  / __ \\/ / / / __ \\   / /| |/ __ `/ _ \\/ __ \\/ __/
- / / /_/ / /_/ / /_/ /  / ___ / /_/ /  __/ / / / /_
-/_/\\____/\\__, /\\____/  /_/  |_\\__, /\\___/_/ /_/\\__/
-        /____/               /____/
-"""
 
 
 PASTE_COMMANDS = {"/p", "/paste"}

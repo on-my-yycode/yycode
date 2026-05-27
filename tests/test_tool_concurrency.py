@@ -1245,3 +1245,53 @@ def test_tools_node_allows_write_file_for_new_file(tmp_path, monkeypatch):
 
     assert captured == ["workspace_state", "git_diff", "write_file"]
     assert result["messages"][0].name == "write_file"
+
+
+def test_tools_node_logs_missing_write_file_target_without_content(caplog, tmp_path, monkeypatch):
+    async def fake_run_tool(handler, tool_name, max_retries=2, timeout_seconds=None, **kwargs):
+        return f"{tool_name}:ok"
+
+    monkeypatch.setattr("agent.graph.async_run_tool_with_retry", fake_run_tool)
+    monkeypatch.setattr(
+        "agent.graph.TOOL_HANDLERS",
+        {
+            "workspace_state": lambda: "state",
+            "git_diff": lambda: "diff",
+            "write_file": lambda **kwargs: "wrote",
+        },
+    )
+    monkeypatch.setattr(
+        "agent.graph.TOOLS",
+        [
+            _tool_def("workspace_state", "read_only", "safe"),
+            _tool_def("git_diff", "read_only", "safe"),
+            _tool_def("write_file", "workspace_write", "serial", 60),
+        ],
+    )
+    tools_node = create_tools_node(
+        provider=FakeProvider(),
+        system_prompt="parent",
+        todo_manager=TodoManager(),
+        workdir=tmp_path,
+        session_id="session",
+        approval_callback=lambda request: True,
+    )
+
+    preflight_msg = AIMessage(content="")
+    preflight_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="1", name="workspace_state", args={}),
+        ToolCall(id="2", name="git_diff", args={}),
+    ]
+    asyncio.run(tools_node({"messages": [preflight_msg]}))
+
+    caplog.set_level("WARNING", logger="agent.runtime.tool_executor")
+    write_msg = AIMessage(content="")
+    write_msg.additional_kwargs["tool_calls_data"] = [
+        ToolCall(id="3", name="write_file", args={"content": "secret document body"}),
+    ]
+    result = asyncio.run(tools_node({"messages": [write_msg]}))
+
+    assert "no target file was detected" in result["messages"][0].content
+    assert "Tool edit blocked due to missing target" in caplog.text
+    assert "content_len" in caplog.text
+    assert "secret document body" not in caplog.text

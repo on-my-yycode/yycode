@@ -4,6 +4,7 @@ from rich.text import Text
 from textual.markup import to_content
 from textual.widgets import TextArea
 
+from agent.branding import LOGO
 from agent.runtime.tool_events import format_tool_event_metadata
 from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
@@ -318,7 +319,41 @@ def test_tui_renderers_show_initializing_state_before_session_ready():
     assert "YYCode" in status
     assert "Model" in status
     assert "(initializing)" in status
-    assert "Starting yoyoagent" in render_timeline_lines(state)
+    assert "Preparing session" in status
+    timeline = render_timeline_lines(state)
+    assert "Preparing YYCode" in timeline
+    assert "Initializing session" in timeline
+    assert LOGO.strip().splitlines()[0] in timeline
+
+
+def test_tui_startup_loading_animates_logo_gradient():
+    state = TuiState()
+
+    first = render_timeline_lines(state, header_mode="main", progress_frame=0)
+    second = render_timeline_lines(state, header_mode="main", progress_frame=1)
+
+    assert "Preparing YYCode" in first
+    assert "Preparing YYCode" in second
+    assert first != second
+
+
+def test_tui_timeline_renders_startup_error():
+    state = TuiState()
+    state.apply_event(
+        StreamEvent(
+            source="tui",
+            session_id="startup",
+            event_type="startup_error",
+            title="Startup failed",
+            content="boom",
+            status="error",
+        )
+    )
+
+    transcript = render_timeline_lines(state)
+
+    assert "Startup failed" in transcript
+    assert "boom" in transcript
 
 
 def test_tui_timeline_renders_config_warning():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from argparse import Namespace
 from datetime import datetime
 import os
@@ -17,6 +18,7 @@ from tools import TOOLS
 
 PROGRESS_TRACK_WIDTH = 18
 PROGRESS_PULSE_WIDTH = 6
+MIN_STARTUP_LOADING_SECONDS = 0.7
 PROGRESS_COLORS = (
     "#3b82f6",
     "#06b6d4",
@@ -190,6 +192,7 @@ def run_tui(args: Namespace) -> None:
     from .runner import AgentTuiRunner
     from .state import MAX_TIMELINE_ITEMS, PendingApproval, TuiState
     from .help_content import render_help_page
+    from agent.streaming import StreamEvent
 
 
     class HelpScreen(ModalScreen[None]):
@@ -1047,16 +1050,35 @@ def run_tui(args: Namespace) -> None:
                 self._refresh_status_surfaces()
 
         def _refresh_progress_tick(self) -> None:
-            if self.runner.state.active_task.get("is_running"):
+            if self.runner.state.active_task.get("is_running") or not self._session_ready:
                 self._progress_frame += 1
-                self._refresh_status_surfaces()
+                self._refresh_all()
 
         async def _initialize_session(self) -> None:
+            started_at = asyncio.get_running_loop().time()
+            self.runner.state.status_line = "Initializing workspace, skills, and session..."
+            self.query_one("#prompt-input", TextArea).placeholder = "Preparing session..."
+            self._refresh_all()
             try:
                 await self.runner.start()
             except Exception as exc:
+                self.runner.state.apply_event(
+                    StreamEvent(
+                        source="tui",
+                        session_id="startup",
+                        event_type="startup_error",
+                        title="Startup failed",
+                        content=str(exc),
+                        status="error",
+                        phase="planning",
+                    )
+                )
                 self.notify(f"Failed to initialize session: {exc}", severity="error")
+                self._refresh_all()
                 return
+            remaining = MIN_STARTUP_LOADING_SECONDS - (asyncio.get_running_loop().time() - started_at)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
             self._session_ready = True
             input_widget = self.query_one("#prompt-input", TextArea)
             input_widget.disabled = False
@@ -1073,6 +1095,7 @@ def run_tui(args: Namespace) -> None:
                 state,
                 limit=MAX_TIMELINE_ITEMS,
                 header_mode="main",
+                progress_frame=self._progress_frame,
             )
 
             timeline_panel = self.query_one("#timeline-panel", RichLog)
