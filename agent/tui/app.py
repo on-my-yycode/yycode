@@ -31,6 +31,7 @@ PROGRESS_COLORS = (
     "#facc15",
 )
 MAX_SKILL_SUGGESTIONS = 8
+MAIN_TIMELINE_VISIBLE_ITEMS = 100
 SUBAGENT_ROLE_DESCRIPTIONS = {
     "explorer": "investigate codebase",
     "architect": "design technical approach",
@@ -259,9 +260,10 @@ def run_tui(args: Namespace) -> None:
             ("ctrl+a,super+a", "select_all_text", "Select all"),
         ]
 
-        def __init__(self, content: str) -> None:
+        def __init__(self, content: str, *, scroll_to_end: bool = False) -> None:
             super().__init__()
             self.content = content
+            self.scroll_to_end = scroll_to_end
 
         def compose(self) -> ComposeResult:
             yield Container(
@@ -281,7 +283,10 @@ def run_tui(args: Namespace) -> None:
             )
 
         def on_mount(self) -> None:
-            self.query_one("#timeline-text-body", TextArea).focus()
+            body = self.query_one("#timeline-text-body", TextArea)
+            body.focus()
+            if self.scroll_to_end:
+                self.call_after_refresh(lambda: body.scroll_end(animate=False))
 
         def action_close_timeline_text(self) -> None:
             self.dismiss(None)
@@ -1006,8 +1011,14 @@ def run_tui(args: Namespace) -> None:
             self.push_screen(HelpScreen(render_help_page(self.command_registry.list_commands())))
 
         def action_open_timeline_text(self) -> None:
-            plain_text = _timeline_markup_to_plain_text(self._last_timeline_content)
-            self.push_screen(TimelineTextScreen(plain_text))
+            timeline_content = render_timeline_lines(
+                self.runner.state,
+                limit=MAX_TIMELINE_ITEMS,
+                header_mode="main",
+                progress_frame=self._progress_frame,
+            )
+            plain_text = _timeline_markup_to_plain_text(timeline_content)
+            self.push_screen(TimelineTextScreen(plain_text, scroll_to_end=True))
 
         def action_open_changed_files(self) -> None:
             self.action_toggle_changed_files()
@@ -1093,7 +1104,7 @@ def run_tui(args: Namespace) -> None:
 
             timeline_content = render_timeline_lines(
                 state,
-                limit=MAX_TIMELINE_ITEMS,
+                limit=MAIN_TIMELINE_VISIBLE_ITEMS,
                 header_mode="main",
                 progress_frame=self._progress_frame,
             )

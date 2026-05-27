@@ -686,7 +686,7 @@ def render_main_timeline_lines(
     *,
     progress_frame: int = 0,
 ) -> str:
-    """Render ALL activity for the main UI (unlimited, scrollable)."""
+    """Render recent activity for the main UI."""
     rendered_items = _render_timeline_blocks(state)
 
     sections = []
@@ -702,8 +702,9 @@ def render_main_timeline_lines(
         )
     else:
         total = len(rendered_items)
-        start = 0
-        visible_items = rendered_items
+        page_size = max(1, min(limit, total))
+        start = max(0, total - page_size)
+        visible_items = rendered_items[start:]
         if max_lines is not None:
             body_budget = max(4, max_lines - 2)
             start = total
@@ -719,6 +720,8 @@ def render_main_timeline_lines(
                     break
                 used_lines += separator_lines + candidate_lines
                 start -= 1
+                if total - start >= page_size:
+                    break
             visible_items = rendered_items[start:]
         header = _timeline_window_header(start, total, total, mode="main")
         sections.append("\n\n".join([header, *visible_items]))

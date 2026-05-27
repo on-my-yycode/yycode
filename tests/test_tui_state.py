@@ -1472,6 +1472,22 @@ def test_tui_main_timeline_keeps_latest_detailed_event_block_intact_when_height_
     assert "agent/tui/file_3.py" not in transcript
 
 
+def test_tui_main_timeline_respects_recent_item_limit():
+    state = TuiState()
+    state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
+
+    for index in range(105):
+        state.add_user_input("sess-1", f"prompt-{index:03d}")
+
+    transcript = render_timeline_lines(state, limit=100, header_mode="main")
+
+    assert "showing 6-105 of 105" in transcript
+    assert "prompt-000" not in transcript
+    assert "prompt-004" not in transcript
+    assert "prompt-005" in transcript
+    assert "prompt-104" in transcript
+
+
 def test_tui_timeline_escapes_nested_tool_args_for_textual_markup():
     state = TuiState()
     state.set_startup_info(session_id="sess-1", model_name="gpt-test", skills_text="drawio")
