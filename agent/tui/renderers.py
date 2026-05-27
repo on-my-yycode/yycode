@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.branding import LOGO
 from agent.plan_snapshot import PlanEntry, build_plan_snapshot
+from agent.version import display_version
 
 from .state import MAX_TIMELINE_ITEMS, PendingApproval, SubagentStatus, TimelineItem, TuiState
 
@@ -425,10 +426,12 @@ def _parts_visible_len(parts: list[str]) -> int:
 def render_brand_text(state: TuiState | None = None, width: int = 100) -> str:
     """Render the compact app brand block."""
     W = max(72, min(width, 180))
+    version_text = display_version()
     brand_line = (
         "[bold #c9a6ff]YYCode[/] "
         "[#7f8794]code assistant[/] "
-        "[#3f4652]" + ("─" * max(4, W - 26)) + "[/]"
+        f"[#cfd3dc]{version_text}[/] "
+        "[#3f4652]" + ("─" * max(4, W - 27 - len(version_text))) + "[/]"
     )
     if state is None:
         return brand_line

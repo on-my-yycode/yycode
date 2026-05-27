@@ -27,6 +27,7 @@ from agent.logger import setup_logging
 from agent.session_store import FileSessionStore
 from agent.streaming import colorize_diff
 from agent.logger import LOG_FILE_NAME
+from agent.version import display_version
 
 # Try to enable readline for better input experience
 try:
@@ -320,6 +321,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     examples = """\
 Examples:
   yycode
+  yycode -v
   yycode ~/project
   yycode --acp
   yycode acp
@@ -363,6 +365,12 @@ Environment:
         nargs="?",
         metavar="WORKDIR",
         help="Workspace directory to operate on. Defaults to the current directory.",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="store_true",
+        help="Show yycode version and exit.",
     )
     parser.add_argument(
         "-d",
@@ -557,6 +565,9 @@ def main() -> None:
     """Parse startup args and launch the TUI on the main thread."""
     parser = build_arg_parser()
     args = parser.parse_args()
+    if args.version:
+        print(display_version())
+        return
     config_warnings = load_startup_configuration(args.config)
     missing_config_warnings = build_missing_model_config_warnings(args.config)
     log_file_path = resolve_log_file_path()

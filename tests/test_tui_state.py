@@ -125,7 +125,8 @@ def test_tui_state_updates_message_context_header():
     assert state.message_context_header.pressure == "low"
 
 
-def test_tui_brand_text_shows_message_context_summary():
+def test_tui_brand_text_shows_message_context_summary(monkeypatch):
+    monkeypatch.setattr("agent.tui.renderers.display_version", lambda: "v9.8.7")
     state = TuiState()
     state.set_startup_info(
         session_id="sess-1",
@@ -149,6 +150,7 @@ def test_tui_brand_text_shows_message_context_summary():
     brand = render_brand_text(state, width=140)
 
     assert "YYCode" in brand
+    assert "v9.8.7" in brand
     assert "" in brand
     assert "master" in brand
     assert "±" in brand

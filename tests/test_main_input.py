@@ -206,6 +206,25 @@ def test_arg_parser_supports_plain_mode():
     assert args.plain is True
 
 
+def test_arg_parser_supports_short_version():
+    args = build_arg_parser().parse_args(["-v"])
+
+    assert args.version is True
+
+
+def test_main_version_prints_version_and_exits(monkeypatch, capsys):
+    def fail_load_startup_configuration(config_path=None):
+        raise AssertionError("version should exit before loading startup configuration")
+
+    monkeypatch.setattr("main.display_version", lambda: "v9.8.7")
+    monkeypatch.setattr("main.load_startup_configuration", fail_load_startup_configuration)
+    monkeypatch.setattr("sys.argv", ["main.py", "-v"])
+
+    main()
+
+    assert capsys.readouterr().out == "v9.8.7\n"
+
+
 def test_run_plain_loop_uses_console_input_and_closes_session(tmp_path, monkeypatch):
     class PlainSession:
         created = None
@@ -1118,6 +1137,8 @@ def test_arg_parser_help_includes_examples_and_session_options():
     assert "-t" in help_text
     assert "--temp" in help_text
     assert "--config PATH" in help_text
+    assert "-v" in help_text
+    assert "--version" in help_text
     assert "-a" in help_text
     assert "--auto" in help_text
     assert "--session-id" not in help_text

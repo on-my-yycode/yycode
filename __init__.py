@@ -1,3 +1,5 @@
 """yycode - a terminal coding agent."""
 
-__version__ = "0.3.2"
+from agent.version import project_version
+
+__version__ = project_version()
