@@ -10,11 +10,13 @@ from agent.message_context_manager import MessageContextManager
 from agent.streaming import StreamEvent
 from agent.todo_manager import TodoManager
 from agent.tui.app import (
+    TERMINAL_MODE_RESET,
     TIMELINE_TEXT_HEADER,
     _timeline_copy_text,
     _timeline_markup_to_plain_text,
 )
 from agent.tui.renderers import (
+    _strip_terminal_control_sequences,
     render_brand_text,
     render_status_text,
     render_task_plan_panel,
@@ -54,6 +56,13 @@ def test_timeline_text_header_documents_copy_shortcuts():
     assert "Esc close" in TIMELINE_TEXT_HEADER
 
 
+def test_terminal_mode_reset_disables_mouse_tracking_modes():
+    assert "\x1b[?1000l" in TERMINAL_MODE_RESET
+    assert "\x1b[?1002l" in TERMINAL_MODE_RESET
+    assert "\x1b[?1003l" in TERMINAL_MODE_RESET
+    assert "\x1b[?1006l" in TERMINAL_MODE_RESET
+
+
 def test_text_area_select_all_covers_full_timeline_text():
     body = TextArea("first line\nsecond line", read_only=True)
 
@@ -77,6 +86,14 @@ def test_timeline_markup_is_parseable_for_bracket_heavy_content():
     rendered = render_timeline_lines(state, header_mode="main")
 
     Text.from_markup(rendered)
+
+
+def test_tui_renderer_strips_terminal_control_sequences_from_tool_output():
+    noisy = "ok\x1b[31mred\x1b[0m ^[[<35;39;17Mdone\x07"
+
+    cleaned = _strip_terminal_control_sequences(noisy)
+
+    assert cleaned == "okred done"
 
 
 def test_timeline_renders_context_summarized_event():

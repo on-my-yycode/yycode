@@ -1,5 +1,7 @@
 """Tests for verify tool."""
 
+import subprocess
+
 from tools import TOOL_HANDLERS, TOOLS
 from tools.verify import verify
 
@@ -35,3 +37,20 @@ def test_verify_blocks_workspace_escape(tmp_path, monkeypatch):
     result = verify(kind="tests", target="../outside.py")
 
     assert result.startswith("Error:")
+
+
+def test_verify_does_not_inherit_terminal_stdin(tmp_path, monkeypatch):
+    (tmp_path / "test_sample.py").write_text("def test_ok():\n    assert True\n")
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("tools.verify.subprocess.run", fake_run)
+
+    result = verify(kind="tests", target="test_sample.py")
+
+    assert "verify passed" in result
+    assert calls[0]["stdin"] is subprocess.DEVNULL

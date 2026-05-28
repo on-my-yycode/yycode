@@ -40,6 +40,7 @@ def bash(command: str, approved: bool = False, workdir: Path | str | None = None
             command,
             shell=True,
             cwd=workspace.root,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             errors="backslashreplace",

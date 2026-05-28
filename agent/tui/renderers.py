@@ -28,13 +28,24 @@ PROGRESS_COLORS = (
     "#f97316",
     "#facc15",
 )
+ANSI_ESCAPE_RE = re.compile(
+    r"(?:\x1b\][^\x07]*(?:\x07|\x1b\\))"
+    r"|(?:\x1b[@-_][0-?]*[ -/]*[@-~])"
+    r"|(?:\^\[\[[0-?]*[ -/]*[@-~])"
+)
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 STARTUP_LOGO_COLORS = ("#d7ba7d", "#f0d48a", "#c9a6ff", "#9cdcfe")
 STARTUP_SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
 
 
+def _strip_terminal_control_sequences(text: str) -> str:
+    """Remove terminal control bytes before rendering user/tool text."""
+    return CONTROL_CHAR_RE.sub("", ANSI_ESCAPE_RE.sub("", text))
+
+
 def _safe_text(value: object, limit: int | None = None) -> str:
     """Return dynamic content escaped for Textual/Rich markup."""
-    text = str(value)
+    text = _strip_terminal_control_sequences(str(value))
     if limit is not None and len(text) > limit:
         text = text[: max(0, limit - 3)] + "..."
     return text.replace("[", r"\[")
@@ -42,7 +53,7 @@ def _safe_text(value: object, limit: int | None = None) -> str:
 
 def _safe_repr(value: object, limit: int = 160) -> str:
     """Return a bounded repr escaped for Textual/Rich markup."""
-    text = repr(value).replace("\n", "\\n")
+    text = _strip_terminal_control_sequences(repr(value)).replace("\n", "\\n")
     if len(text) > limit:
         text = text[: max(0, limit - 3)] + "..."
     return text.replace("[", r"\[")

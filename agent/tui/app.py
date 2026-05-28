@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 from argparse import Namespace
 from datetime import datetime
 import os
 from pathlib import Path
+import sys
 from typing import Any
 
 from rich.text import Text
@@ -46,6 +48,26 @@ TIMELINE_TEXT_HEADER = (
     "Timeline text view - select text, Ctrl+C/Cmd+C copy, "
     "Ctrl+A/Cmd+A select all, Esc close."
 )
+TERMINAL_MODE_RESET = (
+    "\x1b[?1000l"  # mouse reporting
+    "\x1b[?1002l"  # button-event mouse reporting
+    "\x1b[?1003l"  # any-event mouse reporting
+    "\x1b[?1004l"  # focus reporting
+    "\x1b[?1006l"  # SGR mouse mode
+    "\x1b[?1015l"  # urxvt mouse mode
+    "\x1b[?2004l"  # bracketed paste
+    "\x1b[?25h"    # show cursor
+    "\x1b[0m"      # reset graphic rendition
+)
+
+
+def _restore_terminal_modes() -> None:
+    """Best-effort cleanup for terminal modes Textual may leave behind after a crash."""
+    try:
+        sys.stdout.write(TERMINAL_MODE_RESET)
+        sys.stdout.flush()
+    except Exception:
+        return
 
 
 def _env_flag_enabled(name: str) -> bool:
@@ -172,6 +194,8 @@ def _format_tokens_short(value: int) -> str:
 
 def run_tui(args: Namespace) -> None:
     """Launch the Textual app."""
+    _restore_terminal_modes()
+    atexit.register(_restore_terminal_modes)
     try:
         from textual import events
         from textual.app import App, ComposeResult
@@ -1391,4 +1415,7 @@ def run_tui(args: Namespace) -> None:
             self._hide_approval_panel()
             self._refresh_all()
 
-    YoyoTuiApp(args).run()
+    try:
+        YoyoTuiApp(args).run()
+    finally:
+        _restore_terminal_modes()

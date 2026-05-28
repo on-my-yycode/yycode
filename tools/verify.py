@@ -60,6 +60,7 @@ def verify(kind: str = "all", target: str = "", workdir: Path | str | None = Non
         result = subprocess.run(
             command,
             cwd=workspace.root,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             errors="backslashreplace",

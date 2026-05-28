@@ -1,12 +1,17 @@
 """Tests for safety approval blocking."""
 
 import subprocess
+import sys
 
 import pytest
 
 from tools.bash import bash
 from agent.approval import ApprovalTargetMissing, approval_request_for_tool
 from tools.safety import unsafe_command_response
+
+
+def _python_command(code: str) -> str:
+    return subprocess.list2cmdline([sys.executable, "-c", code])
 
 
 def _git(repo, *args):
@@ -53,7 +58,7 @@ def test_bash_allows_dangerous_command_after_runtime_approval():
 
 
 def test_bash_reports_success_for_command_with_no_output():
-    result = bash("true")
+    result = bash(_python_command("pass"))
 
     assert "status: success" in result
     assert "exit_code: 0" in result
@@ -62,11 +67,26 @@ def test_bash_reports_success_for_command_with_no_output():
 
 
 def test_bash_reports_failure_with_exit_code_and_stderr():
-    result = bash("python3 -c 'import sys; print(\"bad\", file=sys.stderr); sys.exit(7)'")
+    result = bash(_python_command('import sys; print("bad", file=sys.stderr); sys.exit(7)'))
 
     assert "status: failed" in result
     assert "exit_code: 7" in result
     assert "stderr:\nbad" in result
+
+
+def test_bash_does_not_inherit_terminal_stdin(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("tools.bash.subprocess.run", fake_run)
+
+    result = bash("echo ok")
+
+    assert "status: success" in result
+    assert calls[0]["stdin"] is subprocess.DEVNULL
 
 
 def test_approval_request_detects_dangerous_bash_command():
