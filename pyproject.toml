@@ -1,6 +1,6 @@
 [project]
 name = "yycode"
-version = "0.3.6"
+version = "0.3.7"
 description = "Terminal coding agent with TUI, plain input mode, tools, skills, and ACP support"
 requires-python = ">=3.10"
 dependencies = [
